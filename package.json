@@ -4,7 +4,8 @@
   "type": "module",
   "license": "MIT",
   "bin": {
-    "praetorius": "src/cli/index.js"
+    "praetorius": "src/cli/index.js",
+    "prae": "src/cli/index.js"
   },
   "files": [
     "dist",
