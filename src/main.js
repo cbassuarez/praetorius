@@ -1,3 +1,30 @@
+// --- Theme preboot (moved from template.html) -------------------------------
+// Applies saved light/dark theme ASAP and sets color-scheme to avoid FOUC.
+// Safe alongside the later applyTheme(readTheme()) in initWorksConsole.
+(function bootTheme(){
+  function run(){
+    try{
+      var root  = document.getElementById('works-group');
+      var saved = localStorage.getItem('wc.theme');
+      // migrate old JSON {"mode":"dark"} → "dark"
+      if (saved && saved.trim().charAt(0)==='{'){
+        try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
+      }
+      var eff = (saved === 'light') ? 'light' : 'dark';
+      if (root){
+        root.removeAttribute('data-theme-mode');
+        root.setAttribute('data-theme', eff);
+      }
+      document.documentElement.style.colorScheme = 'light dark';
+    }catch(e){}
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', run, { once:true });
+  } else {
+    run();
+  }
+})();
+
 export function initWorksConsole() { 
   
 
