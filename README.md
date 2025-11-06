@@ -1,2 +1,2 @@
-# Praetorius_Interactive_Portfolio
+# Praetorius – Interactive Works Portfolio
 interactive works portfolio, vanilla html/js
