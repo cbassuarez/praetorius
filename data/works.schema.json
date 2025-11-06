@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Praetorius Works Schema",
+  "type": "object",
+  "required": ["meta", "works"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["title", "updated"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "updated": { "type": "string", "minLength": 1 },
+        "badge": { "type": "string" },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "href"],
+            "properties": {
+              "label": { "type": "string", "minLength": 1 },
+              "href": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "works": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "slug", "title", "one"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "title": { "type": "string", "minLength": 1 },
+          "one": { "type": "string", "minLength": 1 },
+          "openNote": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "audioUrl": { "type": ["string", "null"] },
+          "pdfUrl": { "type": ["string", "null"] },
+          "cues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["label", "at"],
+              "properties": {
+                "label": { "type": "string" },
+                "at": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "pageFollow": {
+            "type": "object",
+            "required": ["pdfStartPage", "mediaOffsetSec", "pageMap"],
+            "properties": {
+              "pdfStartPage": { "type": "integer", "minimum": 1 },
+              "mediaOffsetSec": { "type": "integer" },
+              "pageMap": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["at", "page"],
+                  "properties": {
+                    "at": { "type": "string" },
+                    "page": { "type": "integer", "minimum": 1 }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
