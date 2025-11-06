@@ -2,11 +2,13 @@
   "name": "praetorius-portfolio",
   "version": "0.1.0",
   "type": "module",
- "bin": {
-   "prae": "bin/prae.cjs"
- },
+  "bin": {
+    "prae": "bin/prae.cjs"
+  },
   "license": "MIT",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "import": "./dist/praetorius.es.js",
@@ -16,18 +18,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-   "preview": "vite preview",
-   "prae": "node bin/prae.cjs",
-   "prae:preview": "node bin/prae.cjs preview",
-   "prae:build:single": "node bin/prae.cjs build --variant single",
-   "prae:build:files": "node bin/prae.cjs build --variant files"
+    "preview": "vite preview",
+    "prae": "node bin/prae.cjs",
+    "prae:preview": "node bin/prae.cjs preview",
+    "prae:build:single": "node bin/prae.cjs build --variant single",
+    "prae:build:files": "node bin/prae.cjs build --variant files"
   },
- "devDependencies": {
-   "vite": "^5.4.0",
-   "ajv": "^8.12.0",
-   "commander": "^11.1.0",
-   "enquirer": "^2.4.1",
-   "express": "^4.19.2",
-   "picocolors": "^1.0.0"
- }
+  "devDependencies": {
+    "ajv": "^8.12.0",
+    "commander": "^11.1.0",
+    "enquirer": "^2.4.1",
+    "express": "^4.19.2",
+    "picocolors": "^1.0.0",
+    "vite": "^7.2.1"
+  }
 }
