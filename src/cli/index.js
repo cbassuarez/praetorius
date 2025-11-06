@@ -1,17 +1,30 @@
 #!/usr/bin/env node
-// Praetorius CLI — init scaffolder
+// Praetorius CLI — wizard + generate (with PDF page-follow support)
 
 import { Command } from 'commander';
 import pc from 'picocolors';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { prompt } from 'enquirer';
+import Ajv from 'ajv';
 
-/* ---------- templates FIRST (avoid TDZ) ---------- */
-const STARTER_JS = `/** Praetorius Works Console — starter v0
- * Paste this into a <script> block or host it as an external JS file.
- * Replace the "works" array with your entries (or wait for the full GUI).
- */
+/* ------------------ templates FIRST (avoid TDZ) ------------------ */
+const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */
+#works-console .btn{padding:.4rem .7rem;border:1px solid var(--line,rgba(255,255,255,.18));border-radius:.6rem;background:transparent}
+#works-console .line{opacity:.92;transition:opacity .2s}
+#works-console .line.muted{opacity:.62}
+#works-console .actions{display:flex;gap:.6rem;margin:.25rem 0 .6rem}
+#works-console .toast{position:sticky;bottom:.5rem;align-self:flex-end;padding:.5rem .7rem;border-radius:.6rem;background:rgba(0,0,0,.7);backdrop-filter:blur(6px)}
+`;
+
+const STARTER_JS_NOTE = `/** Praetorius Works Console — starter v0
+ * This is a seed file. The wizard-driven flow uses:
+ *   - .prae/works.json  (your data)
+ *   - praetorius generate  (to emit dist/script.js from data)
+ */`;
+
+const STARTER_JS = `${STARTER_JS_NOTE}
 (function(){
   const works = [
     {
@@ -24,42 +37,215 @@ const STARTER_JS = `/** Praetorius Works Console — starter v0
       pdf:   'https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/STRING%20QUARTET%20NO.%202%20_soundnoisemusic_%20-%20Score-min.pdf'
     }
   ];
-
-  // Simple window hook for now:
   window.PRAE = window.PRAE || {};
   window.PRAE.works = works;
-  console.log('[prae] starter loaded: 1 work (edit script.js to add more).');
+  console.log('[prae] starter loaded: 1 work (edit script.js or use "praetorius add" + "praetorius generate").');
 })();
-`;
-
-const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */
-#works-console .btn{padding:.4rem .7rem;border:1px solid var(--line,rgba(255,255,255,.18));border-radius:.6rem;background:transparent}
-#works-console .line{opacity:.92;transition:opacity .2s}
-#works-console .line.muted{opacity:.62}
-#works-console .actions{display:flex;gap:.6rem;margin:.25rem 0 .6rem}
-#works-console .toast{position:sticky;bottom:.5rem;align-self:flex-end;padding:.5rem .7rem;border-radius:.6rem;background:rgba(0,0,0,.7);backdrop-filter:blur(6px)}
 `;
 
 const STARTER_README = `Praetorius CLI starter
 ======================
 
-This folder contains:
-- script.js : a tiny seed that exposes window.PRAE.works
-- styles.css: minimal styles to get you going
+Quick paths:
 
-Usage in Squarespace:
-- Put the contents of script.js into a Code block (or host as external JS)
-- Put styles.css into Page CSS or Site-wide CSS (Design → Custom CSS)
+1) Old-school (manual)
+   - Use "praetorius init" to get a seed script.js/styles.css
+   - Paste script.js in a Squarespace Code block
+   - Paste styles.css into Page/Site CSS
 
-Later:
-- The full CLI will generate a richer JS bundle that wires the audio + PDF pane automatically.
-- A GUI editor will write to a /data/works.json and produce a final bundle for copy/paste.
+2) Wizard (recommended)
+   - Run "praetorius add" to enter works interactively (stores in .prae/works.json)
+   - Run "praetorius generate" to emit dist/script.js + dist/styles.css
+   - Paste dist/script.js into your Code block; add dist/styles.css to page/site CSS
 `;
 
-/* ---------- setup ---------- */
+/* --- script generator template (turns DB into paste-ready JS) --- */
+function renderScriptFromDb(db) {
+  const worksArr = (db.works || []).map(w => ({
+    id: w.id,
+    slug: w.slug,
+    title: w.title,
+    one: w.one,
+    cues: w.cues || [],
+    pdf: w.pdf || null,
+    audio: w.audio || null,
+    audioId: `wc-a${w.id}`
+  }));
+
+  // Build page-follow maps keyed by slug (only for works that provide "score")
+  const pf = {};
+  for (const w of db.works || []) {
+    if (w.score && (w.score.pdfStartPage || (w.score.pageMap && w.score.pageMap.length))) {
+      pf[w.slug] = {
+        pdfStartPage: Number.isInteger(w.score.pdfStartPage) ? w.score.pdfStartPage : 1,
+        mediaOffsetSec: Number.isInteger(w.score.mediaOffsetSec) ? w.score.mediaOffsetSec : 0,
+        pageMap: (w.score.pageMap || []).map(row => ({
+          at: row.at,                 // mm:ss string or integer seconds; main.js can parse both
+          page: row.page
+        }))
+      };
+      if (Number.isInteger(w.score.pdfDelta)) {
+        pf[w.slug].pdfDelta = w.score.pdfDelta; // optional override hook your console already supports
+      }
+    }
+  }
+
+  const serializedWorks = JSON.stringify(worksArr, null, 2);
+  const serializedPF    = JSON.stringify(pf, null, 2);
+
+  return `/** AUTO-GENERATED by praetorius generate
+ * Paste into a Squarespace Code block, or host as an external JS file.
+ * Source data: .prae/works.json
+ */
+(function(){
+  var works = ${serializedWorks};
+
+  // Ensure matching <audio> tags exist and carry data-audio attributes.
+  function ensureAudioTags() {
+    works.forEach(function(w){
+      if(!w.audio) return;
+      var id = w.audioId || ('wc-a' + String(w.id||'').trim());
+      if(!id) return;
+      var a = document.getElementById(id);
+      if(!a){
+        a = document.createElement('audio');
+        a.id = id;
+        a.preload = 'none';
+        a.setAttribute('playsinline','');
+        a.setAttribute('data-audio', w.audio);
+        var host = document.querySelector('#works-console') || document.body;
+        host.appendChild(a);
+      } else {
+        a.setAttribute('data-audio', w.audio);
+      }
+    });
+  }
+
+  var worksById = {};
+  works.forEach(function(w){ worksById[w.id] = w; });
+
+  // Emit page-follow maps: picked up by main.js via
+  // const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { ...fallback... };
+  var pageFollowMaps = ${serializedPF};
+
+  window.PRAE = window.PRAE || {};
+  window.PRAE.works = works;
+  window.PRAE.worksById = worksById;
+  window.PRAE.pageFollowMaps = pageFollowMaps;
+  window.PRAE.ensureAudioTags = ensureAudioTags;
+
+  try { ensureAudioTags(); } catch(_) {}
+  console.log('[prae] loaded', works.length, 'works; page-follow maps:', Object.keys(pageFollowMaps).length);
+})();
+`;
+}
+
+/* ------------------ schema + helpers ------------------ */
+const WORKS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['version', 'works'],
+  properties: {
+    version: { type: 'integer' },
+    works: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id','slug','title','one'],
+        properties: {
+          id:    { type: 'integer', minimum: 1 },
+          slug:  { type: 'string', minLength: 1 },
+          title: { type: 'string', minLength: 1 },
+          one:   { type: 'string', minLength: 1 },
+          audio: { type: ['string','null'] },
+          pdf:   { type: ['string','null'] },
+          cues: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['label','t'],
+              properties: {
+                label: { type: 'string' },
+                t:     { type: 'integer', minimum: 0 }
+              }
+            }
+          },
+          // NEW: score/page-follow block (optional)
+          score: {
+            type: 'object',
+            additionalProperties: false,
+            required: [],
+            properties: {
+              pdfStartPage:   { type: 'integer', minimum: 1 },
+              mediaOffsetSec: { type: 'integer' },                // can be negative
+              pdfDelta:       { type: 'integer' },                // optional tweak your console supports
+              pageMap: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['at','page'],
+                  properties: {
+                    // allow both "mm:ss" strings and integer seconds
+                    at: { anyOf: [{ type: 'string', minLength: 1 }, { type: 'integer', minimum: 0 }] },
+                    page: { type: 'integer', minimum: 1 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
+function cwdRel(p) { return path.relative(process.cwd(), p) || '.'; }
+function slugify(s) {
+  return (s||'').toLowerCase()
+    .replace(/[“”"]/g,'')
+    .replace(/[’']/g,'')
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'')
+    .replace(/--+/g,'-') || 'work';
+}
+function parseTimeToSec(input) {
+  if (!input) return 0;
+  const s = String(input).trim();
+  if (/^\d+$/.test(s)) return parseInt(s,10);
+  const m = s.match(/^(\d+):([0-5]?\d)$/);
+  if (m) return parseInt(m[1],10)*60 + parseInt(m[2],10);
+  return 0;
+}
+
+/* ------------------ DB I/O ------------------ */
+const DB_DIR  = path.resolve(process.cwd(), '.prae');
+const DB_PATH = path.join(DB_DIR, 'works.json');
+
+function loadDb() {
+  try {
+    if (!fs.existsSync(DB_PATH)) return { version: 1, works: [] };
+    const raw = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+    return raw;
+  } catch {
+    return { version: 1, works: [] };
+  }
+}
+function saveDb(db) {
+  fs.mkdirSync(DB_DIR, { recursive: true });
+  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf8');
+}
+function nextId(db) {
+  const ids = (db.works||[]).map(w=>w.id||0);
+  return (ids.length ? Math.max(...ids) : 0) + 1;
+}
+
+/* ------------------ CLI setup ------------------ */
 const pkgJson = (() => {
   try {
     const p = path.resolve(__dirname, '../../package.json');
@@ -73,13 +259,13 @@ const program = new Command();
 program
   .name('praetorius')
   .alias('prae')
-  .description('Praetorius — Works Console scaffolder')
+  .description('Praetorius — Works Console scaffolder & wizard')
   .version(pkgJson.version || '0.0.0');
 
-/* ---------- commands ---------- */
+/* ------------------ init ------------------ */
 program
   .command('init')
-  .description('Create starter script + css for the Works Console')
+  .description('Create starter script + css (and seed .prae/works.json if missing)')
   .option('-o, --out <dir>', 'output directory', 'prae-out')
   .option('--dry-run', 'print actions without writing files', false)
   .option('-f, --force', 'overwrite if files exist', false)
@@ -88,14 +274,11 @@ program
     const dry    = !!opts['dryRun'];
     const force  = !!opts.force;
 
-    const logHead = () => {
-      console.log('');
-      console.log(pc.bold('Praetorius init'));
-      console.log(pc.gray('Target: ')+pc.cyan(path.relative(process.cwd(), outDir) || '.'));
-      console.log(pc.gray('Mode:  ')+pc.cyan(dry ? 'dry-run' : 'write'));
-      console.log(pc.gray('Force: ')+pc.cyan(force ? 'on' : 'off'));
-      console.log('');
-    };
+    console.log(pc.bold('Praetorius init'));
+    console.log(pc.gray('Target: ')+pc.cyan(cwdRel(outDir)));
+    console.log(pc.gray('Mode:  ')+pc.cyan(dry ? 'dry-run' : 'write'));
+    console.log(pc.gray('Force: ')+pc.cyan(force ? 'on' : 'off'));
+    console.log('');
 
     const files = [
       { name: 'script.js',  contents: STARTER_JS },
@@ -103,31 +286,204 @@ program
       { name: 'README.txt', contents: STARTER_README },
     ];
 
-    logHead();
     if (!dry) fs.mkdirSync(outDir, { recursive: true });
 
     for (const f of files) {
       const p = path.join(outDir, f.name);
-      if (dry) {
-        console.log(pc.yellow('plan  ') + pc.dim(path.relative(process.cwd(), p)));
-        continue;
-      }
+      if (dry) { console.log(pc.yellow('plan  ') + pc.dim(cwdRel(p))); continue; }
       if (fs.existsSync(p) && !force) {
-        console.log(pc.yellow('skip  ') + pc.dim(path.relative(process.cwd(), p)) + pc.gray(' (exists; use --force)'));
+        console.log(pc.yellow('skip  ') + pc.dim(cwdRel(p)) + pc.gray(' (exists; use --force)'));
         continue;
       }
       fs.writeFileSync(p, f.contents, 'utf8');
-      console.log(pc.green('write ') + pc.dim(path.relative(process.cwd(), p)));
+      console.log(pc.green('write ') + pc.dim(cwdRel(p)));
     }
 
+    // Seed DB if missing
+    const dbExists = fs.existsSync(DB_PATH);
+    if (!dry && !dbExists) {
+      saveDb({ version: 1, works: [] });
+      console.log(pc.green('write ') + pc.dim(cwdRel(DB_PATH)));
+    }
+
+    console.log('\n' + pc.bold('Next steps:'));
+    console.log('  • Add works: ' + pc.cyan('praetorius add'));
+    console.log('  • Generate:  ' + pc.cyan('praetorius generate'));
     console.log('');
-    console.log(pc.bold('Next steps:'));
-    console.log('  1) Open ' + pc.cyan(path.relative(process.cwd(), outDir)));
-    console.log('  2) Copy ' + pc.cyan('script.js')  + ' into your Squarespace code block (or host it).');
-    console.log('  3) Add  ' + pc.cyan('styles.css') + ' to your page/site CSS.');
-    console.log('');
-    console.log(pc.gray('Tip: Re-run with --force to overwrite, or --dry-run to preview.'));
   });
 
-/* ---------- run ---------- */
+/* ------------------ add / wizard ------------------ */
+program
+  .command('add')
+  .alias('wizard')
+  .description('Interactive wizard to add one or more works to .prae/works.json')
+  .action(async () => {
+    const db = loadDb();
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(WORKS_SCHEMA);
+
+    let again = true;
+    while (again) {
+      const base = await prompt([
+        { type: 'input', name: 'title', message: 'Work title', validate: v => !!String(v).trim() || 'Required' },
+        { type: 'input', name: 'slug',  message: 'Slug', initial: (ans)=> slugify(ans.title), validate: v => !!String(v).trim() || 'Required' },
+        { type: 'input', name: 'one',   message: 'One-liner / description', validate: v => !!String(v).trim() || 'Required' },
+        { type: 'input', name: 'audio', message: 'Audio URL (optional; leave blank if none)' },
+        { type: 'input', name: 'pdf',   message: 'Score PDF URL (optional)' },
+      ]);
+
+      const cues = [];
+      const wantCues = await prompt({ type: 'confirm', name: 'ok', message: 'Add cue points?', initial: true });
+      if (wantCues.ok) {
+        let more = true;
+        while (more) {
+          const c = await prompt([
+            { type: 'input', name: 'label', message: 'Cue label (e.g. @5:49)', initial: '@0:00' },
+            { type: 'input', name: 'time',  message: 'Cue time (mm:ss or seconds)', initial: '0:00' }
+          ]);
+          const t = parseTimeToSec(c.time);
+          cues.push({ label: c.label || `@${c.time}`, t });
+          const cont = await prompt({ type: 'confirm', name: 'ok', message: 'Add another cue?', initial: false });
+          more = cont.ok;
+        }
+      }
+
+      // NEW: page-follow (score) block
+      let score = null;
+      const wantScore = await prompt({ type: 'confirm', name: 'ok', message: 'Add PDF page-follow mapping for this work?', initial: false });
+      if (wantScore.ok) {
+        const sBase = await prompt([
+          { type: 'input', name: 'pdfStartPage',   message: 'Printed p.1 equals PDF page (pdfStartPage)', initial: '1', validate: v => /^\d+$/.test(String(v).trim()) && parseInt(v,10)>=1 ? true : 'Enter an integer ≥ 1' },
+          { type: 'input', name: 'mediaOffsetSec', message: 'Media offset seconds (can be negative, default 0)', initial: '0', validate: v => /^-?\d+$/.test(String(v).trim()) ? true : 'Enter an integer (e.g., 0, -30, 12)' },
+        ]);
+
+        const pageMap = [];
+        let more = true;
+        while (more) {
+          const pm = await prompt([
+            { type: 'input', name: 'at',   message: 'Time (mm:ss or seconds)', initial: pageMap.length ? '' : '0:00', validate: v => String(v).trim().length ? true : 'Required' },
+            { type: 'input', name: 'page', message: 'Printed page number', initial: pageMap.length ? '' : '1', validate: v => /^\d+$/.test(String(v).trim()) && parseInt(v,10)>=1 ? true : 'Enter an integer ≥ 1' }
+          ]);
+          pageMap.push({ at: pm.at.trim(), page: parseInt(pm.page,10) });
+          const cont = await prompt({ type: 'confirm', name: 'ok', message: 'Add another page mapping?', initial: false });
+          more = cont.ok;
+        }
+
+        // Optional: pdfDelta tweak
+        let pdfDeltaVal = null;
+        const wantDelta = await prompt({ type: 'confirm', name: 'ok', message: 'Add optional pdfDelta (advanced)?', initial: false });
+        if (wantDelta.ok) {
+          const dAns = await prompt([{ type: 'input', name: 'pdfDelta', message: 'pdfDelta (integer; default none)', validate: v => /^-?\d+$/.test(String(v).trim()) ? true : 'Enter an integer' }]);
+          pdfDeltaVal = parseInt(dAns.pdfDelta, 10);
+        }
+
+        score = {
+          pdfStartPage: parseInt(sBase.pdfStartPage,10),
+          mediaOffsetSec: parseInt(sBase.mediaOffsetSec,10),
+          pageMap
+        };
+        if (Number.isInteger(pdfDeltaVal)) score.pdfDelta = pdfDeltaVal;
+      }
+
+      const entry = {
+        id: nextId(db),
+        slug: base.slug,
+        title: base.title,
+        one: base.one,
+        audio: base.audio?.trim() || null,
+        pdf: base.pdf?.trim() || null,
+        cues
+      };
+      if (score) entry.score = score;
+
+      const candidate = { version: db.version || 1, works: [...db.works, entry] };
+      const ok = validate(candidate);
+      if (!ok) {
+        console.log(pc.red('Validation failed:'));
+        for (const e of validate.errors || []) {
+          console.log('  - ' + e.instancePath + ' ' + e.message);
+        }
+        const retry = await prompt({ type: 'confirm', name: 'ok', message: 'Edit and try again?', initial: true });
+        if (!retry.ok) break;
+        continue;
+      }
+
+      saveDb(candidate);
+      console.log(pc.green('added ') + pc.dim(`#${entry.id} ${entry.title}`));
+
+      const cont = await prompt({ type: 'confirm', name: 'ok', message: 'Add another work?', initial: true });
+      again = cont.ok;
+    }
+
+    console.log(pc.gray('DB at ') + pc.cyan(cwdRel(DB_PATH)));
+  });
+
+/* ------------------ list ------------------ */
+program
+  .command('list')
+  .description('List works from .prae/works.json')
+  .action(() => {
+    const db = loadDb();
+    if (!db.works.length) { console.log(pc.yellow('No works yet. Add with: ') + pc.cyan('praetorius add')); return; }
+    console.log(pc.bold('Works'));
+    db.works.forEach(w => {
+      console.log(pc.cyan(`#${w.id}`) + ' ' + w.title + pc.gray(`  (${w.slug})`));
+      console.log('   ' + pc.dim(w.one));
+      if (w.audio) console.log('   audio: ' + pc.gray(w.audio));
+      if (w.pdf)   console.log('   pdf:   ' + pc.gray(w.pdf));
+      if (w.cues?.length) {
+        const cs = w.cues.map(c => `${c.label}=${c.t}s`).join(', ');
+        console.log('   cues:  ' + pc.gray(cs));
+      }
+      if (w.score?.pageMap?.length) {
+        console.log('   score: ' + pc.gray(`p1→PDF ${w.score.pdfStartPage ?? 1}, offset ${w.score.mediaOffsetSec ?? 0}s, map ${w.score.pageMap.length} rows`));
+      }
+    });
+  });
+
+/* ------------------ generate ------------------ */
+program
+  .command('generate')
+  .alias('build')
+  .description('Emit dist/script.js and dist/styles.css from .prae/works.json')
+  .option('-o, --out <dir>', 'output directory', 'dist')
+  .option('--no-css', 'skip writing styles.css')
+  .action(async (opts) => {
+    const outDir = path.resolve(process.cwd(), opts.out);
+    const db = loadDb();
+    fs.mkdirSync(outDir, { recursive: true });
+
+    // Basic validation
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(WORKS_SCHEMA);
+    if (!validate(db)) {
+      console.log(pc.red('DB validation failed:'));
+      for (const e of validate.errors || []) console.log('  - ' + e.instancePath + ' ' + e.message);
+      process.exit(1);
+    }
+
+    // Render script (now includes pageFollowMaps)
+    const js = renderScriptFromDb(db);
+    const jsPath = path.join(outDir, 'script.js');
+    fs.writeFileSync(jsPath, js, 'utf8');
+    console.log(pc.green('write ') + pc.dim(cwdRel(jsPath)));
+
+    // CSS (optional)
+    if (opts.css) {
+      const cssPath = path.join(outDir, 'styles.css');
+      if (!fs.existsSync(cssPath)) {
+        fs.writeFileSync(cssPath, STARTER_CSS, 'utf8');
+        console.log(pc.green('write ') + pc.dim(cwdRel(cssPath)));
+      } else {
+        console.log(pc.yellow('skip  ') + pc.dim(cwdRel(cssPath)) + pc.gray(' (exists)'));
+      }
+    }
+
+    console.log('\n' + pc.bold('Next steps:'));
+    console.log('  • Paste ' + pc.cyan(cwdRel(jsPath)) + ' into your Squarespace code block (or host it).');
+    console.log('  • Add   ' + pc.cyan('styles.css') + ' to page/site CSS (if not already).');
+    console.log(pc.gray('  • Ensure your main.js uses: const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { /* fallback */ };'));
+  });
+
+/* ------------------ run ------------------ */
 program.parseAsync(process.argv);
