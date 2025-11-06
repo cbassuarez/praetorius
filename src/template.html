@@ -36,7 +36,7 @@
     <div class="wc-hud" aria-live="polite" aria-atomic="true"></div>
     <form class="wc-input" autocomplete="off" spellcheck="false">
       <label class="wc-prompt" aria-hidden="true">$</label>
-      <input id="wc-cmd" type="text" inputmode="latin" autocapitalize="off" autocomplete="off" />
+      <input id="wc-cmd" type="text" inputmode="latin" autocapitalize="off" autocomplete="off" aria-label="Console command" />
     </form>
   </div>
 <!-- Right PDF pane (split view; not a modal) -->
@@ -59,22 +59,7 @@
 
 
 
- <script>
- (function(){
-   try{
-     var root  = document.getElementById('works-group');
-     var saved = localStorage.getItem('wc.theme');
-     // migrate old JSON {"mode":"dark"} → "dark"
-     if(saved && saved.trim().charAt(0)==='{'){
-       try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
-     }
-     var eff = (saved === 'light') ? 'light' : 'dark';
-     root.removeAttribute('data-theme-mode');
-     root.setAttribute('data-theme', eff);
-     document.documentElement.style.colorScheme = 'light dark';
-   }catch(e){}
- })();
- </script>
+ 
 
 
 
