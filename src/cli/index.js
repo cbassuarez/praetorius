@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Praetorius CLI v0 — minimal working "init"
+// Praetorius CLI — minimal scaffolder
+// ESM module
+
 import { Command } from 'commander';
 import pc from 'picocolors';
 import fs from 'node:fs';
@@ -8,53 +10,18 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
-const pkgJson    = (() => {
-  try { return JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../package.json'), 'utf8')); }
-  catch { return { name: 'prae', version: '0.1.0' }; }
+
+// Read package.json for version (fallbacks if unavailable)
+const pkgJson = (() => {
+  try {
+    const p = path.resolve(__dirname, '../../package.json');
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return { name: 'praetorius', version: '0.0.0' };
+  }
 })();
 
-const program = new Command();
-program
-  .name('prae')
-  .description('Praetorius — Works Console scaffolder')
-  .version(pkgJson.version || '0.1.0');
-
-program
-  .command('init')
-  .description('Create starter script + css for the Works Console')
-  .option('-o, --out <dir>', 'output directory', 'prae-out')
-  .option('-f, --force', 'overwrite if files exist', false)
-  .action(async (opts) => {
-    const outDir = path.resolve(process.cwd(), opts.out);
-    fs.mkdirSync(outDir, { recursive: true });
-
-    const files = [
-      { name: 'script.js', contents: STARTER_JS },
-      { name: 'styles.css', contents: STARTER_CSS },
-      { name: 'README.txt', contents: STARTER_README },
-    ];
-
-    for (const f of files) {
-      const p = path.join(outDir, f.name);
-      if (fs.existsSync(p) && !opts.force) {
-        console.log(pc.yellow(`skip  `) + pc.dim(f.name) + pc.gray(' (exists; use --force to overwrite)'));
-        continue;
-      }
-      fs.writeFileSync(p, f.contents, 'utf8');
-      console.log(pc.green('write ') + pc.dim(path.relative(process.cwd(), p)));
-    }
-
-    console.log('');
-    console.log(pc.bold('Next steps:'));
-    console.log('  1) Open ') + console.log(pc.cyan(path.relative(process.cwd(), outDir)));
-    console.log('  2) Copy ') + console.log(pc.cyan('script.js')) + console.log(' into your Squarespace code block (or host it).');
-    console.log('  3) Add ') + console.log(pc.cyan('styles.css')) + console.log(' to your page/site CSS.');
-    console.log('');
-    console.log(pc.gray('Tip: Re-run with --force to overwrite.'));
-  });
-
-program.parse(process.argv);
-
+// ---------- STARTER ARTIFACTS (must be defined before .action uses them) ----------
 const STARTER_JS = `/** Praetorius Works Console — starter v0
  * Paste this into a <script> block or host it as an external JS file.
  * Replace the "works" array with your entries (or wait for the full GUI).
@@ -102,3 +69,77 @@ Later:
 - The full CLI will generate a richer JS bundle that wires the audio + PDF pane automatically.
 - A GUI editor will write to a /data/works.json and produce a final bundle for copy/paste.
 `;
+// ----------------------------------------------------------------------------------
+
+// Helpers
+function ensureDir(dir, dryRun = false) {
+  if (dryRun) return;
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function writeFileSafe(filePath, contents, { force = false, dryRun = false } = {}) {
+  const rel = path.relative(process.cwd(), filePath) || filePath;
+  if (fs.existsSync(filePath) && !force) {
+    console.log(pc.yellow('skip  ') + pc.dim(rel) + pc.gray(' (exists; use --force to overwrite)'));
+    return 'skipped';
+  }
+  if (dryRun) {
+    console.log(pc.cyan('dry   ') + pc.dim(rel));
+    return 'dry';
+  }
+  fs.writeFileSync(filePath, contents, 'utf8');
+  console.log(pc.green('write ') + pc.dim(rel));
+  return 'written';
+}
+
+// Commander setup
+const program = new Command();
+program
+  .name('prae')
+  .description('Praetorius — Works Console scaffolder')
+  .version(pkgJson.version || '0.1.0');
+
+program
+  .command('init')
+  .description('Create starter script + css for the Works Console')
+  .option('-o, --out <dir>', 'output directory', 'prae-out')
+  .option('-f, --force', 'overwrite if files exist', false)
+  .option('--dry-run', 'print actions without writing files', false)
+  .action(async (opts) => {
+    const outDir = path.resolve(process.cwd(), opts.out);
+    const dryRun = Boolean(opts.dryRun);
+    const force  = Boolean(opts.force);
+
+    console.log(pc.bold(`\nPraetorius init`));
+    console.log('Target:', pc.cyan(path.relative(process.cwd(), outDir) || '.'));
+    console.log('Mode:  ', dryRun ? pc.yellow('dry-run') : pc.green('write'));
+    if (force) console.log('Force: ', pc.magenta('on'));
+    console.log('');
+
+    ensureDir(outDir, dryRun);
+
+    const files = [
+      { name: 'script.js',  contents: STARTER_JS },
+      { name: 'styles.css', contents: STARTER_CSS },
+      { name: 'README.txt', contents: STARTER_README },
+    ];
+
+    for (const f of files) {
+      const p = path.join(outDir, f.name);
+      writeFileSafe(p, f.contents, { force, dryRun });
+    }
+
+    console.log('');
+    console.log(pc.bold('Next steps:'));
+    console.log('  1) Open', pc.cyan(path.relative(process.cwd(), outDir) || '.'));
+    console.log('  2) Copy', pc.cyan('script.js'), 'into your Squarespace code block (or host it).');
+    console.log('  3) Add ', pc.cyan('styles.css'), 'to your page/site CSS.');
+    console.log('');
+    console.log(pc.gray('Tip: Re-run with --force to overwrite, or --dry-run to preview.\n'));
+  });
+
+// Parse (async to allow future async actions)
+program.parseAsync(process.argv).catch((err) => {
+  console.error(pc.red('error'), err?.message || String(err));
+  process.exitCode = 1;
+});
