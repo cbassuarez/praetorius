@@ -1,14 +1,15 @@
 {
-  "name": "praetorius-portfolio",
+  "name": "prae",
   "version": "0.1.0",
   "type": "module",
   "bin": {
     "prae": "bin/prae.cjs"
   },
   "license": "MIT",
-  "files": [
-    "dist"
-  ],
+  "files": ["dist", "src/cli", "bin", "scaffolds"],
+  "bin": {
+    "prae": "src/cli/index.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/praetorius.es.js",
@@ -24,12 +25,15 @@
     "prae:build:single": "node ./bin/prae.cjs build --single",
     "prae:preview": "node ./bin/prae.cjs preview"
   },
-  "devDependencies": {
-    "ajv": "^8.12.0",
-    "commander": "^11.1.0",
+  "devDependencies": { "vite": "^5.4.0" },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "commander": "^12.1.0",
     "enquirer": "^2.4.1",
     "express": "^4.19.2",
-    "picocolors": "^1.0.0",
-    "vite": "^7.2.1"
-  }
+    "picocolors": "^1.0.0"
+  },
+  "engines": { "node": ">=18" },
+  "publishConfig": { "access": "public" },
+  "keywords": ["cli", "portfolio", "generator", "praetorius", "seb-suarez"]
 }
