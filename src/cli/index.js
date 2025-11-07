@@ -301,7 +301,12 @@ function parseMaybeJSON(s) {
 }
 function normalizeImportedWork(row) {
   // Accept flexible shapes from CSV/YAML/JSON rows
-  const id = Number.isFinite(Number(row.id)) ? Number(row.id) : null;
+  // id: blank/missing → null; numeric strings → Number; reject < 1
+  let id = null;
+  if (row?.id !== undefined && row?.id !== null && String(row.id).trim() !== '') {
+    const n = Number(String(row.id).trim());
+    if (Number.isFinite(n) && n >= 1) id = n;
+  }
   const slug = (row.slug && String(row.slug).trim()) || slugify(row.title);
   const one = (row.one && String(row.one).trim()) || '';
   const base = {
@@ -759,7 +764,12 @@ program
       rows = Array.isArray(obj) ? obj : (Array.isArray(obj.works) ? obj.works : []);
     } else if (ext === '.csv') {
 const parseCSV = await lazyCsvParse();
-      const recs = parseCSV(buf, { columns: true, skip_empty_lines: true });
+      const recs = parseCSV(buf, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        bom: true
+      });
       rows = recs;
     } else {
       console.log(pc.red('Unsupported format. Use .json, .csv, .yaml/.yml'));
