@@ -6,7 +6,8 @@ import pc from 'picocolors';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { prompt } from 'enquirer';
+import pkg from 'enquirer';
+const { prompt } = pkg;
 import Ajv from 'ajv';
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
