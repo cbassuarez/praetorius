@@ -259,6 +259,7 @@ const WORKS_SCHEMA = {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
+const PKG_ROOT   = path.resolve(__dirname, '../../'); // package root (for <pkg>/ui fallback)
 
 function cwdRel(p) { return path.relative(process.cwd(), p) || '.'; }
 function slugify(s) {
@@ -352,7 +353,7 @@ function printScorePreview(sc) {
 // ---- UI bundle helpers ----
 function existsFile(p){ try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; } }
 function uiPaths(cwd){
-  const SRC_DIR = path.resolve(cwd, 'src');
+  const SRC_DIR = path.resolve(cwd, 'ui'); // default project UI dir
   return {
     dir:   SRC_DIR,
     tpl:   path.join(SRC_DIR, 'template.html'),
@@ -1414,7 +1415,7 @@ program
   .option('--css <file>', 'output CSS filename (default: styles.css)')
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
-  .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'src')
+  .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'ui')
   .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')
@@ -1423,7 +1424,8 @@ program
   .action(async (opts) => {
     const outDir = path.resolve(process.cwd(), opts.out);
     fs.mkdirSync(outDir, { recursive: true });
-    const uiSrcDir = path.resolve(process.cwd(), opts.uiSrc || 'src');
+    const uiSrcDir = path.resolve(process.cwd(), opts.uiSrc || 'ui');
+    const pkgUiDir = path.resolve(PKG_ROOT, 'ui'); // packaged starter UI (fallback)
 
     const buildOnce = async () => {
       const db = loadDb();
@@ -1475,14 +1477,21 @@ program
 
       // -------- UI bundle (template.html + main.js + style.css) ----------
       if (!opts.noUi) {
-        const tplIn   = path.join(uiSrcDir, opts.html || 'template.html');
-        const mainIn  = path.join(uiSrcDir, 'main.js');
-        const styleIn = path.join(uiSrcDir, 'style.css');
-        const haveTpl   = existsFile(tplIn);
-        const haveMain  = existsFile(mainIn);
-        const haveStyle = existsFile(styleIn);
+        // Prefer project UI dir; fall back to packaged /ui
+        const htmlName = opts.html || 'template.html';
+        const candidates = [uiSrcDir, pkgUiDir];
+        const uiRoot = candidates.find(d => existsFile(path.join(d, htmlName)));
 
-        if (haveTpl) {
+        if (uiRoot) {
+          const tplIn   = path.join(uiRoot, htmlName);
+          const mainIn  = path.join(uiRoot, 'main.js');
+          const styleIn = path.join(uiRoot, 'style.css');
+          const haveTpl   = existsFile(tplIn);
+          const haveMain  = existsFile(mainIn);
+          const haveStyle = existsFile(styleIn);
+
+          // haveTpl is guaranteed true here, but keep the guard for safety
+          if (haveTpl) {
           // Copy/transform app.js + app.css if present
           let appJsCode = '';
           let appCssCode = '';
@@ -1523,8 +1532,13 @@ program
           const htmlOut = path.join(outDir, 'index.html');
           atomicWriteFile(htmlOut, html);
           console.log(pc.green('write ') + pc.dim(cwdRel(htmlOut)));
+        }
         } else {
-          console.log(pc.gray('UI: no template found at ') + pc.dim(cwdRel(tplIn)) + pc.gray(' (skipping UI bundle)'));
+          console.log(
+            pc.gray('UI: no template found in ') +
+            pc.dim([uiSrcDir, pkgUiDir].map(cwdRel).join(', ')) +
+            pc.gray(' (skipping UI bundle)')
+          );
         }
       }
 return true; // end buildOnce success
@@ -1537,7 +1551,7 @@ return true; // end buildOnce success
         [DB_PATH, CONFIG_PATH, path.join(uiSrcDir, '**/*')],
         { ignoreInitial: true }
       );
-      console.log(pc.gray('watching .prae and src for changes…'));
+      console.log(pc.gray(`watching .prae and ${cwdRel(uiSrcDir)} for changes…`));
       watcher.on('all', async (ev, p) => {
         console.log(pc.gray(`rebuild (${ev}: ${cwdRel(p)})`));
         await buildOnce();
