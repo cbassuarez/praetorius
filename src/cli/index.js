@@ -348,6 +348,56 @@ function printScorePreview(sc) {
   });
 }
 
+/* ------------------ UI Bundling Helpers ------------------ */
+
+function fileExists(p) { try { return fs.existsSync(p); } catch { return false; } }
+function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); return p; }
+function copyDirSync(from, to) {
+  ensureDir(to);
+  for (const ent of fs.readdirSync(from, { withFileTypes: true })) {
+    const src = path.join(from, ent.name);
+    const dst = path.join(to, ent.name);
+    if (ent.isDirectory()) copyDirSync(src, dst);
+    else fs.copyFileSync(src, dst);
+  }
+}
+function upsertBodyTheme(html, theme) {
+  return html.replace(/<body(\s[^>]*)?>/i, (m, attrs='') => {
+    const clsRe = /class=(["'])(.*?)\1/i;
+    if (clsRe.test(attrs)) {
+      return `<body${attrs.replace(clsRe, (mm,q,val)=>`class=${q}${val} prae-theme-${theme}${q}`)}>`;
+    }
+    return `<body class="prae-theme-${theme}"${attrs}>`;
+  });
+}
+function injectHead(html, lines) {
+  return html.replace(/<\/head>/i, (m) => `  ${lines.join('\n  ')}\n${m}`);
+}
+function injectBeforeBodyEnd(html, lines) {
+  return html.replace(/<\/body>/i, (m) => `  ${lines.join('\n  ')}\n${m}`);
+}
+function buildIndexHtml({ templatePath, outPath, theme }) {
+  if (!fileExists(templatePath)) return false;
+  let html = fs.readFileSync(templatePath, 'utf8');
+  html = upsertBodyTheme(html, theme);
+  // Head: add tokens + app CSS if not already linked
+  const wantHead = [];
+  if (!/href=.*styles\.css/i.test(html)) wantHead.push('<link rel="stylesheet" href="/styles.css"/>');
+  if (!/href=.*app\.css/i.test(html) && fileExists(path.join(path.dirname(outPath), 'app.css')))
+    wantHead.push('<link rel="stylesheet" href="/app.css"/>');
+  if (wantHead.length) html = injectHead(html, wantHead);
+  // Body: ensure host + scripts
+  if (!/id=["']works-console["']/.test(html)) {
+    html = injectBeforeBodyEnd(html, ['<section id="works-console"></section>']);
+  }
+  const wantBody = [];
+  if (!/src=.*script\.js/i.test(html)) wantBody.push('<script src="/script.js"></script>');
+  if (!/src=.*app\.js/i.test(html))    wantBody.push('<script type="module" src="/app.js"></script>');
+  if (wantBody.length) html = injectBeforeBodyEnd(html, wantBody);
+  atomicWriteFile(outPath, html);
+  return true;
+}
+
 /* ------------------ DB I/O ------------------ */
 const DB_DIR  = path.resolve(process.cwd(), '.prae');
 const DB_PATH = path.join(DB_DIR, 'works.json');
@@ -592,10 +642,11 @@ function previewHarnessHTML(theme = 'dark') {
 function startStaticServer({ root, port }) {
   const server = http.createServer((req, res) => {
     const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-    // Serve harness at "/"
+    // Serve built index.html when present; otherwise use tiny harness
     if (urlPath === '/' || urlPath === '/index.html') {
-      const theme = loadConfig().theme; // 'light' | 'dark'
-      const html = previewHarnessHTML(theme);
+      const idx = path.join(root, 'index.html');
+      const theme = loadConfig().theme;
+      const html = fileExists(idx) ? fs.readFileSync(idx, 'utf8') : previewHarnessHTML(theme);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(html);
       return;
@@ -1344,6 +1395,11 @@ program
   .option('--css <file>', 'output CSS filename (default: styles.css)')
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
+  .option('--ui-src <dir>', 'prototype UI source (expects main.js, template.html, assets/)', 'src')
+  .option('--html <file>', 'template filename inside --ui-src', 'template.html')
+  .option('--app-js <file>', 'prototype bundle output filename', 'app.js')
+  .option('--app-css <file>', 'prototype css copy output filename', 'app.css')
+  .option('--no-ui', 'skip bundling prototype UI', false)
 
   .action(async (opts) => {
     const outDir = path.resolve(process.cwd(), opts.out);
@@ -1396,11 +1452,57 @@ program
         atomicWriteFile(cssPath, css);
         console.log(pc.green('write ') + pc.dim(cwdRel(cssPath)));
       }
-      if (!opts.watch) {
-        console.log('\n' + pc.bold('Next steps:'));
-        console.log('  • Paste ' + pc.cyan(cwdRel(jsPath)) + ' into your Squarespace code block (or host it).');
-        if (cssWant) console.log('  • Add   ' + pc.cyan(cssFile) + ' to page/site CSS.');
-        console.log(pc.gray('  • Ensure your main.js uses: const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { /* fallback */ };'));
+
+      // ---- Prototype UI bundling (src → dist) ----
+      if (!opts.noUi) {
+        const uiSrcDir = path.resolve(process.cwd(), opts.uiSrc || 'src');
+        const hasMain  = fileExists(path.join(uiSrcDir, 'main.js'));
+        const hasHtml  = fileExists(path.join(uiSrcDir, opts.html || 'template.html'));
+        if (hasMain) {
+          const esb = await lazyEsbuild();
+          const appJsOut = path.join(outDir, opts.appJs || 'app.js');
+          await esb.build({
+            entryPoints: [path.join(uiSrcDir, 'main.js')],
+            bundle: true,
+            outfile: appJsOut,
+            minify: wantMin,
+            sourcemap: false,
+            platform: 'browser',
+            target: ['es2018']
+          });
+          console.log(pc.green('write ') + pc.dim(cwdRel(appJsOut)));
+        }
+        // Copy prototype CSS if present
+        const srcCss = path.join(uiSrcDir, 'styles.css');
+        if (fileExists(srcCss)) {
+          const appCssOut = path.join(outDir, opts.appCss || 'app.css');
+          fs.copyFileSync(srcCss, appCssOut);
+          console.log(pc.green('write ') + pc.dim(cwdRel(appCssOut)));
+        }
+        // Copy assets/ if present
+        const assetsDir = path.join(uiSrcDir, 'assets');
+        if (fileExists(assetsDir)) {
+          const outAssets = path.join(outDir, 'assets');
+          copyDirSync(assetsDir, outAssets);
+          console.log(pc.green('copy  ') + pc.dim(cwdRel(outAssets) + '/**'));
+        }
+        // Build index.html from template
+        if (hasHtml) {
+          const okHtml = buildIndexHtml({
+            templatePath: path.join(uiSrcDir, opts.html || 'template.html'),
+            outPath: path.join(outDir, 'index.html'),
+            theme: cfg.theme
+          });
+          if (okHtml) {
+            console.log(pc.green('write ') + pc.dim(cwdRel(path.join(outDir, 'index.html'))));
+          }
+        }
+      }
+     if (!opts.watch) {
+       console.log('\n' + pc.bold('Next steps:'));
+        console.log('  • Preview locally: ' + pc.cyan('prae preview'));
+        console.log('  • Squarespace embed: use dist/embed.html OR host dist/* and include on the page.');
+        console.log(pc.gray('  • Your prototype can read data from window.PRAE.{works,worksById,pageFollowMaps}.'));
       }
       return true;
     };
