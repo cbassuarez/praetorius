@@ -96,7 +96,6 @@ praetorius generate --out dist
 * **Squarespace**: add a **Code** block → paste `dist/script.js` (or use `--embed` to emit a single snippet). Add `dist/styles.css` to **Design → Custom CSS**.
 * Any other platform (Webflow/Wix/Jekyll/etc.): include the script and CSS as you would any static assets.
 
-> GitHub automatically provides a “copy” button on code fences in this file.
 
 ---
 
