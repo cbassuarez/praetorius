@@ -349,8 +349,19 @@ function printScorePreview(sc) {
 }
 
 /* ------------------ UI Bundling Helpers ------------------ */
+// ---- UI bundle helpers ----
+function existsFile(p){ try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; } }
+function uiPaths(cwd){
+  const SRC_DIR = path.resolve(cwd, 'src');
+  return {
+    dir:   SRC_DIR,
+    tpl:   path.join(SRC_DIR, 'template.html'),
+    boot:  path.join(SRC_DIR, 'boot.js'),
+    main:  path.join(SRC_DIR, 'main.js'),
+    style: path.join(SRC_DIR, 'style.css'),
+  };
+}
 
-function fileExists(p) { try { return fs.existsSync(p); } catch { return false; } }
 function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); return p; }
 function copyDirSync(from, to) {
   ensureDir(to);
@@ -649,12 +660,12 @@ function previewHarnessHTML(theme = 'dark') {
 function startStaticServer({ root, port }) {
   const server = http.createServer((req, res) => {
     const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-   // If dist/index.html exists, serve it. Otherwise fall back to harness.
+    // "/" → serve dist/index.html if present; else tiny harness
     if (urlPath === '/' || urlPath === '/index.html') {
-      const indexPath = path.join(root, 'index.html');
-      if (isFile(indexPath)) {
+      const distIndex = path.join(root, 'index.html');
+      if (existsFile(distIndex)) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-        fs.createReadStream(indexPath).pipe(res);
+        fs.createReadStream(distIndex).pipe(res);
         return;
       }
       const theme = loadConfig().theme;
@@ -663,15 +674,11 @@ function startStaticServer({ root, port }) {
       res.end(html);
       return;
     }
-    // Static file from dist
+    // Everything else → static file under dist/
     const fsPath = path.join(root, urlPath.replace(/^\/+/, ''));
-    if (!fsPath.startsWith(root)) {
-      res.writeHead(403); res.end('Forbidden'); return;
-    }
+    if (!fsPath.startsWith(root)) { res.writeHead(403); res.end('Forbidden'); return; }
     fs.stat(fsPath, (err, stat) => {
-      if (err || !stat.isFile()) {
-        res.writeHead(404); res.end('Not found'); return;
-      }
+      if (err || !stat.isFile()) { res.writeHead(404); res.end('Not found'); return; }
       res.writeHead(200, { 'Content-Type': contentTypeFor(fsPath), 'Cache-Control': 'no-store' });
       fs.createReadStream(fsPath).pipe(res);
     });
@@ -1521,88 +1528,7 @@ program
         }
       }
 
-      // ---- Prototype UI bundling (src → dist) ----
-      if (!opts.noUi) {
-        const uiSrcDir = path.resolve(process.cwd(), opts.uiSrc || 'src');
-        const hasMain  = fileExists(path.join(uiSrcDir, 'main.js'));
-        const hasHtml  = fileExists(path.join(uiSrcDir, opts.html || 'template.html'));
-        if (hasMain) {
-          const esb = await lazyEsbuild();
-          const appJsOut = path.join(outDir, opts.appJs || 'app.js');
-          await esb.build({
-            entryPoints: [path.join(uiSrcDir, 'main.js')],
-            bundle: true,
-            outfile: appJsOut,
-            minify: wantMin,
-            sourcemap: false,
-            platform: 'browser',
-            target: ['es2018']
-          });
-          console.log(pc.green('write ') + pc.dim(cwdRel(appJsOut)));
-        }
-        // Copy prototype CSS if present
-        const srcCss = path.join(uiSrcDir, 'styles.css');
-        if (fileExists(srcCss)) {
-          const appCssOut = path.join(outDir, opts.appCss || 'app.css');
-          fs.copyFileSync(srcCss, appCssOut);
-          console.log(pc.green('write ') + pc.dim(cwdRel(appCssOut)));
-        }
-        // Copy assets/ if present
-        const assetsDir = path.join(uiSrcDir, 'assets');
-        if (fileExists(assetsDir)) {
-          const outAssets = path.join(outDir, 'assets');
-          copyDirSync(assetsDir, outAssets);
-          console.log(pc.green('copy  ') + pc.dim(cwdRel(outAssets) + '/**'));
-        }
-        // Build index.html from template
-        if (hasHtml) {
-          const okHtml = buildIndexHtml({
-            templatePath: path.join(uiSrcDir, opts.html || 'template.html'),
-            outPath: path.join(outDir, 'index.html'),
-            theme: cfg.theme
-          });
-          if (okHtml) {
-            console.log(pc.green('write ') + pc.dim(cwdRel(path.join(outDir, 'index.html'))));
-          }
-        }
-      }
-      if (!opts.watch) {
-         console.log('\n' + pc.bold('Next steps:'));
-        console.log('  • Local preview: ' + pc.cyan('prae preview'));
-        console.log('  • Squarespace (full UI): use contents of ' + pc.cyan('dist/index.html') + ' (or host assets & include).');
-        if (!cssWant) console.log(pc.gray('  • Note: base styles.css skipped by --no-css.'));
-         console.log(pc.gray('  • Ensure your main.js uses: const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { /* fallback */ };'));
-       }
-       return true;
-     };
-
-    // First build
-    const ok = await buildOnce();
-    if (!opts.watch) {
-      if (!ok) process.exit(1);
-      return;
-    }
-
-    // --watch mode
-    const chokidar = await lazyChokidar();
-    const debounce = (fn, ms=200) => {
-      let t; return (...args) => { clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
-    };
-    const onChange = debounce(async (file) => {
-      const t0 = Date.now();
-      console.log(pc.gray(`change detected: ${path.relative(process.cwd(), file)}`));
-      const ok2 = await buildOnce();
-      if (ok2) console.log(pc.green('rebuilt ') + pc.dim(`${(Date.now()-t0)}ms @ ${new Date().toLocaleTimeString()}`));
-    }, 150);
-    const watcher = chokidar.watch([DB_PATH, CONFIG_PATH], {
-      ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 }
-    });
-    watcher.on('add', onChange).on('change', onChange).on('unlink', onChange);
-    console.log(pc.bold(pc.green('watching ')) + pc.dim('.prae/works.json, .prae/config.json'));
-    console.log(pc.gray('Tip: run ') + pc.cyan('prae preview') + pc.gray(' in another terminal, edit, then reload the page.'));
-    await new Promise(()=>{});
-  });
+      
 
 /* ------------------ run ------------------ */
 program.parseAsync(process.argv);
