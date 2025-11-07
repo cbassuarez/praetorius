@@ -567,7 +567,7 @@ function contentTypeFor(p) {
     '.ttf':'font/ttf'
   })[ext] || 'application/octet-stream';
 }
-function previewHarnessHTML() {
+function previewHarnessHTML(theme = 'dark') {
   // Loads the canonical filenames per Sprint 3 acceptance
   return [
     '<!doctype html>',
@@ -579,9 +579,12 @@ function previewHarnessHTML() {
     '  <link rel="stylesheet" href="/styles.css"/>',
     '  <style>body{margin:0;padding:1rem;background:var(--bg, #111);color:var(--fg,#fff)}</style>',
     '</head>',
-    '<body class="prae-theme-dark">',
+    `<body class="prae-theme-${theme}">`,
     '  <section id="works-console"></section>',
     '  <script src="/script.js" defer></script>',
+    // Ensure host/body have the right theme and render using the minimal list UI.
+    `  <script>(function(){var h=document.querySelector('#works-console')||document.body;h.classList.remove('prae-theme-light','prae-theme-dark');h.classList.add('prae-theme-${theme}');})();</script>`,
+    `  <script>${EMBED_RENDER}</script>`,
     '</body>',
     '</html>'
   ].join('\n');
@@ -591,7 +594,8 @@ function startStaticServer({ root, port }) {
     const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
     // Serve harness at "/"
     if (urlPath === '/' || urlPath === '/index.html') {
-      const html = previewHarnessHTML();
+      const theme = loadConfig().theme; // 'light' | 'dark'
+      const html = previewHarnessHTML(theme);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(html);
       return;
@@ -619,7 +623,7 @@ program
   .command('preview')
   .description('Serve a local preview (no Express): serves dist/ + HTML harness')
   .option('-p, --port <port>', 'port to listen on', (v)=>Number(v), 5173)
-  .option('--no-open', 'do not open the browser automatically', false)
+  .option('--no-open', 'do not open the browser automatically')
   .action(async (opts) => {
     const distDir = path.resolve(process.cwd(), 'dist');
     if (!fs.existsSync(distDir)) {
@@ -640,7 +644,7 @@ program
     const url = `http://localhost:${port}/`;
     console.log(pc.green('preview  ') + pc.dim(url));
     console.log(pc.gray('serving: ') + pc.cyan(path.relative(process.cwd(), distDir) || '.'));
-    if (opts.open) {
+     if (opts.open !== false) {
       const open = await lazyOpen();
       try { await open(url); } catch {}
     }
