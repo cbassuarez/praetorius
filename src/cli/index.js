@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
+import { parse as parseCSV } from 'csv-parse/sync';
+import YAML from 'yaml';
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
 const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */
@@ -274,6 +276,57 @@ function nextId(db) {
   const ids = (db.works||[]).map(w=>w.id||0);
   return (ids.length ? Math.max(...ids) : 0) + 1;
 }
+/* ------------------ helpers: lookup/move/flatten ------------------ */
+function findById(db, id) {
+  const idx = (db.works||[]).findIndex(w => Number(w.id) === Number(id));
+  return { idx, work: idx >= 0 ? db.works[idx] : null };
+}
+function moveInArray(arr, fromIdx, toIdx) {
+  if (fromIdx === toIdx) return arr;
+  const a = arr.slice();
+  const [item] = a.splice(fromIdx, 1);
+  a.splice(toIdx, 0, item);
+  return a;
+}
+function ensureRequired(row) {
+  if (!row) return false;
+  return row.title && String(row.title).trim()
+      && row.slug  && String(row.slug).trim()
+      && Number.isFinite(Number(row.id)) || true; // id can be absent; we’ll assign
+}
+function parseMaybeJSON(s) {
+  if (!s || typeof s !== 'string') return null;
+  try { return JSON.parse(s); } catch { return null; }
+}
+function normalizeImportedWork(row) {
+  // Accept flexible shapes from CSV/YAML/JSON rows
+  const id = Number.isFinite(Number(row.id)) ? Number(row.id) : null;
+  const slug = (row.slug && String(row.slug).trim()) || slugify(row.title);
+  const one = (row.one && String(row.one).trim()) || '';
+  const base = {
+    id: id ?? null,
+    slug,
+    title: String(row.title || '').trim(),
+    one,
+    audio: row.audio ? String(row.audio).trim() : null,
+    pdf: row.pdf ? String(row.pdf).trim() : null,
+    cues: Array.isArray(row.cues) ? row.cues
+         : parseMaybeJSON(row.cues_json) || []
+  };
+  // score block via JSON or flat columns
+  const scoreJSON = parseMaybeJSON(row.score_json);
+  if (scoreJSON) base.score = scoreJSON;
+  else if (row.pdfStartPage || row.mediaOffsetSec || row.pdfDelta || row.pageMap) {
+    base.score = {
+      pdfStartPage: Number(row.pdfStartPage) || 1,
+      mediaOffsetSec: Number(row.mediaOffsetSec) || 0,
+      ...(row.pdfDelta !== undefined ? { pdfDelta: Number(row.pdfDelta) } : {}),
+      pageMap: Array.isArray(row.pageMap) ? row.pageMap : parseMaybeJSON(row.pageMap) || []
+    };
+  }
+  return base;
+}
+
 /* ------------------ Config I/O ------------------ */
 function loadConfig() {
   const raw = readJsonSafe(CONFIG_PATH, {});
@@ -501,6 +554,324 @@ program
         console.log('   score: ' + pc.gray(`p1→PDF ${w.score.pdfStartPage ?? 1}, offset ${w.score.mediaOffsetSec ?? 0}s, map ${w.score.pageMap.length} rows`));
       }
     });
+  });
+
+/* ------------------ edit ------------------ */
+program
+  .command('edit <id>')
+  .description('Edit a work (wizard by default; flags to set fields directly)')
+  .option('--title <str>', 'Set title')
+  .option('--slug <str>',  'Set slug')
+  .option('--one <str>',   'Set one-liner')
+  .option('--audio <url>', 'Set audio URL (or empty to clear)')
+  .option('--pdf <url>',   'Set score PDF URL (or empty to clear)')
+  .option('--no-cues',     'Do not edit cues interactively')
+  .option('--no-score',    'Do not edit score/page-follow interactively')
+  .action(async (id, opts) => {
+    const db = loadDb();
+    const { idx, work } = findById(db, id);
+    if (idx < 0) { console.log(pc.red(`No work with id ${id}`)); process.exit(1); }
+
+    // Apply direct flags first (non-interactive)
+    if (opts.title) work.title = opts.title;
+    if (opts.slug)  work.slug  = opts.slug;
+    if (opts.one)   work.one   = opts.one;
+    if ('audio' in opts) work.audio = (opts.audio === '' ? null : opts.audio);
+    if ('pdf'   in opts) work.pdf   = (opts.pdf   === '' ? null : opts.pdf);
+
+    // If no flags changed anything, run wizard
+    const changedViaFlags =
+      !!(opts.title || opts.slug || opts.one || 'audio' in opts || 'pdf' in opts);
+    if (!changedViaFlags) {
+      const base = await prompt([
+        { type: 'input', name: 'title', message: 'Title', initial: work.title },
+        { type: 'input', name: 'slug',  message: 'Slug',  initial: work.slug },
+        { type: 'input', name: 'one',   message: 'One-liner', initial: work.one },
+        { type: 'input', name: 'audio', message: 'Audio URL (blank to clear)', initial: work.audio || '' },
+        { type: 'input', name: 'pdf',   message: 'Score PDF URL (blank to clear)', initial: work.pdf || '' }
+      ]);
+      work.title = base.title.trim();
+      work.slug  = base.slug.trim();
+      work.one   = base.one.trim();
+      work.audio = base.audio.trim() || null;
+      work.pdf   = base.pdf.trim()   || null;
+    }
+
+    // Cues edit (unless --no-cues)
+    if (opts.cues !== false) {
+      const ans = await prompt({ type: 'confirm', name: 'ok', message: 'Edit cues?', initial: false });
+      if (ans.ok) {
+        const newCues = [];
+        let more = true;
+        while (more) {
+          const c = await prompt([
+            { type: 'input', name: 'label', message: 'Cue label', initial: '@0:00' },
+            { type: 'input', name: 'time',  message: 'mm:ss or seconds', initial: '0:00' }
+          ]);
+          newCues.push({ label: c.label || `@${c.time}`, t: parseTimeToSec(c.time) });
+          const cont = await prompt({ type: 'confirm', name: 'ok', message: 'Add another cue?', initial: false });
+          more = cont.ok;
+        }
+        work.cues = newCues;
+      }
+    }
+
+    // Score/page-follow edit (unless --no-score)
+    if (opts.score !== false) {
+      const ans = await prompt({ type: 'confirm', name: 'ok', message: 'Edit page-follow (score)?', initial: false });
+      if (ans.ok) {
+        const s0 = work.score || { pdfStartPage: 1, mediaOffsetSec: 0, pageMap: [] };
+        const sBase = await prompt([
+          { type: 'input', name: 'pdfStartPage',   message: 'Printed p.1 equals PDF page', initial: String(s0.pdfStartPage ?? 1), validate: v => /^\d+$/.test(String(v).trim()) && parseInt(v,10)>=1 ? true : 'Enter an integer ≥ 1' },
+          { type: 'input', name: 'mediaOffsetSec', message: 'Media offset seconds (can be negative)', initial: String(s0.mediaOffsetSec ?? 0), validate: v => /^-?\d+$/.test(String(v).trim()) ? true : 'Enter an integer' }
+        ]);
+        const pm = [];
+        let more = true;
+        while (more) {
+          const row = await prompt([
+            { type: 'input', name: 'at',   message: 'Time (mm:ss or seconds)', initial: pm.length ? '' : '0:00', validate: v => String(v).trim().length ? true : 'Required' },
+            { type: 'input', name: 'page', message: 'Printed page number',     initial: pm.length ? '' : '1',    validate: v => /^\d+$/.test(String(v).trim()) && parseInt(v,10)>=1 ? true : 'Enter integer ≥ 1' }
+          ]);
+          pm.push({ at: row.at.trim(), page: parseInt(row.page, 10) });
+          const cont = await prompt({ type: 'confirm', name: 'ok', message: 'Add another page mapping?', initial: false });
+          more = cont.ok;
+        }
+        work.score = {
+          pdfStartPage: parseInt(sBase.pdfStartPage,10),
+          mediaOffsetSec: parseInt(sBase.mediaOffsetSec,10),
+          pageMap: pm
+        };
+      }
+    }
+
+    // Save
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(WORKS_SCHEMA);
+    const candidate = { ...db };
+    candidate.works[idx] = work;
+    if (!validate(candidate)) {
+      console.log(pc.red('Validation failed:'));
+      for (const e of validate.errors || []) console.log('  - ' + (e.instancePath||'/') + ' ' + e.message);
+      process.exit(1);
+    }
+    saveDb(candidate);
+    console.log(pc.green('updated ') + pc.dim(`#${work.id} ${work.title}`));
+  });
+
+/* ------------------ rm ------------------ */
+program
+  .command('rm <id>')
+  .description('Remove a work by id (confirms; .bak kept automatically)')
+  .action(async (id) => {
+    const db = loadDb();
+    const { idx, work } = findById(db, id);
+    if (idx < 0) { console.log(pc.red(`No work with id ${id}`)); process.exit(1); }
+    const ans = await prompt({ type: 'confirm', name: 'ok', message: `Delete #${work.id} ${work.title}?`, initial: false });
+    if (!ans.ok) { console.log(pc.gray('aborted')); return; }
+    const next = { ...db, works: db.works.filter((_, i) => i !== idx) };
+    saveDb(next);
+    console.log(pc.green('removed ') + pc.dim(`#${work.id} ${work.title}`));
+  });
+
+/* ------------------ order ------------------ */
+program
+  .command('order')
+  .description('Reorder works (interactive by default). Use --move <id> --to <index> for direct move.')
+  .option('--move <id>', 'Move a single id')
+  .option('--to <index>', 'Target 1-based index for --move')
+  .action(async (opts) => {
+    const db = loadDb();
+    if (!db.works.length) { console.log(pc.yellow('No works to reorder.')); return; }
+    if (opts.move && !opts.to) { console.log(pc.red('Provide --to <index> with --move.')); process.exit(1); }
+
+    if (opts.move && opts.to) {
+      const id = Number(opts.move);
+      const target = Number(opts.to) - 1; // 1-based → 0-based
+      const { idx } = findById(db, id);
+      if (idx < 0) { console.log(pc.red(`No work with id ${id}`)); process.exit(1); }
+      if (target < 0 || target >= db.works.length) { console.log(pc.red('Index out of range.')); process.exit(1); }
+      const next = { ...db, works: moveInArray(db.works, idx, target) };
+      saveDb(next);
+      console.log(pc.green('moved ') + pc.dim(`#${id} → position ${target+1}`));
+      return;
+    }
+
+    console.log(pc.bold('Current order:'));
+    db.works.forEach((w,i)=>console.log(`${String(i+1).padStart(2,' ')}. #${w.id} ${w.title}`));
+    const ans = await prompt({
+      type: 'input',
+      name: 'order',
+      message: 'Enter new order as space/comma-separated IDs (e.g., "3 1 2"):',
+    });
+    const tokens = String(ans.order||'').split(/[,\s]+/).filter(Boolean).map(n=>Number(n));
+    const idsNow = db.works.map(w=>w.id);
+    const sameSet = tokens.length === idsNow.length && tokens.every(id => idsNow.includes(id));
+    if (!sameSet) { console.log(pc.red('New order must contain exactly the same IDs.')); process.exit(1); }
+    const byId = new Map(db.works.map(w => [w.id, w]));
+    const reordered = tokens.map(id => byId.get(id));
+    saveDb({ ...db, works: reordered });
+    console.log(pc.green('reordered ') + pc.dim(tokens.join(' ')));
+  });
+
+/* ------------------ import ------------------ */
+program
+  .command('import <file>')
+  .description('Import works from JSON|CSV|YAML and merge into DB (prompts to resolve conflicts).')
+  .option('--assume-new-id', 'On id conflict, auto-assign next id (skip prompt)', false)
+  .option('--assume-new-slug', 'On slug conflict, auto-append suffix (skip prompt)', false)
+  .action(async (file, opts) => {
+    const db = loadDb();
+    const ext = path.extname(file).toLowerCase();
+    const buf = fs.readFileSync(file, 'utf8');
+    let rows = [];
+
+    if (ext === '.json') {
+      const obj = JSON.parse(buf);
+      rows = Array.isArray(obj) ? obj : (Array.isArray(obj.works) ? obj.works : []);
+    } else if (ext === '.yaml' || ext === '.yml') {
+      const obj = YAML.parse(buf);
+      rows = Array.isArray(obj) ? obj : (Array.isArray(obj.works) ? obj.works : []);
+    } else if (ext === '.csv') {
+      const recs = parseCSV(buf, { columns: true, skip_empty_lines: true });
+      rows = recs;
+    } else {
+      console.log(pc.red('Unsupported format. Use .json, .csv, .yaml/.yml'));
+      process.exit(1);
+    }
+
+    if (!rows.length) { console.log(pc.yellow('No rows to import.')); return; }
+
+    const incoming = [];
+    for (const r of rows) {
+      if (!ensureRequired(r) && !(r.title && r.slug && r.one)) {
+        console.log(pc.yellow('skip row (missing required fields): ') + pc.dim(JSON.stringify(r)));
+        continue;
+      }
+     incoming.push(normalizeImportedWork(r));
+    }
+
+    // Merge with conflict handling
+    const byId    = new Map((db.works||[]).map(w => [Number(w.id), w]));
+    const bySlug  = new Map((db.works||[]).map(w => [String(w.slug), w]));
+    const merged  = db.works ? db.works.slice() : [];
+
+    for (const w of incoming) {
+      // id resolution
+      let id = w.id;
+      if (id === null) id = nextId({ works: merged });
+      if (byId.has(id)) {
+        if (opts.assume_new_id) {
+          id = nextId({ works: merged });
+        } else {
+          const choice = await prompt({
+            type: 'select', name: 'act', message: `ID ${id} exists. How to import "${w.title}"?`,
+            choices: [
+              { name: 'overwrite', message: 'Overwrite existing by id' },
+              { name: 'newid',     message: 'Assign new id' },
+              { name: 'skip',      message: 'Skip this row' }
+            ]
+          });
+          if (choice.act === 'skip') continue;
+          if (choice.act === 'newid') id = nextId({ works: merged });
+          if (choice.act === 'overwrite') {
+            const overwriteIdx = merged.findIndex(x => Number(x.id) === Number(id));
+            const newWork = { ...w, id };
+            merged[overwriteIdx] = newWork;
+            // update slug map
+            bySlug.set(newWork.slug, newWork);
+            byId.set(id, newWork);
+            continue;
+          }
+        }
+      }
+
+      // slug resolution
+      let slug = String(w.slug);
+      if (bySlug.has(slug)) {
+        if (opts.assume_new_slug) {
+          let n = 2;
+          while (bySlug.has(`${slug}-${n}`)) n++;
+          slug = `${slug}-${n}`;
+        } else {
+          const choice = await prompt({
+            type: 'select', name: 'act', message: `Slug "${slug}" exists. Import "${w.title}" as…`,
+            choices: [
+              { name: 'newslug',  message: 'Append numeric suffix' },
+              { name: 'overwrite', message: 'Overwrite existing by slug' },
+              { name: 'skip',      message: 'Skip this row' }
+            ]
+          });
+          if (choice.act === 'skip') continue;
+          if (choice.act === 'newslug') {
+            let n = 2;
+            while (bySlug.has(`${slug}-${n}`)) n++;
+            slug = `${slug}-${n}`;
+          }
+          if (choice.act === 'overwrite') {
+            const overwriteIdx = merged.findIndex(x => String(x.slug) === String(slug));
+            const newWork = { ...w, id, slug };
+            merged[overwriteIdx] = newWork;
+            bySlug.set(slug, newWork);
+            byId.set(id, newWork);
+            continue;
+          }
+        }
+      }
+
+      const newWork = { ...w, id, slug };
+      merged.push(newWork);
+      byId.set(id, newWork);
+      bySlug.set(slug, newWork);
+    }
+
+    // Validate + save
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(WORKS_SCHEMA);
+    const candidate = { version: db.version || 1, works: merged };
+    if (!validate(candidate)) {
+      console.log(pc.red('Post-import validation failed:'));
+      for (const e of validate.errors || []) console.log('  - ' + (e.instancePath||'/') + ' ' + e.message);
+      process.exit(1);
+    }
+    saveDb(candidate);
+    console.log(pc.green('imported ') + pc.dim(`${incoming.length} row(s)`));
+  });
+
+/* ------------------ export ------------------ */
+program
+  .command('export')
+  .description('Export DB to stdout as JSON or CSV')
+  .option('--format <fmt>', 'json|csv', 'json')
+  .action((opts) => {
+    const db = loadDb();
+    const fmt = String(opts.format||'json').toLowerCase();
+    if (fmt === 'json') {
+      process.stdout.write(JSON.stringify(db, null, 2) + '\n');
+      return;
+    }
+    if (fmt === 'csv') {
+      // Stable columns; JSON-encode nested
+      const cols = ['id','slug','title','one','audio','pdf','cues_json','score_json'];
+      const lines = [];
+      lines.push(cols.join(','));
+      for (const w of db.works||[]) {
+        const row = [
+          w.id ?? '',
+          (w.slug ?? '').replaceAll('"','""'),
+          (w.title ?? '').replaceAll('"','""'),
+          (w.one ?? '').replaceAll('"','""'),
+          (w.audio ?? '').replaceAll('"','""'),
+          (w.pdf ?? '').replaceAll('"','""'),
+          JSON.stringify(w.cues ?? []).replaceAll('"','""'),
+          JSON.stringify(w.score ?? null).replaceAll('"','""'),
+        ].map(v => `"${String(v)}"`);
+        lines.push(row.join(','));
+      }
+      process.stdout.write(lines.join('\n') + '\n');
+      return;
+    }
+    console.log(pc.red('Unknown format; use --format=json|csv'));
+    process.exit(1);
   });
 
 /* ------------------ doctor ------------------ */
