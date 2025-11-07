@@ -9,8 +9,7 @@ import { fileURLToPath } from 'node:url';
 import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
-import { parse as parseCSV } from 'csv-parse/sync';
-import YAML from 'yaml';
+
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
 const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */
@@ -325,6 +324,28 @@ function normalizeImportedWork(row) {
     };
   }
   return base;
+}
+
+/* ------------------ lazy external loaders ------------------ */
+async function lazyCsvParse() {
+  try {
+    const mod = await import('csv-parse/sync');
+    return mod.parse;
+  } catch (e) {
+    console.log(pc.red('Missing dependency "csv-parse".'));
+    console.log(pc.gray('Install it with: ') + pc.cyan('npm i csv-parse'));
+    process.exit(1);
+  }
+}
+async function lazyYaml() {
+  try {
+    const mod = await import('yaml');
+    return mod.default || mod; // ESM default export
+  } catch (e) {
+    console.log(pc.red('Missing dependency "yaml".'));
+    console.log(pc.gray('Install it with: ') + pc.cyan('npm i yaml'));
+    process.exit(1);
+  }
 }
 
 /* ------------------ Config I/O ------------------ */
@@ -726,12 +747,14 @@ program
     let rows = [];
 
     if (ext === '.json') {
-      const obj = JSON.parse(buf);
+      const YAML = await lazyYaml();
+      const obj = YAML.parse(buf);
       rows = Array.isArray(obj) ? obj : (Array.isArray(obj.works) ? obj.works : []);
     } else if (ext === '.yaml' || ext === '.yml') {
       const obj = YAML.parse(buf);
       rows = Array.isArray(obj) ? obj : (Array.isArray(obj.works) ? obj.works : []);
     } else if (ext === '.csv') {
+const parseCSV = await lazyCsvParse();
       const recs = parseCSV(buf, { columns: true, skip_empty_lines: true });
       rows = recs;
     } else {
