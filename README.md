@@ -9,7 +9,7 @@
 
 Praetorius is a small, disciplined toolchain for composers, artists, educators, festivals, and universities to publish “score‑centric” works pages: synchronized audio, score PDFs with **page‑follow** (auto‑snapping to the current printed page), deep links, and a clean console‑style UI that drops into Squarespace (or any site builder) via a single code block.
 
-> ![Example image](https://raw.githubusercontent.com/cbassuarez/praetorius/c05f0a7d1eeba593756527bf047c1ce7b7218c80/praetorius_example-image.png)
+> ![Example image2](https://raw.githubusercontent.com/cbassuarez/praetorius/4f7a17bbca81772543201cb7f41ef7bc2806b69f/praetorius_example_video.gif)
 
 > the score PDF *snaps* to the correct printed page while audio plays, so evaluators aren’t lost—and you aren’t judged on secondary characteristics.
 
