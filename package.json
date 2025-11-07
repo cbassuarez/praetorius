@@ -1,6 +1,6 @@
 {
   "name": "praetorius",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -35,7 +35,9 @@
     "ajv": "^8.17.1",
     "commander": "^12.1.0",
     "enquirer": "^2.4.1",
-    "picocolors": "^1.0.0"
+    "picocolors": "^1.0.0",
+    "csv-parse": "^5.5.3",
+    "yaml": "^2.5.0"
   },
   "keywords": [
     "cli",
