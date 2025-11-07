@@ -6,6 +6,7 @@ import pc from 'picocolors';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import http from 'node:http';
 import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
@@ -478,7 +479,26 @@ async function lazyEsbuild() {
     process.exit(1);
   }
 }
-
+async function lazyOpen() {
+  try {
+    const mod = await import('open');
+    return mod.default || mod;
+  } catch (e) {
+    console.log(pc.red('Missing dependency "open".'));
+    console.log(pc.gray('Install it with: ') + pc.cyan('npm i open'));
+    process.exit(1);
+  }
+}
+async function lazyChokidar() {
+  try {
+    const mod = await import('chokidar');
+    return mod.default || mod;
+  } catch (e) {
+    console.log(pc.red('Missing dependency "chokidar".'));
+    console.log(pc.gray('Install it with: ') + pc.cyan('npm i chokidar'));
+    process.exit(1);
+  }
+}
 /* ------------------ Config I/O ------------------ */
 function loadConfig() {
   const raw = readJsonSafe(CONFIG_PATH, {});
@@ -523,6 +543,111 @@ program
   .alias('prae')
   .description('Praetorius — Works Console scaffolder & wizard')
   .version(pkgJson.version || '0.0.0');
+
+/* ------------------ preview (tiny static server) ------------------ */
+function contentTypeFor(p) {
+  const ext = path.extname(p).toLowerCase();
+  return ({
+    '.html':'text/html; charset=utf-8',
+    '.js':'application/javascript; charset=utf-8',
+    '.css':'text/css; charset=utf-8',
+    '.map':'application/json; charset=utf-8',
+    '.json':'application/json; charset=utf-8',
+    '.svg':'image/svg+xml',
+    '.png':'image/png',
+    '.jpg':'image/jpeg',
+    '.jpeg':'image/jpeg',
+    '.webp':'image/webp',
+    '.mp3':'audio/mpeg',
+    '.m4a':'audio/mp4',
+    '.wav':'audio/wav',
+    '.pdf':'application/pdf',
+    '.woff2':'font/woff2',
+    '.woff':'font/woff',
+    '.ttf':'font/ttf'
+  })[ext] || 'application/octet-stream';
+}
+function previewHarnessHTML() {
+  // Loads the canonical filenames per Sprint 3 acceptance
+  return [
+    '<!doctype html>',
+    '<html>',
+    '<head>',
+    '  <meta charset="utf-8"/>',
+    '  <meta name="viewport" content="width=device-width,initial-scale=1"/>',
+    '  <title>Praetorius Preview</title>',
+    '  <link rel="stylesheet" href="/styles.css"/>',
+    '  <style>body{margin:0;padding:1rem;background:var(--bg, #111);color:var(--fg,#fff)}</style>',
+    '</head>',
+    '<body class="prae-theme-dark">',
+    '  <section id="works-console"></section>',
+    '  <script src="/script.js" defer></script>',
+    '</body>',
+    '</html>'
+  ].join('\n');
+}
+function startStaticServer({ root, port }) {
+  const server = http.createServer((req, res) => {
+    const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+    // Serve harness at "/"
+    if (urlPath === '/' || urlPath === '/index.html') {
+      const html = previewHarnessHTML();
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(html);
+      return;
+    }
+    // Static file from dist
+    const fsPath = path.join(root, urlPath.replace(/^\/+/, ''));
+    if (!fsPath.startsWith(root)) {
+      res.writeHead(403); res.end('Forbidden'); return;
+    }
+    fs.stat(fsPath, (err, stat) => {
+      if (err || !stat.isFile()) {
+        res.writeHead(404); res.end('Not found'); return;
+      }
+      res.writeHead(200, { 'Content-Type': contentTypeFor(fsPath), 'Cache-Control': 'no-store' });
+      fs.createReadStream(fsPath).pipe(res);
+    });
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, () => resolve(server));
+  });
+}
+
+program
+  .command('preview')
+  .description('Serve a local preview (no Express): serves dist/ + HTML harness')
+  .option('-p, --port <port>', 'port to listen on', (v)=>Number(v), 5173)
+  .option('--no-open', 'do not open the browser automatically', false)
+  .action(async (opts) => {
+    const distDir = path.resolve(process.cwd(), 'dist');
+    if (!fs.existsSync(distDir)) {
+      console.log(pc.red('Missing dist/. Run ') + pc.cyan('prae generate') + pc.red(' first.'));
+      process.exit(1);
+    }
+    const port = Number(opts.port) || 5173;
+    let server;
+    try {
+      server = await startStaticServer({ root: distDir + path.sep, port });
+    } catch (e) {
+      if (e && e.code === 'EADDRINUSE') {
+        console.log(pc.red(`Port ${port} in use. Try: `) + pc.cyan(`prae preview --port ${port+1}`));
+        process.exit(1);
+      }
+      throw e;
+    }
+    const url = `http://localhost:${port}/`;
+    console.log(pc.green('preview  ') + pc.dim(url));
+    console.log(pc.gray('serving: ') + pc.cyan(path.relative(process.cwd(), distDir) || '.'));
+    if (opts.open) {
+      const open = await lazyOpen();
+      try { await open(url); } catch {}
+    }
+    // Keep process alive
+    await new Promise(()=>{});
+    server.close();
+  });
 
 /* ------------------ init ------------------ */
 program
@@ -1214,78 +1339,94 @@ program
   .option('--js <file>', 'output JS filename (default: script.js)')
   .option('--css <file>', 'output CSS filename (default: styles.css)')
   .option('--no-css', 'skip writing CSS when not using --embed')
+  .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
+
   .action(async (opts) => {
     const outDir = path.resolve(process.cwd(), opts.out);
-    const db = loadDb();
-    const cfg = loadConfig();
     fs.mkdirSync(outDir, { recursive: true });
 
-    // Basic validation
-    const ajv = new Ajv({ allErrors: true });
-    const validate = ajv.compile(WORKS_SCHEMA);
-    if (!validate(db)) {
-      console.log(pc.red('DB validation failed:'));
-      for (const e of validate.errors || []) console.log('  - ' + e.instancePath + ' ' + e.message);
-      process.exit(1);
-    }
+    const buildOnce = async () => {
+      const db = loadDb();
+      const cfg = loadConfig();
+      // Basic validation
+      const ajv = new Ajv({ allErrors: true });
+      const validate = ajv.compile(WORKS_SCHEMA);
+      if (!validate(db)) {
+        console.log(pc.red('DB validation failed:'));
+        for (const e of validate.errors || []) console.log('  - ' + e.instancePath + ' ' + e.message);
+        return false;
+      }
+      const wantMin = !!opts.minify || !!cfg.output.minify;
+      let js = renderScriptFromDb(db, { minify: wantMin, theme: cfg.theme });
+      let css = buildCssBundle();
+      if (wantMin) {
+        const esb = await lazyEsbuild();
+        const minJS  = await esb.transform(js,  { loader:'js',  minify:true, legalComments:'none' });
+        const minCSS = await esb.transform(css, { loader:'css', minify:true, legalComments:'none' });
+        js  = minJS.code; css = minCSS.code;
+      }
+      if (opts.embed) {
+        const themeClass = (loadConfig().theme === 'light') ? 'prae-theme-light' : 'prae-theme-dark';
+        const prelude = `(function(){var h=document.querySelector('#works-console')||document.body;h.classList.remove('prae-theme-light','prae-theme-dark');h.classList.add('${themeClass}');})();`;
+        const html = [
+          '<!-- Praetorius embed: paste into a Squarespace Code block -->',
+          '<style>', css, '</style>',
+          '<script>', prelude, '</script>',
+          '<script>', js, '</script>',
+          '<script>', EMBED_RENDER, '</script>',
+          ''
+        ].join('\n');
+        const htmlPath = path.join(outDir, 'embed.html');
+        atomicWriteFile(htmlPath, html);
+        console.log(pc.green('write ') + pc.dim(cwdRel(htmlPath)));
+        return true;
+      }
+      const jsFile  = opts.js || 'script.js';
+     const cssWant = opts.css !== false;
+      const cssFile = (typeof opts.css === 'string') ? opts.css : 'styles.css';
+      const jsPath = path.join(outDir, jsFile);
+      atomicWriteFile(jsPath, js);
+      console.log(pc.green('write ') + pc.dim(cwdRel(jsPath)));
+      if (cssWant) {
+        const cssPath = path.join(outDir, cssFile);
+        atomicWriteFile(cssPath, css);
+        console.log(pc.green('write ') + pc.dim(cwdRel(cssPath)));
+      }
+      if (!opts.watch) {
+        console.log('\n' + pc.bold('Next steps:'));
+        console.log('  • Paste ' + pc.cyan(cwdRel(jsPath)) + ' into your Squarespace code block (or host it).');
+        if (cssWant) console.log('  • Add   ' + pc.cyan(cssFile) + ' to page/site CSS.');
+        console.log(pc.gray('  • Ensure your main.js uses: const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { /* fallback */ };'));
+      }
+      return true;
+    };
 
-    // Render payloads (JSON payloads may be compacted if cfg.output.minify or --minify)
-    const wantMin = !!opts.minify || !!cfg.output.minify;
-    let js = renderScriptFromDb(db, { minify: wantMin, theme: cfg.theme });
-    let css = buildCssBundle();
-
-    // Minify with esbuild if requested
-    if (wantMin) {
-      const esb = await lazyEsbuild();
-      const minJS  = await esb.transform(js,  { loader:'js',  minify:true, legalComments:'none' });
-      const minCSS = await esb.transform(css, { loader:'css', minify:true, legalComments:'none' });
-      js  = minJS.code;
-      css = minCSS.code;
-    }
-
-    // EMBED MODE: one paste-ready HTML snippet
-    if (opts.embed) {
-      // Apply theme to #works-console (if present) or <body>, then render a minimal list
-      const themeClass = (cfg.theme === 'light') ? 'prae-theme-light' : 'prae-theme-dark';
-      const prelude = `(function(){var h=document.querySelector('#works-console')||document.body;h.classList.remove('prae-theme-light','prae-theme-dark');h.classList.add('${themeClass}');})();`;
-      const html = [
-        '<!-- Praetorius embed: paste into a Squarespace Code block -->',
-        '<style>', css, '</style>',
-        '<script>', prelude, '</script>',
-        // payload (defines window.PRAE.*)
-        '<script>', js, '</script>',
-        // self-contained renderer so the snippet isn’t blank
-        '<script>', EMBED_RENDER, '</script>',
-        ''
-      ].join('\n');
-      const htmlPath = path.join(outDir, 'embed.html');
-      atomicWriteFile(htmlPath, html);
-      console.log(pc.green('write ') + pc.dim(cwdRel(htmlPath)));
-      console.log('\n' + pc.bold('Paste guide:'));
-      console.log('  • Open a Code block in Squarespace and paste the contents of: ' + pc.cyan(cwdRel(htmlPath)));
-      console.log('  • This snippet contains both CSS and JS and applies theme: ' + pc.cyan(cfg.theme));
+    // First build
+    const ok = await buildOnce();
+    if (!opts.watch) {
+      if (!ok) process.exit(1);
       return;
     }
 
-    // File outputs
-    const jsFile  = opts.js || 'script.js';
-    const cssWant = opts.css !== false; // --no-css sets to false
-    const cssFile = (typeof opts.css === 'string') ? opts.css : 'styles.css';
-
-    const jsPath = path.join(outDir, jsFile);
-    atomicWriteFile(jsPath, js);
-    console.log(pc.green('write ') + pc.dim(cwdRel(jsPath)));
-
-    if (cssWant) {
-      const cssPath = path.join(outDir, cssFile);
-      // Always write, since theme tokens can change
-      atomicWriteFile(cssPath, css);
-      console.log(pc.green('write ') + pc.dim(cwdRel(cssPath)));
-    }
-   console.log('\n' + pc.bold('Next steps:'));
-    console.log('  • Paste ' + pc.cyan(cwdRel(jsPath)) + ' into your Squarespace code block (or host it).');
-    if (cssWant) console.log('  • Add   ' + pc.cyan(cssFile) + ' to page/site CSS.');
-    console.log(pc.gray('  • Ensure your main.js uses: const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { /* fallback */ };'));
+    // --watch mode
+    const chokidar = await lazyChokidar();
+    const debounce = (fn, ms=200) => {
+      let t; return (...args) => { clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
+    };
+    const onChange = debounce(async (file) => {
+      const t0 = Date.now();
+      console.log(pc.gray(`change detected: ${path.relative(process.cwd(), file)}`));
+      const ok2 = await buildOnce();
+      if (ok2) console.log(pc.green('rebuilt ') + pc.dim(`${(Date.now()-t0)}ms @ ${new Date().toLocaleTimeString()}`));
+    }, 150);
+    const watcher = chokidar.watch([DB_PATH, CONFIG_PATH], {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 }
+    });
+    watcher.on('add', onChange).on('change', onChange).on('unlink', onChange);
+    console.log(pc.bold(pc.green('watching ')) + pc.dim('.prae/works.json, .prae/config.json'));
+    console.log(pc.gray('Tip: run ') + pc.cyan('prae preview') + pc.gray(' in another terminal, edit, then reload the page.'));
+    await new Promise(()=>{});
   });
 
 /* ------------------ run ------------------ */
