@@ -229,23 +229,23 @@ Praetorius keeps the visual surface neutral (black/white). The CLI will expose a
 
 ---
 
-## Roadmap (public sprints)
+## Roadmap 
 
-**Sprint 0 — Hardening**
+~~**Sprint 0 — Hardening**~~
 
-* TDZ/runtime fixes; atomic writes (.tmp → fsync → rename) + `.bak`; dual bin (`praetorius`/`prae`); `prae doctor` (schema + duplicates).
+~~* TDZ/runtime fixes; atomic writes (.tmp → fsync → rename) + `.bak`; dual bin (`praetorius`/`prae`); `prae doctor` (schema + duplicates).~~
 
-**Sprint 1 — Core authoring**
+~~**Sprint 1 — Core authoring**~~
 
-* `edit`, `rm`, `order`, `import` (json/csv), `export` (json/csv). IDs stable; display order managed.
+~~* `edit`, `rm`, `order`, `import` (json/csv), `export` (json/csv). IDs stable; display order managed.~~
 
-**Sprint 2 — Score/page‑follow**
+~~**Sprint 2 — Score/page‑follow**~~
 
-* First‑class `score` editor/validator; preview printed→PDF mapping; strict normalization.
+~~* First‑class `score` editor/validator; preview printed→PDF mapping; strict normalization.~~
 
-**Sprint 3 — Output modes**
+~~**Sprint 3 — Output modes**~~
 
-* `--embed` single‑snippet for Squarespace; `--minify`; `--js/--css` filename control; theme light|dark only.
+~~* `--embed` single‑snippet for Squarespace; `--minify`; `--js/--css` filename control; theme light|dark only.~~
 
 **Sprint 4 — Preview & Watch**
 
