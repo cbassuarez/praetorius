@@ -233,6 +233,76 @@ function parseTimeToSec(input) {
   if (m) return parseInt(m[1],10)*60 + parseInt(m[2],10);
   return 0;
 }
+// strict human time → seconds parser for Score commands
+function parseTimeToSecStrict(input) {
+  const s = String(input ?? '').trim();
+  if (!s) return NaN;
+  if (/^\d+$/.test(s)) return Number(s);                 // "90"
+  const hms = s.match(/^(\d+):([0-5]?\d)(?::([0-5]?\d))?$/); // "m:ss" or "h:mm:ss"
+  if (!hms) return NaN;
+  const h = hms[3] !== undefined ? Number(hms[1]) : 0;
+  const m = hms[3] !== undefined ? Number(hms[2]) : Number(hms[1]);
+  const sec = hms[3] !== undefined ? Number(hms[3]) : Number(hms[2]);
+  return (h*3600) + (m*60) + sec;
+}
+function secToHuman(sec) {
+  const n = Math.max(0, Number(sec|0));
+  const h = Math.floor(n/3600);
+  const m = Math.floor((n%3600)/60);
+  const s = n%60;
+  const mm = (h>0 ? String(m).padStart(2,'0') : String(m));
+  const ss = String(s).padStart(2,'0');
+  return h>0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// ---------- score normalize + validation ----------
+function normalizeScore(score) {
+  if (!score) return null;
+  const pdfStartPage   = Number(score.pdfStartPage) >= 1 ? Number(score.pdfStartPage) : 1;
+  const mediaOffsetSec = Number.isFinite(Number(score.mediaOffsetSec)) ? Number(score.mediaOffsetSec) : 0;
+  const pdfDelta       = (score.pdfDelta !== undefined && Number.isFinite(Number(score.pdfDelta))) ? Number(score.pdfDelta) : undefined;
+  const pageMap = Array.isArray(score.pageMap) ? score.pageMap.map((row)=> {
+    const t = typeof row.at === 'number' ? row.at : parseTimeToSecStrict(row.at);
+    return { at: Number(t), page: Number(row.page) };
+  }).filter(r => Number.isFinite(r.at) && Number.isFinite(r.page)) : [];
+  // sort by time
+  pageMap.sort((a,b)=> a.at - b.at);
+  const out = { pdfStartPage, mediaOffsetSec, pageMap };
+  if (pdfDelta !== undefined) out.pdfDelta = pdfDelta;
+  return out;
+}
+function validateScore(score) {
+  const errors = [];
+  if (!score) { errors.push('score missing'); return errors; }
+  if (!(Number(score.pdfStartPage) >= 1)) errors.push('pdfStartPage must be ≥ 1');
+  if (!Array.isArray(score.pageMap) || score.pageMap.length === 0) {
+    errors.push('pageMap must be a non-empty array');
+  } else {
+    let lastT = -1;
+    let lastP =  0;
+    score.pageMap.forEach((row, i) => {
+      const where = `row ${i+1}`;
+      if (!Number.isInteger(row.at) || row.at < 0) errors.push(`${where}: time must be integer seconds ≥ 0`);
+      if (!Number.isInteger(row.page) || row.page < 1) errors.push(`${where}: page must be integer ≥ 1`);
+      if (row.at <= lastT) errors.push(`${where}: times must be strictly increasing`);
+      if (row.page < lastP) errors.push(`${where}: pages must be monotonic (non-decreasing)`);
+      lastT = row.at;
+      lastP = row.page;
+    });
+  }
+  return errors;
+}
+function actualPdfPageOf(printedPage, pdfStartPage, pdfDelta=0) {
+  return pdfStartPage + (printedPage - 1) + (pdfDelta||0);
+}
+function printScorePreview(sc) {
+  console.log(pc.bold('Preview (printed → actual PDF page):'));
+  console.log(pc.gray(' idx  time   printed  actual '));
+  sc.pageMap.forEach((r, i) => {
+    const act = actualPdfPageOf(r.page, sc.pdfStartPage, sc.pdfDelta);
+    console.log(`${String(i+1).padStart(3,' ')}  ${secToHuman(r.at).padStart(6,' ')}  ${String(r.page).padStart(7,' ')}  ${String(act).padStart(6,' ')}`);
+  });
+}
 
 /* ------------------ DB I/O ------------------ */
 const DB_DIR  = path.resolve(process.cwd(), '.prae');
@@ -741,8 +811,132 @@ program
     console.log(pc.green('reordered ') + pc.dim(tokens.join(' ')));
   });
 
+/* ------------------ score subcommands ------------------ */
+const scoreCmd = program.command('score')
+  .description('Score/page-follow tools');
+
+scoreCmd
+  .command('add <id>')
+  .description('Create/replace the score mapping (wizard) for a work')
+  .action(async (id) => {
+    const db = loadDb();
+    const { idx, work } = findById(db, id);
+    if (idx < 0) { console.log(pc.red(`No work with id ${id}`)); process.exit(1); }
+
+    console.log(pc.bold(`Score wizard for #${work.id} ${work.title}`));
+    const base = await prompt([
+      { type: 'input', name: 'pdfStartPage',   message: 'Printed p.1 equals PDF page (≥1)', initial: String(work.score?.pdfStartPage ?? 1),
+        validate: v => /^\d+$/.test(String(v).trim()) && Number(v)>=1 ? true : 'Enter integer ≥ 1' },
+      { type: 'input', name: 'mediaOffsetSec', message: 'Media offset seconds (can be negative)', initial: String(work.score?.mediaOffsetSec ?? 0),
+        validate: v => /^-?\d+$/.test(String(v).trim()) ? true : 'Enter integer (e.g., 0, -30, 12)' }
+    ]);
+
+    // optional advanced delta (kept if you use it elsewhere)
+    let pdfDelta;
+    const wantDelta = await prompt({ type: 'confirm', name: 'ok', message: 'Add optional pdfDelta (advanced)?', initial: !!work.score?.pdfDelta });
+    if (wantDelta.ok) {
+      const d = await prompt([{ type:'input', name:'pdfDelta', message:'pdfDelta (integer; default 0)', initial: String(work.score?.pdfDelta ?? 0),
+        validate: v => /^-?\d+$/.test(String(v).trim()) ? true : 'Enter integer' }]);
+      pdfDelta = Number(d.pdfDelta);
+    }
+
+    const rows = [];
+    let more = true;
+    while (more) {
+      const r = await prompt([
+        { type: 'input', name: 'at',   message: 'Time (m:ss or h:mm:ss or seconds)', initial: rows.length ? '' : '0:00',
+          validate: v => Number.isFinite(parseTimeToSecStrict(v)) ? true : 'Invalid time format' },
+        { type: 'input', name: 'page', message: 'Printed page (≥1)', initial: rows.length ? '' : '1',
+          validate: v => /^\d+$/.test(String(v).trim()) && Number(v)>=1 ? true : 'Enter integer ≥ 1' }
+      ]);
+      rows.push({ at: parseTimeToSecStrict(r.at), page: Number(r.page) });
+      const cont = await prompt({ type: 'confirm', name: 'ok', message: 'Add another row?', initial: false });
+      more = cont.ok;
+    }
+
+    const normalized = normalizeScore({
+      pdfStartPage: Number(base.pdfStartPage),
+      mediaOffsetSec: Number(base.mediaOffsetSec),
+      ...(pdfDelta !== undefined ? { pdfDelta } : {}),
+      pageMap: rows
+    });
+    const errs = validateScore(normalized);
+    if (errs.length) {
+      console.log(pc.red('Validation errors:'));
+      errs.forEach(e => console.log('  - ' + e));
+      process.exit(1);
+    }
+
+    printScorePreview(normalized);
+    const ok = await prompt({ type: 'confirm', name: 'ok', message: 'Save this score mapping?', initial: true });
+    if (!ok.ok) { console.log(pc.gray('aborted')); return; }
+
+    const next = { ...db };
+    next.works[idx] = { ...work, score: normalized };
+    saveDb(next);
+    console.log(pc.green('score saved ') + pc.dim(`#${work.id} ${work.title}`));
+  });
+
+scoreCmd
+  .command('list <id>')
+  .description('Show the score mapping table for a work')
+  .action((id) => {
+    const db = loadDb();
+    const { work } = findById(db, id);
+    if (!work) { console.log(pc.red(`No work with id ${id}`)); process.exit(1); }
+    if (!work.score) { console.log(pc.yellow('No score/page-follow mapping set.')); return; }
+    const sc = normalizeScore(work.score);
+    console.log(pc.bold(`#${work.id} ${work.title}`));
+    console.log(pc.gray(`pdfStartPage=${sc.pdfStartPage}, mediaOffsetSec=${sc.mediaOffsetSec}${sc.pdfDelta!==undefined?`, pdfDelta=${sc.pdfDelta}`:''}`));
+    printScorePreview(sc);
+  });
+
+scoreCmd
+  .command('rm <id> <rowIndex>')
+  .description('Remove a row (1-based) from the score mapping')
+  .action((id, rowIndex) => {
+    const db = loadDb();
+    const { idx, work } = findById(db, id);
+    if (idx < 0) { console.log(pc.red(`No work with id ${id}`)); process.exit(1); }
+    if (!work.score || !Array.isArray(work.score.pageMap) || !work.score.pageMap.length) {
+      console.log(pc.yellow('No rows to remove.')); return;
+    }
+    const i = Number(rowIndex) - 1;
+    if (!(i >= 0 && i < work.score.pageMap.length)) { console.log(pc.red('Row index out of range.')); process.exit(1); }
+    const sc = normalizeScore(work.score);
+    sc.pageMap.splice(i, 1);
+    const errs = validateScore(sc);
+    if (errs.length) {
+      console.log(pc.red('Resulting mapping invalid:'));
+      errs.forEach(e => console.log('  - ' + e));
+      process.exit(1);
+    }
+    const next = { ...db };
+    next.works[idx] = { ...work, score: sc };
+    saveDb(next);
+    console.log(pc.green('score row removed ') + pc.dim(`#${work.id} ${work.title} [removed index ${i+1}]`));
+  });
+
+scoreCmd
+  .command('validate <id>')
+  .description('Validate score/page-follow mapping for a work')
+  .action((id) => {
+    const db = loadDb();
+    const { work } = findById(db, id);
+    if (!work) { console.log(pc.red(`No work with id ${id}`)); process.exit(1); }
+    const sc = normalizeScore(work.score);
+    const errs = validateScore(sc);
+    if (errs.length) {
+      console.log(pc.red('score: issues found'));
+      errs.forEach(e => console.log('  - ' + e));
+      process.exit(1);
+    }
+    console.log(pc.green('score: OK'));
+    printScorePreview(sc);
+  });
+
 /* ------------------ import ------------------ */
-program
+  program
   .command('import <file>')
   .description('Import works from JSON|CSV|YAML and merge into DB (prompts to resolve conflicts).')
   .option('--assume-new-id', 'On id conflict, auto-assign next id (skip prompt)', false)
@@ -764,12 +958,7 @@ program
       rows = Array.isArray(obj) ? obj : (Array.isArray(obj.works) ? obj.works : []);
     } else if (ext === '.csv') {
 const parseCSV = await lazyCsvParse();
-      const recs = parseCSV(buf, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-        bom: true
-      });
+      const recs = parseCSV(buf, { columns: true, skip_empty_lines: true, trim: true, bom: true });
       rows = recs;
     } else {
       console.log(pc.red('Unsupported format. Use .json, .csv, .yaml/.yml'));
