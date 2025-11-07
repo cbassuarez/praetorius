@@ -12,14 +12,22 @@ import Ajv from 'ajv';
 
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
-const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */
-#works-console .btn{padding:.4rem .7rem;border:1px solid var(--line,rgba(255,255,255,.18));border-radius:.6rem;background:transparent}
+// Theme tokens (light/dark only; no auto)
+const THEME_CSS = `/* Praetorius — theme tokens (strict light/dark) */
+#works-console.prae-theme-dark, body.prae-theme-dark{
+  --bg:#0f0f0f; --fg:#fff; --dim:#8a8a8a; --line:rgba(255,255,255,.18);
+}
+#works-console.prae-theme-light, body.prae-theme-light{
+  --bg:#ffffff; --fg:#0d0d0d; --dim:#555; --line:rgba(0,0,0,.18);
+}
+`;
+const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */#works-console .btn{padding:.4rem .7rem;border:1px solid var(--line,rgba(255,255,255,.18));border-radius:.6rem;background:transparent}
 #works-console .line{opacity:.92;transition:opacity .2s}
 #works-console .line.muted{opacity:.62}
 #works-console .actions{display:flex;gap:.6rem;margin:.25rem 0 .6rem}
 #works-console .toast{position:sticky;bottom:.5rem;align-self:flex-end;padding:.5rem .7rem;border-radius:.6rem;background:rgba(0,0,0,.7);backdrop-filter:blur(6px)}
 `;
-
+function buildCssBundle(){ return THEME_CSS + '\n' + STARTER_CSS; }
 const STARTER_JS_NOTE = `/** Praetorius Works Console — starter v0
  * This is a seed file. The wizard-driven flow uses:
  *   - .prae/works.json  (your data)
@@ -421,6 +429,17 @@ async function lazyYaml() {
   } catch (e) {
     console.log(pc.red('Missing dependency "yaml".'));
     console.log(pc.gray('Install it with: ') + pc.cyan('npm i yaml'));
+    process.exit(1);
+  }
+}
+async function lazyEsbuild() {
+  try {
+    // Use runtime esbuild so we can minify without bundling.
+    const mod = await import('esbuild');
+    return mod;
+  } catch (e) {
+    console.log(pc.red('Missing dependency "esbuild".'));
+    console.log(pc.gray('Install it with: ') + pc.cyan('npm i esbuild'));
     process.exit(1);
   }
 }
@@ -1153,9 +1172,13 @@ program
 program
   .command('generate')
   .alias('build')
-  .description('Emit dist/script.js and dist/styles.css from .prae/works.json (respects .prae/config.json)')
+  .description('Emit assets from .prae/works.json (respects .prae/config.json)')
   .option('-o, --out <dir>', 'output directory', 'dist')
-  .option('--no-css', 'skip writing styles.css')
+  .option('--embed', 'emit one HTML snippet (inline <style> + <script>)', false)
+  .option('--minify', 'minify JS+CSS using esbuild', false)
+  .option('--js <file>', 'output JS filename (default: script.js)')
+  .option('--css <file>', 'output CSS filename (default: styles.css)')
+  .option('--no-css', 'skip writing CSS when not using --embed')
   .action(async (opts) => {
     const outDir = path.resolve(process.cwd(), opts.out);
     const db = loadDb();
@@ -1171,27 +1194,59 @@ program
       process.exit(1);
     }
 
-    // Render script (now includes pageFollowMaps). Respect minify flag for JSON payloads.
-    const js = renderScriptFromDb(db, { minify: !!cfg.output.minify, theme: cfg.theme });
-    const jsPath = path.join(outDir, 'script.js');
-    // atomic write for generated assets too (safe on replace)
+    // Render payloads (JSON payloads may be compacted if cfg.output.minify or --minify)
+    const wantMin = !!opts.minify || !!cfg.output.minify;
+    let js = renderScriptFromDb(db, { minify: wantMin, theme: cfg.theme });
+    let css = buildCssBundle();
+
+    // Minify with esbuild if requested
+    if (wantMin) {
+      const esb = await lazyEsbuild();
+      const minJS  = await esb.transform(js,  { loader:'js',  minify:true, legalComments:'none' });
+      const minCSS = await esb.transform(css, { loader:'css', minify:true, legalComments:'none' });
+      js  = minJS.code;
+      css = minCSS.code;
+    }
+
+    // EMBED MODE: one paste-ready HTML snippet
+    if (opts.embed) {
+      // Theme class applied to #works-console if present, else body
+      const themeClass = (cfg.theme === 'light') ? 'prae-theme-light' : 'prae-theme-dark';
+      const prelude = `(function(){var h=document.querySelector('#works-console')||document.body;h.classList.remove('prae-theme-light','prae-theme-dark');h.classList.add('${themeClass}');})();`;
+      const html = [
+        '<!-- Praetorius embed: paste into a Squarespace Code block -->',
+        '<style>', css, '</style>',
+        '<script>', prelude, '</script>',
+        '<script>', js, '</script>',
+        ''
+      ].join('\n');
+      const htmlPath = path.join(outDir, 'embed.html');
+      atomicWriteFile(htmlPath, html);
+      console.log(pc.green('write ') + pc.dim(cwdRel(htmlPath)));
+      console.log('\n' + pc.bold('Paste guide:'));
+      console.log('  • Open a Code block in Squarespace and paste the contents of: ' + pc.cyan(cwdRel(htmlPath)));
+      console.log('  • This snippet contains both CSS and JS and applies theme: ' + pc.cyan(cfg.theme));
+      return;
+    }
+
+    // File outputs
+    const jsFile  = opts.js || 'script.js';
+    const cssWant = opts.css !== false; // --no-css sets to false
+    const cssFile = (typeof opts.css === 'string') ? opts.css : 'styles.css';
+
+    const jsPath = path.join(outDir, jsFile);
     atomicWriteFile(jsPath, js);
     console.log(pc.green('write ') + pc.dim(cwdRel(jsPath)));
 
-    // CSS (optional)
-    if (opts.css) {
-      const cssPath = path.join(outDir, 'styles.css');
-      if (!fs.existsSync(cssPath)) {
-        fs.writeFileSync(cssPath, STARTER_CSS, 'utf8');
-        console.log(pc.green('write ') + pc.dim(cwdRel(cssPath)));
-      } else {
-        console.log(pc.yellow('skip  ') + pc.dim(cwdRel(cssPath)) + pc.gray(' (exists)'));
-      }
+    if (cssWant) {
+      const cssPath = path.join(outDir, cssFile);
+      // Always write, since theme tokens can change
+      atomicWriteFile(cssPath, css);
+      console.log(pc.green('write ') + pc.dim(cwdRel(cssPath)));
     }
-
-    console.log('\n' + pc.bold('Next steps:'));
+   console.log('\n' + pc.bold('Next steps:'));
     console.log('  • Paste ' + pc.cyan(cwdRel(jsPath)) + ' into your Squarespace code block (or host it).');
-    console.log('  • Add   ' + pc.cyan('styles.css') + ' to page/site CSS (if not already).');
+    if (cssWant) console.log('  • Add   ' + pc.cyan(cssFile) + ' to page/site CSS.');
     console.log(pc.gray('  • Ensure your main.js uses: const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { /* fallback */ };'));
   });
 
