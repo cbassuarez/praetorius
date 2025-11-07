@@ -1478,9 +1478,9 @@ program
         const tplIn   = path.join(uiSrcDir, opts.html || 'template.html');
         const mainIn  = path.join(uiSrcDir, 'main.js');
         const styleIn = path.join(uiSrcDir, 'style.css');
-        const haveTpl   = fileExists(tplIn);
-        const haveMain  = fileExists(mainIn);
-        const haveStyle = fileExists(styleIn);
+        const haveTpl   = existsFile(tplIn);
+        const haveMain  = existsFile(mainIn);
+        const haveStyle = existsFile(styleIn);
 
         if (haveTpl) {
           // Copy/transform app.js + app.css if present
