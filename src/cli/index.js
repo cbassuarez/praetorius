@@ -617,6 +617,13 @@ function contentTypeFor(p) {
     '.ttf':'font/ttf'
   })[ext] || 'application/octet-stream';
 }
+
+// tiny helper
+function fileExists(p) {
+  try { return fs.existsSync(p) && fs.statSync(p).isFile(); }
+  catch { return false; }
+}
+
 function previewHarnessHTML(theme = 'dark') {
   // Loads the canonical filenames per Sprint 3 acceptance
   return [
@@ -642,11 +649,16 @@ function previewHarnessHTML(theme = 'dark') {
 function startStaticServer({ root, port }) {
   const server = http.createServer((req, res) => {
     const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-    // Serve built index.html when present; otherwise use tiny harness
+   // If dist/index.html exists, serve it. Otherwise fall back to harness.
     if (urlPath === '/' || urlPath === '/index.html') {
-      const idx = path.join(root, 'index.html');
+      const indexPath = path.join(root, 'index.html');
+      if (fileExists(indexPath)) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        fs.createReadStream(indexPath).pipe(res);
+        return;
+      }
       const theme = loadConfig().theme;
-      const html = fileExists(idx) ? fs.readFileSync(idx, 'utf8') : previewHarnessHTML(theme);
+      const html  = previewHarnessHTML(theme);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(html);
       return;
@@ -1395,15 +1407,16 @@ program
   .option('--css <file>', 'output CSS filename (default: styles.css)')
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
-  .option('--ui-src <dir>', 'prototype UI source (expects main.js, template.html, assets/)', 'src')
-  .option('--html <file>', 'template filename inside --ui-src', 'template.html')
-  .option('--app-js <file>', 'prototype bundle output filename', 'app.js')
-  .option('--app-css <file>', 'prototype css copy output filename', 'app.css')
-  .option('--no-ui', 'skip bundling prototype UI', false)
+  .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'src')
+  .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
+  .option('--app-js <file>','UI JS output filename', 'app.js')
+  .option('--app-css <file>','UI CSS output filename', 'app.css')
+  .option('--no-ui',        'skip building UI (HTML/JS/CSS) even if present', false)
 
   .action(async (opts) => {
     const outDir = path.resolve(process.cwd(), opts.out);
     fs.mkdirSync(outDir, { recursive: true });
+    const uiSrcDir = path.resolve(process.cwd(), opts.uiSrc || 'src');
 
     const buildOnce = async () => {
       const db = loadDb();
@@ -1453,6 +1466,61 @@ program
         console.log(pc.green('write ') + pc.dim(cwdRel(cssPath)));
       }
 
+      // -------- UI bundle (template.html + main.js + style.css) ----------
+      if (!opts.noUi) {
+        const tplIn   = path.join(uiSrcDir, opts.html || 'template.html');
+        const mainIn  = path.join(uiSrcDir, 'main.js');
+        const styleIn = path.join(uiSrcDir, 'style.css');
+        const haveTpl   = fileExists(tplIn);
+        const haveMain  = fileExists(mainIn);
+        const haveStyle = fileExists(styleIn);
+
+        if (haveTpl) {
+          // Copy/transform app.js + app.css if present
+          let appJsCode = '';
+          let appCssCode = '';
+          if (haveMain) {
+            appJsCode = fs.readFileSync(mainIn, 'utf8');
+            if (wantMin) {
+              const esb = await lazyEsbuild();
+              appJsCode = (await esb.transform(appJsCode, { loader:'js', minify:true, legalComments:'none' })).code;
+            }
+            const appJsOut = path.join(outDir, opts.appJs || 'app.js');
+            atomicWriteFile(appJsOut, appJsCode);
+            console.log(pc.green('write ') + pc.dim(cwdRel(appJsOut)));
+          }
+          if (haveStyle) {
+            appCssCode = fs.readFileSync(styleIn, 'utf8');
+            if (wantMin) {
+              const esb = await lazyEsbuild();
+              appCssCode = (await esb.transform(appCssCode, { loader:'css', minify:true, legalComments:'none' })).code;
+            }
+            const appCssOut = path.join(outDir, opts.appCss || 'app.css');
+            atomicWriteFile(appCssOut, appCssCode);
+            console.log(pc.green('write ') + pc.dim(cwdRel(appCssOut)));
+          }
+
+          // Build dist/index.html by injecting links/scripts before </body>
+          let html = fs.readFileSync(tplIn, 'utf8');
+          const inj = [
+            `<link rel="stylesheet" href="./${cssFile}">`,
+            haveStyle ? `<link rel="stylesheet" href="./${opts.appCss || 'app.css'}">` : '',
+            `<script src="./${jsFile}" defer></script>`,
+            haveMain ? `<script type="module" src="./${opts.appJs || 'app.js'}"></script>` : ''
+          ].filter(Boolean).join('\n');
+          if (/<\/body>/i.test(html)) {
+            html = html.replace(/<\/body>/i, `${inj}\n</body>`);
+          } else {
+            html += '\n' + inj + '\n';
+          }
+          const htmlOut = path.join(outDir, 'index.html');
+          atomicWriteFile(htmlOut, html);
+          console.log(pc.green('write ') + pc.dim(cwdRel(htmlOut)));
+        } else {
+          console.log(pc.gray('UI: no template found at ') + pc.dim(cwdRel(tplIn)) + pc.gray(' (skipping UI bundle)'));
+        }
+      }
+
       // ---- Prototype UI bundling (src → dist) ----
       if (!opts.noUi) {
         const uiSrcDir = path.resolve(process.cwd(), opts.uiSrc || 'src');
@@ -1498,14 +1566,15 @@ program
           }
         }
       }
-     if (!opts.watch) {
-       console.log('\n' + pc.bold('Next steps:'));
-        console.log('  • Preview locally: ' + pc.cyan('prae preview'));
-        console.log('  • Squarespace embed: use dist/embed.html OR host dist/* and include on the page.');
-        console.log(pc.gray('  • Your prototype can read data from window.PRAE.{works,worksById,pageFollowMaps}.'));
-      }
-      return true;
-    };
+      if (!opts.watch) {
+         console.log('\n' + pc.bold('Next steps:'));
+        console.log('  • Local preview: ' + pc.cyan('prae preview'));
+        console.log('  • Squarespace (full UI): use contents of ' + pc.cyan('dist/index.html') + ' (or host assets & include).');
+        if (!cssWant) console.log(pc.gray('  • Note: base styles.css skipped by --no-css.'));
+         console.log(pc.gray('  • Ensure your main.js uses: const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { /* fallback */ };'));
+       }
+       return true;
+     };
 
     // First build
     const ok = await buildOnce();
