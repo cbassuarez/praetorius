@@ -388,13 +388,13 @@ function injectBeforeBodyEnd(html, lines) {
   return html.replace(/<\/body>/i, (m) => `  ${lines.join('\n  ')}\n${m}`);
 }
 function buildIndexHtml({ templatePath, outPath, theme }) {
-  if (!fileExists(templatePath)) return false;
+  if (!existsFile(templatePath)) return false;
   let html = fs.readFileSync(templatePath, 'utf8');
   html = upsertBodyTheme(html, theme);
   // Head: add tokens + app CSS if not already linked
   const wantHead = [];
   if (!/href=.*styles\.css/i.test(html)) wantHead.push('<link rel="stylesheet" href="/styles.css"/>');
-  if (!/href=.*app\.css/i.test(html) && fileExists(path.join(path.dirname(outPath), 'app.css')))
+  if (!/href=.*app\.css/i.test(html) && existsFile(path.join(path.dirname(outPath), 'app.css')))
     wantHead.push('<link rel="stylesheet" href="/app.css"/>');
   if (wantHead.length) html = injectHead(html, wantHead);
   // Body: ensure host + scripts
@@ -1527,8 +1527,24 @@ program
           console.log(pc.gray('UI: no template found at ') + pc.dim(cwdRel(tplIn)) + pc.gray(' (skipping UI bundle)'));
         }
       }
+return true; // end buildOnce success
+    }; // <-- end buildOnce
 
-      
+    const ok = await buildOnce();
+    if (opts.watch) {
+      const chokidar = await lazyChokidar();
+      const watcher = chokidar.watch(
+        [DB_PATH, CONFIG_PATH, path.join(uiSrcDir, '**/*')],
+        { ignoreInitial: true }
+      );
+      console.log(pc.gray('watching .prae and src for changes…'));
+      watcher.on('all', async (ev, p) => {
+        console.log(pc.gray(`rebuild (${ev}: ${cwdRel(p)})`));
+        await buildOnce();
+      });
+      return; // keep process alive while watching
+    }
+  }); // <-- end .action for generate
 
 /* ------------------ run ------------------ */
 program.parseAsync(process.argv);
