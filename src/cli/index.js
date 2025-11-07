@@ -289,9 +289,11 @@ function moveInArray(arr, fromIdx, toIdx) {
 }
 function ensureRequired(row) {
   if (!row) return false;
-  return row.title && String(row.title).trim()
-      && row.slug  && String(row.slug).trim()
-      && Number.isFinite(Number(row.id)) || true; // id can be absent; we’ll assign
+ // Required authoring fields for import; id is optional (assigned later)
+  const hasTitle = !!(row.title && String(row.title).trim());
+  const hasSlug  = !!(row.slug  && String(row.slug).trim());
+  const hasOne   = !!(row.one   && String(row.one).trim());
+  return hasTitle && hasSlug && hasOne;
 }
 function parseMaybeJSON(s) {
   if (!s || typeof s !== 'string') return null;
@@ -746,11 +748,13 @@ program
     const buf = fs.readFileSync(file, 'utf8');
     let rows = [];
 
-    if (ext === '.json') {
-      const YAML = await lazyYaml();
-      const obj = YAML.parse(buf);
+   if (ext === '.json') {
+      // Plain JSON: no YAML dependency
+      const obj = JSON.parse(buf);
       rows = Array.isArray(obj) ? obj : (Array.isArray(obj.works) ? obj.works : []);
     } else if (ext === '.yaml' || ext === '.yml') {
+      // YAML: lazy-load the parser and then parse
+      const YAML = await lazyYaml();
       const obj = YAML.parse(buf);
       rows = Array.isArray(obj) ? obj : (Array.isArray(obj.works) ? obj.works : []);
     } else if (ext === '.csv') {
