@@ -618,11 +618,11 @@ function contentTypeFor(p) {
   })[ext] || 'application/octet-stream';
 }
 
-// tiny helper
-function fileExists(p) {
-  try { return fs.existsSync(p) && fs.statSync(p).isFile(); }
-  catch { return false; }
-}
+// tiny helper (file check only)
+ function isFile(p) {
+   try { return fs.existsSync(p) && fs.statSync(p).isFile(); }
+   catch { return false; }
+ }
 
 function previewHarnessHTML(theme = 'dark') {
   // Loads the canonical filenames per Sprint 3 acceptance
@@ -652,7 +652,7 @@ function startStaticServer({ root, port }) {
    // If dist/index.html exists, serve it. Otherwise fall back to harness.
     if (urlPath === '/' || urlPath === '/index.html') {
       const indexPath = path.join(root, 'index.html');
-      if (fileExists(indexPath)) {
+      if (isFile(indexPath)) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         fs.createReadStream(indexPath).pipe(res);
         return;
