@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "src/cli",
+    "ui",
     "scaffolds",
     "assets"
   ],
