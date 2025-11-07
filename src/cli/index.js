@@ -21,40 +21,46 @@ const THEME_CSS = `/* Praetorius — theme tokens (strict light/dark) */
   --bg:#ffffff; --fg:#0d0d0d; --dim:#555; --line:rgba(0,0,0,.18);
 }
 `;
-const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */#works-console .btn{padding:.4rem .7rem;border:1px solid var(--line,rgba(255,255,255,.18));border-radius:.6rem;background:transparent}
-#works-console .line{opacity:.92;transition:opacity .2s}
+const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */
+#works-console{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;color:var(--fg,#111);background:var(--bg,transparent);padding:.5rem}
+#works-console a{color:inherit;text-decoration:underline}
+#works-console .btn{padding:.4rem .7rem;border:1px solid var(--line,rgba(255,255,255,.18));border-radius:.6rem;background:transparent;cursor:pointer}#works-console .line{opacity:.92;transition:opacity .2s}
 #works-console .line.muted{opacity:.62}
 #works-console .actions{display:flex;gap:.6rem;margin:.25rem 0 .6rem}
 #works-console .toast{position:sticky;bottom:.5rem;align-self:flex-end;padding:.5rem .7rem;border-radius:.6rem;background:rgba(0,0,0,.7);backdrop-filter:blur(6px)}
 `;
 // Minimal renderer injected only for --embed so the snippet is self-contained.
 const EMBED_RENDER = `(function(){
-  try{
-    var data = (window.PRAE && window.PRAE.works) || [];
-    // Ensure a host exists
-    var host = document.querySelector('#works-console');
-    if(!host){ host=document.createElement('section'); host.id='works-console'; document.body.appendChild(host); }
-    // Clear and render
-    host.innerHTML = '';
-    var list = document.createElement('div');
-    function esc(s){return String(s||'').replace(/[&<>\"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;', \"'\":'&#39;' }[m]));}
-    data.forEach(function(w){
-      var line=document.createElement('div'); line.className='line';
-      var html = '<div class="title"><strong>'+esc(w.title)+'</strong> <span class="muted">('+esc(w.slug)+')</span></div>'
-               + '<div class="one">'+esc(w.one||'')+'</div>';
-      if(w.pdf){ html += '<div>score: <a href="'+esc(w.pdf)+'" target="_blank" rel="noopener">PDF</a></div>'; }
-      if(w.audio){ html += '<div class="actions"><button class="btn" data-id="'+w.id+'">Play/Pause</button></div>'; }
-      line.innerHTML = html;
-      list.appendChild(line);
-    });
-    host.appendChild(list);
-    if(window.PRAE && typeof window.PRAE.ensureAudioTags==='function'){ window.PRAE.ensureAudioTags(); }
-    host.addEventListener('click', function(e){
-      var b=e.target.closest('button[data-id]'); if(!b) return;
-      var id=b.getAttribute('data-id'); var a=document.getElementById('wc-a'+id); if(!a) return;
-      if(a.paused){ a.src=a.getAttribute('data-audio')||a.src; a.play(); } else { a.pause(); }
-    });
-  }catch(err){ console.error('[prae embed]', err); }
+  function render(){
+    try{
+      var data = (window.PRAE && window.PRAE.works) || [];
+      console.log('[prae embed] works:', data.length);
+      // Ensure a host exists
+      var host = document.querySelector('#works-console');
+      if(!host){ host=document.createElement('section'); host.id='works-console'; document.body.appendChild(host); }
+      host.innerHTML = '';
+      var list = document.createElement('div');
+      function esc(s){return String(s||'').replace(/[&<>\\"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c]); });}
+      data.forEach(function(w){
+        var line=document.createElement('div'); line.className='line';
+        var html = '<div class="title"><strong>'+esc(w.title)+'</strong> <span class="muted">('+esc(w.slug)+')</span></div>'
+                 + '<div class="one">'+esc(w.one||'')+'</div>';
+        if(w.pdf){ html += '<div>score: <a href="'+esc(w.pdf)+'" target="_blank" rel="noopener">PDF</a></div>'; }
+        if(w.audio){ html += '<div class="actions"><button class="btn" data-id="'+w.id+'">Play/Pause</button></div>'; }
+        line.innerHTML = html;
+        list.appendChild(line);
+      });
+      host.appendChild(list);
+      if(window.PRAE && typeof window.PRAE.ensureAudioTags==='function'){ window.PRAE.ensureAudioTags(); }
+      host.addEventListener('click', function(e){
+        var b=e.target.closest('button[data-id]'); if(!b) return;
+        var id=b.getAttribute('data-id'); var a=document.getElementById('wc-a'+id); if(!a) return;
+        if(a.paused){ a.src=a.getAttribute('data-audio')||a.src; a.play(); } else { a.pause(); }
+      });
+    }catch(err){ console.error('[prae embed]', err); }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render);
+  else render();
 })();`;
 function buildCssBundle(){ return THEME_CSS + '\n' + STARTER_CSS; }
 const STARTER_JS_NOTE = `/** Praetorius Works Console — starter v0
