@@ -37,7 +37,8 @@
     "enquirer": "^2.4.1",
     "picocolors": "^1.0.0",
     "csv-parse": "^5.5.3",
-    "yaml": "^2.5.0"
+    "yaml": "^2.5.0",
+    "esbuild": "^0.23.0"
   },
   "keywords": [
     "cli",
