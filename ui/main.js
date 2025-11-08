@@ -47,7 +47,7 @@ export function initWorksConsole() {
     cues: [{ label: '@0:00', t: time('0:00') }],
     audioId: 'wc-a1',
     // Mutopia Project — Public Domain engraving (A4 PDF)
-    pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gnoss/gymnopedie-1/satie-gymnopedie1-a4.pdf',
+    pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf',
     openNote: [
       'A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later.',
       'Source: PD recording (Wikimedia) + PD score (Mutopia).'
@@ -61,7 +61,7 @@ export function initWorksConsole() {
     cues: [{ label: '@0:00', t: time('0:00') }],
     audioId: 'wc-a2',
     // Mutopia Project — Public Domain engraving (A4 PDF)
-    pdf: 'https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=2685',
+    pdf: 'https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf',
     // direct A4 PDF target (avoid the info page redirect):
     // https://www.mutopiaproject.org/ftp/PraetoriusM/Es_ist_ein_Ros/Es_ist_ein_Ros/Es_ist_ein_Ros-lys.pdf (varies)
     // Use the A4 PDF we clicked in the template step:
@@ -89,57 +89,18 @@ export function initWorksConsole() {
 // === PageFollow maps (printed page numbers) ===
 // Tip: if you later want page 1 to start at audio 0:00 (for W1), set mediaOffsetSec to -30.
 const pageFollowMaps = {
-  soundnoisemusic: {
-    pdfStartPage: 11,        // printed p.1 is PDF page 11
-    mediaOffsetSec: 0,       // set to -30 if you want page 1 at t=0
-    pageMap: [
-      { at: '0:30', page: 1 },
-      { at: '1:00', page: 2 },
-      { at: '1:35', page: 3 },
-      { at: '2:00', page: 4 },
-      { at: '2:48', page: 5 },
-      { at: '4:03', page: 6 },
-      { at: '4:35', page: 7 },
-      { at: '4:52', page: 8 },
-      { at: '5:29', page: 9 },
-      { at: '5:56', page: 10 },
-      { at: '6:12', page: 11 },
-      { at: '6:28', page: 12 },
-      { at: '7:54', page: 13 },
-      { at: '8:39', page: 14 },
- { at: '9:44', page: 15 },
-      { at: '10:30', page: 16 }
-    ]
-  },
-  'amplifications-marimbaideefixe': {
-    pdfStartPage: 7,         // printed p.1 is PDF page 7
+  'satie-gymnopedie-1': {
+    pdfStartPage: 1,
     mediaOffsetSec: 0,
-    pageMap: [
-      { at: '0:00', page: 1 },
-      { at: '1:07', page: 2 },
-      { at: '2:13', page: 3 },
-      { at: '3:33', page: 4 },
-      { at: '4:17', page: 5 },
-      { at: '5:01', page: 6 },
-      { at: '5:49', page: 7 },
-      { at: '6:44', page: 8 },
-      { at: '7:22', page: 9 },
-      { at: '7:49', page: 10 },
-      { at: '8:39', page: 11 },
-      { at: '9:45', page: 12 },
-      { at: '10:39', page: 13 },
-      { at: '12:01', page: 14 },
-      { at: '12:47', page: 15 },
-      { at: '13:56', page: 16 },
-      { at: '15:04', page: 17 },
-      { at: '15:44', page: 18 },
-      { at: '16:42', page: 19 },
-      { at: '18:40', page: 20 }
-    ]
+    pageMap: [{ at: '0:00', page: 1 }]
+  },
+  'praetorius-es-ist-ein-ros': {
+    pdfStartPage: 1,
+    mediaOffsetSec: 0,
+    pageMap: [{ at: '0:00', page: 1 }]
   }
-  // work 2 has no score → no entry needed
+  // placeholder has no score
 };
-
 
    const cmds = ['help','list','open','play','pause','stop','copy','goto','pdf','vol','speed','resume','share','unlock','clear','theme'];
  const aliases = { h:'help', ls:'list', o:'open', p:'play', pa:'pause', st:'stop', cp:'copy', g:'goto', v:'vol', sp:'speed', rs:'resume', sh:'share', ul:'unlock', cls:'clear', th:'theme' };
