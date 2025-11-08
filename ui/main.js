@@ -36,7 +36,7 @@
 
 
  function initWorksConsole() { 
-  
+  if (window.__PRAE_INITED) return; window.__PRAE_INITED = true;
 
 (() => {
   const SCOPE = document.getElementById('works-group') || document;
@@ -585,6 +585,9 @@ pdfPane.addEventListener('transitionend', (e)=>{
     const updEl   = SCOPE.querySelector('[data-updated]');
     const copyEl  = SCOPE.querySelector('[data-copyright-name]');
     const linksEl = SCOPE.querySelector('[data-links]');
+    const badgeEl = SCOPE.querySelector('.wb-badge');
+if (badgeEl) badgeEl.style.display = (site.showBadge === false) ? 'none' : '';
+
 
     const fullName = site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ').trim();
     if (titleEl && fullName) titleEl.textContent = fullName;
@@ -603,18 +606,22 @@ pdfPane.addEventListener('transitionend', (e)=>{
     }
 
     if (linksEl){
-      linksEl.innerHTML = '';
-      (Array.isArray(site.links) ? site.links : []).forEach(l=>{
-        if (!l?.label || !l?.href) return;
-        const a = document.createElement('a');
-        a.className = 'wb-chip';
-        a.textContent = l.label;
-        a.href = l.href;
-        if (l.external) { a.target = '_blank'; a.rel = 'noopener'; }
-        linksEl.appendChild(a);
-      });
-    }
+  linksEl.innerHTML = '';
+  const list = Array.isArray(site.links) ? site.links : [];
+  const seen = new Set();
+  for (const l of list){
+    if (!l || !l.label || !l.href) continue;                   // strict
+    const key = (l.label + '|' + l.href).toLowerCase();
+    if (seen.has(key)) continue; seen.add(key);                 // dedupe
+    const a = document.createElement('a');
+    a.className = 'wb-chip';
+    a.textContent = l.label;
+    a.href = l.href;
+    if (l.external !== false){ a.target = '_blank'; a.rel = 'noopener'; }
+    linksEl.appendChild(a);
   }
+}
+
 
   
 // Re-align whenever #works-console gains/loses the has-pdf class
