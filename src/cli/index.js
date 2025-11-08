@@ -364,6 +364,69 @@ function printScorePreview(sc) {
     console.log(`${String(i+1).padStart(3,' ')}  ${secToHuman(r.at).padStart(6,' ')}  ${String(r.page).padStart(7,' ')}  ${String(act).padStart(6,' ')}`);
   });
 }
+// ---- Migrations ----
+const LATEST_SCHEMA_VERSION = 2;
+
+function migrate_v1_to_v2(db) {
+  // Ensure unique integer ids, normalized cues/score, tidy strings/slug.
+  const srcWorks = Array.isArray(db.works) ? db.works : [];
+  // Seed seen ids + next id from valid ints
+  const validIds = srcWorks.map(w => Number(w?.id)).filter(n => Number.isInteger(n) && n >= 1);
+  const seen = new Set(validIds);
+  let nextIdVal = validIds.length ? Math.max(...validIds) + 1 : 1;
+  const allocId = () => { while (seen.has(nextIdVal)) nextIdVal++; const id = nextIdVal++; seen.add(id); return id; };
+
+  const out = { version: 2, works: [] };
+  for (const w0 of srcWorks) {
+    const w = { ...w0 };
+    // id → int
+    let idNum = Number(w.id);
+    if (!Number.isInteger(idNum) || idNum < 1 || seen.has(idNum)) idNum = allocId();
+    else seen.add(idNum);
+
+    // strings trimmed
+    w.title = String(w.title ?? '').trim();
+    w.one   = String(w.one   ?? '').trim();
+    // slug normalized
+    w.slug  = slugify(w.slug || w.title || '');
+
+    // cues normalized (try to infer t from label/time if missing)
+    if (Array.isArray(w.cues)) {
+      w.cues = w.cues.map(c => {
+        let t = Number(c?.t);
+        if (!Number.isInteger(t)) {
+          const hint = String((c && (c.time ?? c.label)) ?? '').replace(/^@/, '');
+          const p = parseTimeToSecStrict(hint);
+          t = Number.isFinite(p) ? p : 0;
+        }
+        const label = String(c?.label ?? (Number.isFinite(t) ? '@' + secToHuman(t) : '')).trim();
+        return { label, t };
+      }).filter(c => Number.isInteger(c.t) && c.t >= 0);
+    } else {
+      w.cues = [];
+   }
+
+    // score normalized or synthesized if PDF exists
+    if (w.score) w.score = normalizeScore(w.score);
+    else if (w.pdf) w.score = { pdfStartPage: 1, mediaOffsetSec: 0 };
+
+    w.id = idNum;
+    out.works.push(w);
+  }
+  return out;
+}
+
+function migrateDb(db) {
+  let current = Number(db?.version ?? 1);
+  let next = { ...db };
+  if (current < 1) current = 1;
+  if (current === 1) {
+    next = migrate_v1_to_v2(next);
+    current = 2;
+  }
+  // (Future) add v2→v3 here
+  return next;
+}
 
 /* ------------------ UI Bundling Helpers ------------------ */
 // ---- UI bundle helpers ----
@@ -431,6 +494,63 @@ const DB_DIR  = path.resolve(process.cwd(), '.prae');
 const DB_PATH = path.join(DB_DIR, 'works.json');
 const CONFIG_DIR  = DB_DIR; // colocate
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
+// ---- History (.prae/history) ----
+const HISTORY_DIR = path.join(DB_DIR, 'history');
+function ensureHistoryDir() { fs.mkdirSync(HISTORY_DIR, { recursive: true }); return HISTORY_DIR; }
+function historyStamp() { return new Date().toISOString().replace(/[:.]/g,'-'); }
+function writeHistorySnapshot(label='auto') {
+  ensureHistoryDir();
+  const stamp = historyStamp();
+  const src = fs.existsSync(DB_PATH) ? fs.readFileSync(DB_PATH, 'utf8') : JSON.stringify({ version: 1, works: [] }, null, 2);
+  const file = path.join(HISTORY_DIR, `${stamp}--${label}.json`);
+  fs.writeFileSync(file, src, 'utf8');
+  return file;
+}
+function listHistory() {
+  if (!fs.existsSync(HISTORY_DIR)) return [];
+  return fs.readdirSync(HISTORY_DIR).filter(f => f.endsWith('.json')).sort();
+}
+function latestSnapshotFile() {
+  const files = listHistory();
+  return files[files.length - 1] || null;
+}
+function loadHistorySnapshot(filename) {
+  const p = path.join(HISTORY_DIR, filename);
+  return JSON.parse(fs.readFileSync(p, 'utf8'));
+}
+
+// ---- Lightweight JSON "preview diff" (added/removed/modified works) ----
+function shallowWorkDiff(a, b) {
+  const fields = ['title','slug','one','audio','pdf'];
+  const changed = [];
+  for (const k of fields) if (String(a?.[k] ?? '') !== String(b?.[k] ?? '')) changed.push(k);
+  if (JSON.stringify(a?.cues ?? [])  !== JSON.stringify(b?.cues ?? []))  changed.push('cues');
+  if (JSON.stringify(a?.score ?? null) !== JSON.stringify(b?.score ?? null)) changed.push('score');
+  return changed;
+}
+function summarizeDiff(fromDb, toDb) {
+  const out = { added: [], removed: [], modified: [] };
+  const from = new Map((fromDb.works || []).map(w => [String(w.slug), w]));
+  const to   = new Map((toDb.works   || []).map(w => [String(w.slug), w]));
+  for (const [slug, w] of to) {
+    if (!from.has(slug)) out.added.push(w);
+    else {
+      const a = from.get(slug);
+      const ch = shallowWorkDiff(a, w);
+      if (ch.length) out.modified.push({ work: w, changed: ch });
+   }
+  }
+  for (const [slug, w] of from) if (!to.has(slug)) out.removed.push(w);
+  return out;
+}
+function printSummaryDiff(diff) {
+  const f = (w)=>`#${w.id} ${w.title} (${w.slug})`;
+  diff.added.forEach(w => console.log(pc.green('+ ') + f(w)));
+  diff.removed.forEach(w => console.log(pc.red('- ') + f(w)));
+  diff.modified.forEach(({work, changed}) => console.log(pc.yellow('~ ') + f(work) + pc.gray(' [' + changed.join(', ') + ']')));
+  if (!diff.added.length && !diff.removed.length && !diff.modified.length) console.log(pc.gray('No changes.'));
+}
+
 
 function readJsonSafe(p, fallback) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); }
@@ -974,7 +1094,7 @@ program
 
       const entry = {
         id: nextId(db),
-        slug: base.slug,
+        slug: (base.slug?.trim()) || slugify(base.title),
         title: base.title,
         one: base.one,
         audio: base.audio?.trim() || null,
@@ -1710,6 +1830,70 @@ return true; // end buildOnce success
       return; // keep process alive while watching
     }
   }); // <-- end .action for generate
+/* ------------------ migrate ------------------ */
+program
+  .command('migrate')
+  .description('Detect schema version and apply deterministic transforms; backs up to .prae/history first')
+  .option('--dry-run', 'Preview changes without writing files', false)
+  .action((opts) => {
+    const before = loadDb();
+    const after  = migrateDb(JSON.parse(JSON.stringify(before)));
+    const changed = JSON.stringify(before) !== JSON.stringify(after);
 
+    if (!changed) {
+      console.log(pc.gray(`migrate: nothing to do (version ${before.version ?? 1} already at latest)`));
+      return;
+    }
+
+    // Validate the migrated DB against schema
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(WORKS_SCHEMA);
+    if (!validate(after)) {
+      console.log(pc.red('migrate: migrated DB failed validation:'));
+      for (const e of validate.errors || []) console.log('  - ' + (e.instancePath || '/') + ' ' + e.message);
+      process.exit(1);
+    }
+
+    console.log(pc.bold(`migrate: changes (v${before.version ?? 1} → v${after.version ?? '??'})`));
+    printSummaryDiff(summarizeDiff(before, after));
+
+    if (opts.dryRun) { console.log(pc.gray('dry-run: no files written.')); return; }
+
+    const snap = writeHistorySnapshot(`before-migrate-v${before.version ?? 1}-to-v${after.version ?? 'X'}`);
+    console.log(pc.gray('backup: ') + pc.cyan(cwdRel(snap)));
+    saveDb(after);
+    console.log(pc.green('migrated ') + pc.gray(`→ version ${after.version}`));
+  });
+
+/* ------------------ undo ------------------ */
+program
+  .command('undo')
+  .description('One-step revert to the last .prae/history snapshot (with preview diff)')
+  .action(async () => {
+    const last = latestSnapshotFile();
+    if (!last) {
+      console.log(pc.red('undo: no history snapshots found in .prae/history.'));
+      process.exit(1);
+    }
+    const current = loadDb();
+    const snapDb  = loadHistorySnapshot(last);
+
+    // Validate snapshot (best-effort; allow revert even if snapshot is older shape)
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(WORKS_SCHEMA);
+    if (!validate(snapDb)) {
+      console.log(pc.yellow('warning: snapshot does not fully match current schema; you can migrate again after undo.'));
+    }
+
+    console.log(pc.bold('undo: preview diff (current → snapshot)'));
+    printSummaryDiff(summarizeDiff(current, snapDb));
+    const ans = await prompt({ type:'confirm', name:'ok', message:`Revert to snapshot ${last}?`, initial:false });
+    if (!ans.ok) { console.log(pc.gray('aborted')); return; }
+
+    const backup = writeHistorySnapshot('before-undo');
+    console.log(pc.gray('backup of current saved: ') + pc.cyan(cwdRel(backup)));
+    saveDb(snapDb);
+    console.log(pc.green('undo complete ') + pc.dim(`restored from ${last}`));
+  });
 /* ------------------ run ------------------ */
 program.parseAsync(process.argv);
