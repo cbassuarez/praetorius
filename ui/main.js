@@ -24,7 +24,7 @@
         root.setAttribute('data-theme', eff);
       }
       setThemeClasses(eff);
-      document.documentElement.style.colorScheme = 'light dark';
+      document.documentElement.style.colorScheme = 'light';
     }catch(e){}
   }
   if (document.readyState === 'loading'){
