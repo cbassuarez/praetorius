@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&display=swap');
+html, body { background:#fff; }
 
   /* ===========================
      AeroShell — translucent black, amber accent
@@ -669,7 +670,8 @@ flex:0 0 auto;
   #works-console .wc-split{ position: relative; z-index: 1; }
 }
 /* Global hint for native controls */
-#works-group{ color-scheme: light dark; }
+#works-group{ color-scheme: light; background:#fff; }
+
 
 /* ——— Toggle button ——— */
 #wc-theme-toggle.wc-theme{
