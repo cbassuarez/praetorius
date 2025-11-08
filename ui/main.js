@@ -12,18 +12,24 @@
   }
   function run(){
     try{
-      var root  = document.getElementById('works-console');
+      var grp = document.getElementById('works-group');
+var con = document.getElementById('works-console');
       var saved = localStorage.getItem('wc.theme');
       if (saved && saved.trim().charAt(0)==='{'){
         try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
       }
       var eff = (saved === 'light') ? 'light' : 'dark';
-      if (root){
-        root.removeAttribute('data-theme-mode');
-        root.setAttribute('data-theme', eff);
-      }
-      setThemeClasses(eff);
-      document.documentElement.style.colorScheme = 'light';
+      if (grp){
+  grp.removeAttribute('data-theme-mode');
+  grp.setAttribute('data-theme', eff);
+}
+if (con){
+  con.removeAttribute('data-theme-mode');     // back-compat for old selectors
+  con.setAttribute('data-theme', eff);
+}
+setThemeClasses(eff);
+// Respect active theme for native UI
+document.documentElement.style.colorScheme = (eff === 'dark' ? 'dark' : 'light');
     }catch(e){}
   }
   if (document.readyState === 'loading'){
@@ -45,7 +51,7 @@
   const out = $('#works-console .wc-output');
   const input = $('#wc-cmd');
   const form = $('#works-console .wc-input');
-  const themeRoot = document.getElementById('works-console');
+const themeRoot = document.getElementById('works-group');
 const themeBtn  = document.getElementById('wc-theme-toggle');
 
 
@@ -1002,23 +1008,27 @@ function clearHud(){
   function writeTheme(v){
     try{ localStorage.setItem('wc.theme', (v==='light' ? 'light' : 'dark')); }catch(_){}
   }
-  function applyTheme(mode){
-  const eff = (mode==='light') ? 'light' : (mode==='dark' ? 'dark' : readTheme());
-  if (themeRoot) {
-    themeRoot.removeAttribute('data-theme-mode');
-    themeRoot.setAttribute('data-theme', eff);
-  }
-  // mirror CLI CSS expectations
+ function applyTheme(mode){
+  const eff = (mode==='light') ? 'light' : 'dark';
+  const grp = document.getElementById('works-group');
   const host = document.getElementById('works-console');
-  host.classList.remove('prae-theme-light','prae-theme-dark');
-  host.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
-  
 
+  if (grp){
+    grp.removeAttribute('data-theme-mode');
+    grp.setAttribute('data-theme', eff);
+  }
+  if (host){
+    host.classList.remove('prae-theme-light','prae-theme-dark');
+    host.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+    // optional: mirror data-theme for legacy selectors
+    host.setAttribute('data-theme', eff);
+  }
   if (themeBtn){
     themeBtn.setAttribute('title', `Toggle theme (Alt/Opt+D) · current: ${eff}`);
     themeBtn.setAttribute('aria-checked', String(eff==='dark'));
   }
-  writeTheme(eff);
+  try{ localStorage.setItem('wc.theme', eff); }catch(_){}
+  document.documentElement.style.colorScheme = (eff === 'dark' ? 'dark' : 'light');
 }
 
   function cycleTheme(){
