@@ -35,7 +35,7 @@
 })();
 
 
-export function initWorksConsole() { 
+ function initWorksConsole() { 
   
 
 (() => {
