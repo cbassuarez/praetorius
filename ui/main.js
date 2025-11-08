@@ -981,9 +981,7 @@ function clearHud(){
   window.addEventListener('hashchange', handleHash, { passive:true });
   handleHash();
   /* ===== Theme management (UI + CLI) — Light/Dark only (no Auto) ===== */
-  const themeRoot = document.getElementById('works-group');
-  const themeBtn  = document.getElementById('wc-theme-toggle');
-
+  
   function readTheme(){
     try{
       const v = localStorage.getItem('wc.theme') || 'dark';
