@@ -889,8 +889,12 @@ flex:0 0 auto;
 #works-group .wc-split { background: #fff !important; }
 
 /* If any global dark selector still bleeds through, neutralize it here */
-.prae-theme-dark #works-group,
-[data-theme="dark"] #works-group { background: #fff !important; }
+#works-group[data-theme="dark"] { background:#fff !important; }
+#works-console { background: transparent !important; }
+#works-group[data-theme="dark"] .wc-titlebar,
+#works-group[data-theme="dark"] .wc-crumbs,
+#works-group[data-theme="dark"] .wc-split { background:#fff !important; }
+
 
 /* Keep the console surface dark against the white page */
 #works-console .wc-frame { background: var(--aero-bg); }
