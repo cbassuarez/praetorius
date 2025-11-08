@@ -47,7 +47,7 @@ export function initWorksConsole() {
     cues: [{ label: '@0:00', t: time('0:00') }],
     audioId: 'wc-a1',
     // Mutopia Project — Public Domain engraving (A4 PDF)
-    pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gnoss/gymnopedie-1/satie-gymnopedie1-a4.pdf',
+    pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf',
     openNote: [
       'A minimal demo entry. Replace via your CLI later.',
       'Source: PD recording (Wikimedia) + PD score (Mutopia).'
@@ -61,7 +61,7 @@ export function initWorksConsole() {
     cues: [{ label: '@0:00', t: time('0:00') }],
     audioId: 'wc-a2',
     // Mutopia Project — Public Domain engraving (A4 PDF)
-    pdf: 'https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=2685',
+    pdf: 'https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf',
     // direct A4 PDF target (avoid the info page redirect):
     // https://www.mutopiaproject.org/ftp/PraetoriusM/Es_ist_ein_Ros/Es_ist_ein_Ros/Es_ist_ein_Ros-lys.pdf (varies)
     // Use the A4 PDF we clicked in the template step:
