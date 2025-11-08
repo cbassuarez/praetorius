@@ -39,113 +39,69 @@ export function initWorksConsole() {
      Hard-coded works (inline)
      =========================== */
   const works = {
+  1: {
+    id: 1,
+    slug: 'satie-gymnopedie-1',
+    title: 'DEMO — Erik Satie: Gymnopédie No. 1',
+    one: 'Public-domain demo piece to showcase audio + score.',
+    cues: [{ label: '@0:00', t: time('0:00') }],
+    audioId: 'wc-a1',
+    // Mutopia Project — Public Domain engraving (A4 PDF)
+    pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gnoss/gymnopedie-1/satie-gymnopedie1-a4.pdf',
+    openNote: [
+      'A minimal demo entry. Replace via your CLI later.',
+      'Source: PD recording (Wikimedia) + PD score (Mutopia).'
+    ]
+  },
+  2: {
+    id: 2,
+    slug: 'praetorius-es-ist-ein-ros',
+    title: 'DEMO — Michael Praetorius (harm.): Es ist ein Ros entsprungen',
+    one: 'Public-domain demo (U.S. Army Band) with PD score.',
+    cues: [{ label: '@0:00', t: time('0:00') }],
+    audioId: 'wc-a2',
+    // Mutopia Project — Public Domain engraving (A4 PDF)
+    pdf: 'https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=2685',
+    // direct A4 PDF target (avoid the info page redirect):
+    // https://www.mutopiaproject.org/ftp/PraetoriusM/Es_ist_ein_Ros/Es_ist_ein_Ros/Es_ist_ein_Ros-lys.pdf (varies)
+    // Use the A4 PDF we clicked in the template step:
+    // (If that link changes, keep the piece-info URL above.)
+    openNote: [
+      'Chorale harmonization demo. Replace via CLI later.',
+      'Source: PD USGov recording (Wikimedia) + PD score (Mutopia).'
+    ]
+  },
+  3: {
+    id: 3,
+    slug: 'placeholder-work',
+    title: 'DEMO — Placeholder Work',
+    one: 'Empty template entry (no audio / no score).',
+    cues: [],
+    audioId: 'wc-a3',
+    pdf: null,
+    openNote: [
+      'Use this as your template work. Add audio/PDF with your CLI when ready.'
+    ]
+  }
+};
 
-    1: {
-      id: 1, slug: 'soundnoisemusic',
-      title: 'WORK 1 — String Quartet No. 2 “SOUNDNOISEMUSIC”',
-      one: 'A through-composed/indeterminate quartet that alternates fixed score, structured mischief, and noise permissions.',
-      cues: [{ label:'@10:30', t: time('10:30') }],
-      audioId: 'wc-a1',
-      pdf: 'https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/STRING%20QUARTET%20NO.%202%20_soundnoisemusic_%20-%20Score-min.pdf',
-      openNote: [
-      ' ',
-              'Heard melodies are sweet, but those unheard',
-'Are sweeter; therefore, ye soft pipes, play on;',
-'Not to the sensual ear, but, more endeared,',
-'Pipe to the spirit ditties of no tone:',
-'John Keats, “Ode on a Grecian Urn,” lines 11-14',
-' ',
-'Every other performance, this piece is entirely improvised. Every other performance, the performers follow the through-composed score. Every other other performance, this piece is played at 80% intent and 50% rsentment. Every other other other performance, the members of this piece trade parts. Every 10 performanes, the members of the ensemble are playing a cruel joke on the composer and the audience. Every 12, the 5th page of every part is swapped for a page from one of J.S. Bach’s Sonatas or Partitas for Violin. On any performance where it is the ensemble’s second time performing that day, the music is to be read in retrograde inversion. Every peformance indoors must be done at double tempo. In the event that performers were not fed prior to performing, they may play noise whenever they may choose. If ███████████████████████████████████████, the piece should be played in near-complete darkness.',
-' ',
-'If you cannot tell the difference if you cannot beat ‘em join ‘em then does it even matter?'
-      
-      ]
-    },
-    2: {
-      id: 2, slug: 'lux-nova',
-      title: 'WORK 2 — Organum Quadruplum “Lux Nova”',
-      one: 'A stained-glass acoustics study: bowed dalle-de-verre slab transduced into a ring of pianos—polyphony by distance rather than shared air.',
-      cues: [{ label:'@7:45', t: time('7:45') }, { label:'@9:15', t: time('9:15') }],
-      audioId: 'wc-a2',
-      pdf: null,
-      openNote: [
-      ' ',
-        'There is a special quality to the kind of light that stained glass emanates which I find fascinating. Unlike traditional art, stained glass is an entanglement of light and material: the art is not the light, nor the glass, but the way the light conditions the space beyond which it occupies (a material declaration reminiscent of Fichtian dialectics or medieval anagogy; a sum greater than its parts). In this sense, it is not reflecting light but conditioning it, giving light a quality that makes its invisibilities visible.',
-        ' ',
-        'Abbot Suger, in a historical reaffirmation of Gothic architecture, described this phenomenon – light passing through glass, which gives body and boundary to the invisible – as lux nova. Medieval builders saw themselves as material theologians: with the technological advancements of the Gothic period allowing for great windows, they could materialize theological truths through illuminatio, making light itself into an art that “corresponds” to celestial œuvres.',
-        ' ',
-        'At the center is a dalle de verre slab, mounted to approximate free-free boundary conditions: edge-untethered, supported at nodal points, so the plate speaks in families of modes. As the bow excites the glass (in a lineage that runs from Suger’s Saint-Denis and its program of lux nova to Le Corbusier’s Notre-Dame du Haut with its deep-set colored glazing to Richter’s pixelated Cologne Cathedral window), the bow draws breath, a sort of pneuma. These sounds are transmitted via transducer speakers to a ring of pianos which, even without hammer action, perform as a sort of telephoned organum: polyphony carried at a distance by transduction rather than shared air. In this way, the pianos act as armature and tracery, structures that bind.'
-        ]
-    },
-    3: {
-      id: 3, slug: 'amplifications-marimbaideefixe',
-      title: 'WORK 3 — AMPLIFICATIONS I · MARIMBAideefixe',
-      one: 'Two prepared pianos as resonators for a 5.0-octave marimba: sympathetic “ghost ensemble” via transduction.',
-      cues: [{ label:'@5:49', t: time('5:49') }],
-      audioId: 'wc-a3',
-      pdf: 'https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/AMPLIFICATIONS%201.%20MARIMBAideefixe.pdf',
-      openNote: [
-      ' ',
-        'AMPLIFICATIONS – a series of improvised compositions, utilizing multiple pianos as resonating bodies to extend the sustain of various instruments. with various metal implements scattered throughout the piano bodies, the strings sympathetically reverberate along to the improvisatory sounds of each instrument, at times a whisper, at times a roar. microphones are placed inside the body of the piano capturing a large, harmonious reverberation, a ghostly chamber ensemble of one. credits released October 16, 2023 marimba, viola da gamba, music box, multiple percussion, desk bells, sebastian suarez-solis audio, sebastian suarez-solis photo, sebastian suarez-solis recorded at California Institute of the Arts on Oct. 13-15, 2023. ',
-        ' ',
-        'MARIMBAideefixe – 2 prepared pianos + 5.0 octave marimba with the marimba, i found that the pianos were quite receptive to many of the notes and harmonies i would play. even though the marimba is tuned to 442, or maybe because of it, notes would pop out and rattle metal discs and bells inside the piano, sometimes the same note, sometimes a more distant one. the marimba makes the pianos roar, swell to life, a sort of homunculus, a marionette. a bell swirls around inside the body of the piano, providing a rounded, tumbling ostinato. a ghostly chamber ensemble. i describe the track as an idée fixe as the main motivating phrase is such a focus of my playing. the piano seems to like it very well. a note about barlines: This piece is constructed in two voices which move independently. For this reason, barlines are modified to preserve the nature of the voices. You will see that, often, barlines do not match up until the end of a phrase. This might make more sense when listening to the recording. Visually, it aims to help the performer notice distance, silence, and the space between instances, where more traditional notation may not. The phrases played, though disjunct, are imitations of a baroque style, extemporized in a baroque fashion.'
-      ]
-    }
-  };
 
 // === PageFollow maps (printed page numbers) ===
 // Tip: if you later want page 1 to start at audio 0:00 (for W1), set mediaOffsetSec to -30.
 const pageFollowMaps = {
-  soundnoisemusic: {
-    pdfStartPage: 11,        // printed p.1 is PDF page 11
-    mediaOffsetSec: 0,       // set to -30 if you want page 1 at t=0
-    pageMap: [
-      { at: '0:30', page: 1 },
-      { at: '1:00', page: 2 },
-      { at: '1:35', page: 3 },
-      { at: '2:00', page: 4 },
-      { at: '2:48', page: 5 },
-      { at: '4:03', page: 6 },
-      { at: '4:35', page: 7 },
-      { at: '4:52', page: 8 },
-      { at: '5:29', page: 9 },
-      { at: '5:56', page: 10 },
-      { at: '6:12', page: 11 },
-      { at: '6:28', page: 12 },
-      { at: '7:54', page: 13 },
-      { at: '8:39', page: 14 },
- { at: '9:44', page: 15 },
-      { at: '10:30', page: 16 }
-    ]
-  },
-  'amplifications-marimbaideefixe': {
-    pdfStartPage: 7,         // printed p.1 is PDF page 7
+  'satie-gymnopedie-1': {
+    pdfStartPage: 1,
     mediaOffsetSec: 0,
-    pageMap: [
-      { at: '0:00', page: 1 },
-      { at: '1:07', page: 2 },
-      { at: '2:13', page: 3 },
-      { at: '3:33', page: 4 },
-      { at: '4:17', page: 5 },
-      { at: '5:01', page: 6 },
-      { at: '5:49', page: 7 },
-      { at: '6:44', page: 8 },
-      { at: '7:22', page: 9 },
-      { at: '7:49', page: 10 },
-      { at: '8:39', page: 11 },
-      { at: '9:45', page: 12 },
-      { at: '10:39', page: 13 },
-      { at: '12:01', page: 14 },
-      { at: '12:47', page: 15 },
-      { at: '13:56', page: 16 },
-      { at: '15:04', page: 17 },
-      { at: '15:44', page: 18 },
-      { at: '16:42', page: 19 },
-      { at: '18:40', page: 20 }
-    ]
+    pageMap: [{ at: '0:00', page: 1 }]
+  },
+  'praetorius-es-ist-ein-ros': {
+    pdfStartPage: 1,
+    mediaOffsetSec: 0,
+    pageMap: [{ at: '0:00', page: 1 }]
   }
-  // work 2 has no score → no entry needed
+  // placeholder has no score
 };
+
 
 
    const cmds = ['help','list','open','play','pause','stop','copy','goto','pdf','vol','speed','resume','share','unlock','clear','theme'];
