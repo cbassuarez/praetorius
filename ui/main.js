@@ -572,7 +572,7 @@ const onEnd = (e)=>{
   focusInput();
 };
 pdfPane.addEventListener('transitionend', onEnd, { once:true });
-
+}
 
 // Keep the PDF pane aligned with the active work (if the pane is open).
 function syncPdfPaneForWork(n){
