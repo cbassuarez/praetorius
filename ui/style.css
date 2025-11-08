@@ -907,3 +907,31 @@ flex:0 0 auto;
 #works-group[data-theme="dark"] #works-console .wc-frame{
   box-shadow: 0 16px 42px rgba(0,0,0,.28), var(--aero-glow) inset;
 }
+/* Smooth, GPU-backed PDF pane */
+.wc-pdfpane{
+  position: absolute;           /* take out of layout to avoid reflow jank */
+  inset: 0 0 0 auto;            /* right edge inside .wc-split */
+  width: var(--pdf-pane-w, 48rem);
+  max-width: min(56vw, 100%);
+  transform: translate3d(100%,0,0);   /* off-canvas right */
+  opacity: 0;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  contain: paint;               /* isolate paints inside the pane */
+  pointer-events: none;         /* no hits when closed */
+  transition:
+    transform 320ms cubic-bezier(.22,.61,.36,1),
+    opacity   220ms linear;
+  /* keep your existing background/border styles here */
+}
+
+.wc-pdfpane.is-open{
+  transform: translate3d(0,0,0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .wc-pdfpane{ transition: none !important; }
+}
