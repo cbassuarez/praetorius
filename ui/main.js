@@ -476,6 +476,14 @@ pdfFrame.addEventListener('load', () => {
    }
  });
 
+   // Stable width for transform animation (avoids layout thrash)
+function setPdfPaneWidth(){
+  const px = Math.min(896, Math.round(window.innerWidth * 0.56)); // ~56vw, capped
+  pdfPane?.style.setProperty('--pdf-pane-w', px + 'px');
+}
+setPdfPaneWidth();
+window.addEventListener('resize', setPdfPaneWidth, { passive:true });
+
 // Hash-based navigation that works cross-origin for PDF.js viewer
 function gotoPdfPage(pageNum){
   const src = pdfFrame.src || '';
@@ -523,11 +531,17 @@ function showPdfPane(rawUrl, title){
 
   // Strip any existing hash and boot the viewer already on the intended page
   const base = abs.split('#')[0];
-  pdfViewerReady = false;  // viewer will reload now
-  pdfFrame.src = `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0`;
-
   worksConsole.classList.add('has-pdf');
-  pdfPane.setAttribute('aria-hidden', 'false');
+pdfPane.removeAttribute('inert');                 // a11y: allow focus
+pdfPane.setAttribute('aria-hidden', 'false');
+pdfPane.classList.add('is-open');
+
+// Delay src until the pane is on its own composited layer
+requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  pdfViewerReady = false;                          // viewer will reload now
+  pdfFrame.src = `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0`;
+}));
+
 
   // Keep typing focus on the CLI input
   focusInput();
@@ -542,19 +556,23 @@ function showPdfPane(rawUrl, title){
 }
 
 function hidePdfPane(){
-  pdfPane.setAttribute('aria-hidden', 'true');
-  worksConsole.classList.remove('has-pdf');
+  pdfPane.classList.remove('is-open');
+pdfPane.setAttribute('inert','');                  // a11y: make non-focusable
+pdfPane.setAttribute('aria-hidden', 'true');
+worksConsole.classList.remove('has-pdf');
 currentPdfSlug = null;
-  delete worksConsole.dataset.pdfSlug;
-// Re-align as the grid snaps back
+delete worksConsole.dataset.pdfSlug;
+
+// After the transform transition finishes, free the iframe
+const onEnd = (e)=>{
+  if (e.propertyName !== 'transform') return;
+  pdfPane.removeEventListener('transitionend', onEnd);
+  pdfFrame.src = 'about:blank';
   kickAlign(8);
-
-  // Clear iframe after transition to free memory
-  setTimeout(()=>{ pdfFrame.src = 'about:blank'; }, 160);
-
-  // Return focus to CLI input; scrolling remains enabled
   focusInput();
-}
+};
+pdfPane.addEventListener('transitionend', onEnd, { once:true });
+
 
 // Keep the PDF pane aligned with the active work (if the pane is open).
 function syncPdfPaneForWork(n){
@@ -577,10 +595,9 @@ if(pdfCloseB){
 }
 // Re-align when the PDF pane finishes its width/transform transition
 pdfPane.addEventListener('transitionend', (e)=>{
-  if (e.propertyName === 'width' || e.propertyName === 'max-width' || e.propertyName === 'transform' || e.propertyName === 'opacity'){
-    kickAlign(4);
-  }
+  if (e.propertyName === 'transform' || e.propertyName === 'opacity') kickAlign(4);
 }, {passive:true});
+
 
   //apply chrome from initial who are you (init wizard) config
   function applySiteChromeFromConfig(site){
