@@ -49,7 +49,7 @@ export function initWorksConsole() {
     // Mutopia Project — Public Domain engraving (A4 PDF)
     pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gnoss/gymnopedie-1/satie-gymnopedie1-a4.pdf',
     openNote: [
-      'A minimal demo entry. Replace via your CLI later.',
+      'A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later.',
       'Source: PD recording (Wikimedia) + PD score (Mutopia).'
     ]
   },
