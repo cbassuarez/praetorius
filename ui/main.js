@@ -106,6 +106,21 @@ const themeBtn  = document.getElementById('wc-theme-toggle');
 };
 
 
+   // Runtime guard: surface missing <audio> elements
+(function warnMissingAudio() {
+  try {
+    const miss = Object.values(works).filter(w => !document.getElementById(w.audioId));
+    if (miss.length) {
+      miss.forEach(w => appendLine(
+        `warn: missing <audio id="${w.audioId}"> for "${w.title}" — generator should create one.`,
+        'warn',
+        true
+      ));
+    }
+  } catch {}
+})();
+
+
 // === PageFollow maps (printed page numbers) ===
 // Tip: if you later want page 1 to start at audio 0:00 (for W1), set mediaOffsetSec to -30.
 const pageFollowMaps = {
