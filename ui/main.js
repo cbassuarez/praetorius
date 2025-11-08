@@ -2,11 +2,19 @@
 // Applies saved light/dark theme ASAP and sets color-scheme to avoid FOUC.
 // Safe alongside the later applyTheme(readTheme()) in initWorksConsole.
 (function bootTheme(){
+  function setThemeClasses(eff){
+    var host = document.getElementById('works-console') || document.body;
+    try {
+      host.classList.remove('prae-theme-light','prae-theme-dark');
+      host.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+      document.body.classList.remove('prae-theme-light','prae-theme-dark');
+      document.body.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+    } catch(_) {}
+  }
   function run(){
     try{
-      var root  = document.getElementById('works-group');
+      var root  = document.getElementById('works-group') || document.body;
       var saved = localStorage.getItem('wc.theme');
-      // migrate old JSON {"mode":"dark"} → "dark"
       if (saved && saved.trim().charAt(0)==='{'){
         try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
       }
@@ -15,6 +23,7 @@
         root.removeAttribute('data-theme-mode');
         root.setAttribute('data-theme', eff);
       }
+      setThemeClasses(eff);
       document.documentElement.style.colorScheme = 'light dark';
     }catch(e){}
   }
@@ -24,6 +33,7 @@
     run();
   }
 })();
+
 
 export function initWorksConsole() { 
   
@@ -36,6 +46,9 @@ export function initWorksConsole() {
   const out = $('#works-console .wc-output');
   const input = $('#wc-cmd');
   const form = $('#works-console .wc-input');
+  const themeRoot = document.getElementById('works-group') || document.body;
+const themeBtn  = document.getElementById('wc-theme-toggle');
+
 
   /* ===========================
      Hard-coded works (inline)
@@ -981,15 +994,25 @@ function clearHud(){
     try{ localStorage.setItem('wc.theme', (v==='light' ? 'light' : 'dark')); }catch(_){}
   }
   function applyTheme(mode){
-    const eff = (mode==='light') ? 'light' : (mode==='dark' ? 'dark' : readTheme());
+  const eff = (mode==='light') ? 'light' : (mode==='dark' ? 'dark' : readTheme());
+  if (themeRoot) {
     themeRoot.removeAttribute('data-theme-mode');
     themeRoot.setAttribute('data-theme', eff);
-    if(themeBtn){
-      themeBtn.setAttribute('title', `Toggle theme (Alt/Opt+D) · current: ${eff}`);
-      themeBtn.setAttribute('aria-checked', String(eff==='dark'));
-    }
-    writeTheme(eff);
   }
+  // mirror CLI CSS expectations
+  const host = document.getElementById('works-console') || document.body;
+  host.classList.remove('prae-theme-light','prae-theme-dark');
+  host.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+  document.body.classList.remove('prae-theme-light','prae-theme-dark');
+  document.body.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+
+  if (themeBtn){
+    themeBtn.setAttribute('title', `Toggle theme (Alt/Opt+D) · current: ${eff}`);
+    themeBtn.setAttribute('aria-checked', String(eff==='dark'));
+  }
+  writeTheme(eff);
+}
+
   function cycleTheme(){
     const cur  = themeRoot.getAttribute('data-theme') || readTheme();
     const next = (cur === 'dark') ? 'light' : 'dark';
