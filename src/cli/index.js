@@ -10,8 +10,7 @@ import http from 'node:http';
 import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
-import { doctor } from './doctor.js';
-
+import { doctor as doctorUrls } from './doctor.js';
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
 // Theme tokens (light/dark only; no auto)
@@ -1478,10 +1477,16 @@ program
 /* ------------------ doctor ------------------ */
 program
   .command('doctor')
-  .description('Validate DB + config; check duplicate IDs/slugs. Exit code 0=ok, 1=problems.')
-  .option('--json', 'machine-readable JSON report', false)
-  .option('-q, --quiet', 'suppress OK chatter; only errors', false)
-  .action((opts) => {
+  .description('Validate DB + config; optionally check audio/pdf URLs & CORS.')
+  .option('--json', 'machine-readable JSON report (DB check)', false)
+  .option('-q, --quiet', 'suppress OK chatter; only errors (DB check)', false)
+  // Sprint 5 additions:
+  .option('--urls', 'also run URL/CORS checks (audio/pdf, Drive hints)', false)
+  .option('--offline', 'skip network calls in URL checks', false)
+  .option('--timeout <ms>', 'per-URL timeout in ms for URL checks', (v)=>Number(v), 4500)
+  .option('--no-exit-urls', 'do not set non-zero exit from URL checks', false)
+  .action(async (opts) => {
+    // ---- DB/config validation (existing behavior) ----
     const db  = loadDb();
     const cfg = loadConfig();
     const ajv = new Ajv({ allErrors: true });
@@ -1508,21 +1513,46 @@ program
       errors.push({ type: 'config', where: 'theme', msg: 'theme must be "light" or "dark"' });
     }
 
-    const ok = errors.length === 0;
+    const dbOk = errors.length === 0;
+
     if (opts.json) {
-      const report = { ok, errors, counts: { works: db.works?.length || 0 } };
+      const report = { ok: dbOk, errors, counts: { works: db.works?.length || 0 } };
       console.log(JSON.stringify(report, null, 2));
     } else {
-      if (ok && !opts.quiet) {
+      if (dbOk && !opts.quiet) {
         console.log(pc.green('doctor: OK'));
         console.log(pc.gray(`works: ${db.works?.length || 0}, theme: ${cfg.theme}, minify:${cfg.output.minify}, embed:${cfg.output.embed}`));
-      } else if (!ok) {
+      } else if (!dbOk) {
         console.log(pc.red('doctor: issues found'));
         errors.forEach(e => console.log(`  - ${e.type} ${pc.gray(e.where)}: ${e.msg}`));
       }
     }
-    process.exit(ok ? 0 : 1);
+
+    let finalExit = dbOk ? 0 : 1;
+
+    // ---- Optional URL/CORS checks (Sprint 5) ----
+    if (opts.urls) {
+      const argv = [];
+      if (opts.offline) argv.push('--offline');
+      if (Number.isFinite(opts.timeout)) argv.push(`--timeout=${opts.timeout}`);
+      if (opts.noExitUrls) argv.push('--no-exit');
+
+      try {
+        const { errors: urlErrors = 0, warns: urlWarns = 0 } = await doctorUrls(argv);
+        // doctorUrls sets process.exitCode itself unless --no-exit
+        if (!opts.quiet) {
+          console.log(pc.gray(`urls: ${urlErrors} error(s), ${urlWarns} warn(s)`));
+        }
+        if (urlErrors > 0 && !opts.noExitUrls) finalExit = 1;
+      } catch (e) {
+        console.log(pc.red('urls doctor failed: ') + (e?.message || String(e)));
+        finalExit = 1;
+      }
+    }
+
+    process.exit(finalExit);
   });
+
 
 /* ------------------ generate ------------------ */
 program
