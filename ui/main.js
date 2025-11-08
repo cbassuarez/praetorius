@@ -718,6 +718,7 @@ function normalizePdfUrl(u){
     (async () => {
       for(const a of targets){ await doOne(a); ran = true; }
       appendLine(ran ? 'audio unlocked' : 'nothing to unlock','ok',true);
+       })();
   }
 
   /* ===== UI helpers ===== */
@@ -1069,7 +1070,7 @@ function clearHud(){
     if (frame) ro.observe(frame);
   }catch(_){}
 
-})();
+
 
 }
 // then run it after DOM is ready
