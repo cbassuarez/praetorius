@@ -1,7 +1,7 @@
 // --- Theme preboot (moved from template.html) -------------------------------
 // Applies saved light/dark theme ASAP and sets color-scheme to avoid FOUC.
 // Safe alongside the later applyTheme(readTheme()) in initWorksConsole.
-(function bootTheme(){
+;(function bootTheme(){
   function setThemeClasses(eff){
     var host = document.getElementById('works-console') || document.body;
     try {
@@ -38,7 +38,7 @@
  function initWorksConsole() { 
   if (window.__PRAE_INITED) return; window.__PRAE_INITED = true;
 
-(() => {
+//  (was an IIFE here; removed — keep everything that was inside) o.0
   const SCOPE = document.getElementById('works-group') || document;
   const cfg = (window.PRAE && window.PRAE.config) || {};
   applySiteChromeFromConfig(cfg.site || {});
@@ -605,6 +605,11 @@ if (badgeEl) badgeEl.style.display = (site.showBadge === false) ? 'none' : '';
       }
     }
 
+
+
+
+
+    
     if (linksEl){
   linksEl.innerHTML = '';
   const list = Array.isArray(site.links) ? site.links : [];
@@ -713,7 +718,6 @@ function normalizePdfUrl(u){
     (async () => {
       for(const a of targets){ await doOne(a); ran = true; }
       appendLine(ran ? 'audio unlocked' : 'nothing to unlock','ok',true);
-    })();
   }
 
   /* ===== UI helpers ===== */
