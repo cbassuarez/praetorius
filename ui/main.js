@@ -43,7 +43,8 @@ export function initWorksConsole() {
     id: 1,
     slug: 'satie-gymnopedie-1',
     title: 'DEMO — Erik Satie: Gymnopédie No. 1',
-    one: 'Public-domain demo piece to showcase audio + score.',
+    one: 'Public-domain demo piece to showcase audio + score. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later.',
+      'Source: PD recording (Wikimedia) + PD score (Mutopia).',
     cues: [{ label: '@0:00', t: time('0:00') }],
     audioId: 'wc-a1',
     // Mutopia Project — Public Domain engraving (A4 PDF)
