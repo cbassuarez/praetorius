@@ -10,7 +10,6 @@ import http from 'node:http';
 import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
-import { doctor as doctorUrls } from './doctor.js';
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
 // Theme tokens (light/dark only; no auto)
@@ -1651,24 +1650,37 @@ program
     let finalExit = dbOk ? 0 : 1;
 
     // ---- Optional URL/CORS checks (Sprint 5) ----
-    if (opts.urls) {
-      const argv = [];
-      if (opts.offline) argv.push('--offline');
-      if (Number.isFinite(opts.timeout)) argv.push(`--timeout=${opts.timeout}`);
-      if (opts.noExitUrls) argv.push('--no-exit');
+if (opts.urls) {
+  const argv = [];
+  if (opts.offline) argv.push('--offline');
+  if (Number.isFinite(opts.timeout)) argv.push(`--timeout=${opts.timeout}`);
+  if (opts.noExitUrls) argv.push('--no-exit');
 
-      try {
-        const { errors: urlErrors = 0, warns: urlWarns = 0 } = await doctorUrls(argv);
-        // doctorUrls sets process.exitCode itself unless --no-exit
-        if (!opts.quiet) {
-          console.log(pc.gray(`urls: ${urlErrors} error(s), ${urlWarns} warn(s)`));
-        }
-        if (urlErrors > 0 && !opts.noExitUrls) finalExit = 1;
-      } catch (e) {
-        console.log(pc.red('urls doctor failed: ') + (e?.message || String(e)));
-        finalExit = 1;
-      }
+  let doctorUrls;
+  try {
+    const mod = await import('./doctor.js');
+    doctorUrls = mod.doctor || mod.default;
+  } catch (e) {
+    if (!opts.quiet) {
+      console.log(pc.yellow('urls: doctor module not found; skipping URL/CORS checks.'));
+      console.log(pc.gray('hint: add src/cli/doctor.js (export function doctor(argv){...}) or install your URL checker.'));
     }
+  }
+
+  if (typeof doctorUrls === 'function') {
+    try {
+      const { errors: urlErrors = 0, warns: urlWarns = 0 } = await doctorUrls(argv);
+      if (!opts.quiet) {
+        console.log(pc.gray(`urls: ${urlErrors} error(s), ${urlWarns} warn(s)`));
+      }
+      if (urlErrors > 0 && !opts.noExitUrls) finalExit = 1;
+    } catch (e) {
+      console.log(pc.red('urls doctor failed: ') + (e?.message || String(e)));
+      finalExit = 1;
+    }
+  }
+}
+
 
     process.exit(finalExit);
   });
