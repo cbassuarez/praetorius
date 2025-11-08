@@ -3,17 +3,16 @@
 // Safe alongside the later applyTheme(readTheme()) in initWorksConsole.
 ;(function bootTheme(){
   function setThemeClasses(eff){
-    var host = document.getElementById('works-console') || document.body;
+    var host = document.getElementById('works-console');
     try {
       host.classList.remove('prae-theme-light','prae-theme-dark');
       host.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
-      document.body.classList.remove('prae-theme-light','prae-theme-dark');
-      document.body.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+      
     } catch(_) {}
   }
   function run(){
     try{
-      var root  = document.getElementById('works-group') || document.body;
+      var root  = document.getElementById('works-console');
       var saved = localStorage.getItem('wc.theme');
       if (saved && saved.trim().charAt(0)==='{'){
         try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
@@ -46,7 +45,7 @@
   const out = $('#works-console .wc-output');
   const input = $('#wc-cmd');
   const form = $('#works-console .wc-input');
-  const themeRoot = document.getElementById('works-group') || document.body;
+  const themeRoot = document.getElementById('works-console');
 const themeBtn  = document.getElementById('wc-theme-toggle');
 
 
@@ -1010,11 +1009,10 @@ function clearHud(){
     themeRoot.setAttribute('data-theme', eff);
   }
   // mirror CLI CSS expectations
-  const host = document.getElementById('works-console') || document.body;
+  const host = document.getElementById('works-console');
   host.classList.remove('prae-theme-light','prae-theme-dark');
   host.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
-  document.body.classList.remove('prae-theme-light','prae-theme-dark');
-  document.body.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+  
 
   if (themeBtn){
     themeBtn.setAttribute('title', `Toggle theme (Alt/Opt+D) · current: ${eff}`);
