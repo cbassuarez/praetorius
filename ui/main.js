@@ -30,6 +30,8 @@ export function initWorksConsole() {
 
 (() => {
   const SCOPE = document.getElementById('works-group') || document;
+  const cfg = (window.PRAE && window.PRAE.config) || {};
+  applySiteChromeFromConfig(cfg.site || {});
   const $ = (s, r = SCOPE) => r.querySelector(s);
   const out = $('#works-console .wc-output');
   const input = $('#wc-cmd');
@@ -562,6 +564,46 @@ pdfPane.addEventListener('transitionend', (e)=>{
   }
 }, {passive:true});
 
+  //apply chrome from initial who are you (init wizard) config
+  function applySiteChromeFromConfig(site){
+    const titleEl = SCOPE.querySelector('[data-site-title]');
+    const labelEl = SCOPE.querySelector('[data-list-label]');
+    const subEl   = SCOPE.querySelector('[data-site-subtitle]');
+    const updEl   = SCOPE.querySelector('[data-updated]');
+    const copyEl  = SCOPE.querySelector('[data-copyright-name]');
+    const linksEl = SCOPE.querySelector('[data-links]');
+
+    const fullName = site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ').trim();
+    if (titleEl && fullName) titleEl.textContent = fullName;
+    if (copyEl  && (site.copyrightName || fullName)) copyEl.textContent = site.copyrightName || fullName;
+    if (labelEl && site.listLabel) labelEl.textContent = site.listLabel;
+    if (subEl   && site.subtitle)  subEl.textContent   = site.subtitle;
+
+    if (updEl){
+      // manual date string (e.g. "Nov 7") or auto (today)
+      if (site.updated?.mode === 'manual' && site.updated.value){
+        updEl.textContent = `Updated ${site.updated.value}`;
+      } else {
+        const fmt = new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric' });
+        updEl.textContent = `Updated ${fmt.format(new Date())}`;
+      }
+    }
+
+    if (linksEl){
+      linksEl.innerHTML = '';
+      (Array.isArray(site.links) ? site.links : []).forEach(l=>{
+        if (!l?.label || !l?.href) return;
+        const a = document.createElement('a');
+        a.className = 'wb-chip';
+        a.textContent = l.label;
+        a.href = l.href;
+        if (l.external) { a.target = '_blank'; a.rel = 'noopener'; }
+        linksEl.appendChild(a);
+      });
+    }
+  }
+
+  
 // Re-align whenever #works-console gains/loses the has-pdf class
 new MutationObserver(()=> kickAlign(4))
   .observe(worksConsole, { attributes:true, attributeFilter:['class'] });
