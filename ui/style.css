@@ -893,4 +893,13 @@ flex:0 0 auto;
 [data-theme="dark"] #works-group { background: #fff !important; }
 
 /* Keep the console surface dark against the white page */
-#works-console .wc-frame { background: rgba(0,0,0,0.85); }
+#works-console .wc-frame { background: var(--aero-bg); }
+/* Force a white backdrop for the entire works area (header, middle, footer) */
+#works-group,
+#works-group .wc-titlebar,
+#works-group .wc-crumbs,
+#works-group .wc-split { background:#fff !important; }
+/* Dark-mode: soften perimeter shadow so it doesn't look like a black outline */
+#works-group[data-theme="dark"] #works-console .wc-frame{
+  box-shadow: 0 16px 42px rgba(0,0,0,.28), var(--aero-glow) inset;
+}
