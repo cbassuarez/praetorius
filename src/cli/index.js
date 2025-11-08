@@ -181,7 +181,9 @@ function renderScriptFromDb(db, opts = {}) {
   window.PRAE.pageFollowMaps = pageFollowMaps;
   window.PRAE.ensureAudioTags = ensureAudioTags;
   // Optional theme hint from config (non-authoritative; UI can ignore)
-  window.PRAE.config = window.PRAE.config || { theme: ${JSON.stringify((opts.theme === 'light') ? 'light' : 'dark')} };
+  window.PRAE.config = window.PRAE.config || {};
+  window.PRAE.config.theme = ${JSON.stringify(opts.theme === 'light' ? 'light' : 'dark')};
+  window.PRAE.config.site  = ${JSON.stringify(opts.site || {})};
 
   try { ensureAudioTags(); } catch(_) {}
   console.log('[prae] loaded', works.length, 'works; page-follow maps:', Object.keys(pageFollowMaps).length);
@@ -192,8 +194,22 @@ function renderScriptFromDb(db, opts = {}) {
 /* ------------------ schema + helpers ------------------ */
 // Config schema (light) – theme + output flags
 const DEFAULT_CONFIG = Object.freeze({
-  theme: 'dark',                 // "light" | "dark"
-  output: { minify: false, embed: false }
+  theme: 'dark',
+  output: { minify: false, embed: false },
+  site: {
+    firstName: '',
+    lastName:  '',
+    fullName:  '',
+    copyrightName: '',
+    listLabel: 'Works List',
+    subtitle:  '',
+    updated: { mode: 'auto', value: '' },  // mode: 'auto' | 'manual'
+    links: [
+      { label:'Home',     href:'#', external:false },
+      { label:'Projects', href:'#', external:false },
+      { label:'Contact',  href:'#', external:false }
+    ]
+  }
 });
 
 const WORKS_SCHEMA = {
@@ -567,25 +583,48 @@ function loadConfig() {
   // deep-merge with defaults and normalize theme
   const theme = (raw.theme === 'light') ? 'light' : 'dark';
   const out   = raw.output || {};
-  return {
+    return {
     ...DEFAULT_CONFIG,
     theme,
     output: {
       ...DEFAULT_CONFIG.output,
       minify: !!out.minify,
       embed:  !!out.embed
+    },
+    site: {
+      ...DEFAULT_CONFIG.site,
+      ...(raw.site || {}),
+      updated: { ...DEFAULT_CONFIG.site.updated, ...(raw.site?.updated || {}) },
+      links: Array.isArray(raw.site?.links) ? raw.site.links : DEFAULT_CONFIG.site.links
     }
   };
+
 }
 function saveConfig(cfg) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  const normalized = {
+    const normalized = {
     theme: (cfg.theme === 'light') ? 'light' : 'dark',
     output: {
       minify: !!cfg.output?.minify,
       embed:  !!cfg.output?.embed
+    },
+    site: {
+      firstName: String(cfg.site?.firstName || ''),
+      lastName:  String(cfg.site?.lastName  || ''),
+      fullName:  String(cfg.site?.fullName  || ''),
+      copyrightName: String(cfg.site?.copyrightName || ''),
+      listLabel: String(cfg.site?.listLabel || 'Works List'),
+      subtitle:  String(cfg.site?.subtitle  || ''),
+      updated: {
+        mode: (cfg.site?.updated?.mode === 'manual') ? 'manual' : 'auto',
+        value: String(cfg.site?.updated?.value || '')
+      },
+      links: (Array.isArray(cfg.site?.links) ? cfg.site.links : []).map(l => ({
+        label: String(l.label || ''), href: String(l.href || ''), external: !!l.external
+      }))
     }
   };
+
   atomicWriteFile(CONFIG_PATH, JSON.stringify(normalized, null, 2));
 }
 
@@ -731,6 +770,7 @@ program
   .option('-o, --out <dir>', 'output directory', 'prae-out')
   .option('--dry-run', 'print actions without writing files', false)
   .option('-f, --force', 'overwrite if files exist', false)
+    .option('--wizard', 'run site wizard after seeding', false)
   .action(async (opts) => {
     const outDir = path.resolve(process.cwd(), opts.out);
     const dry    = !!opts['dryRun'];
@@ -767,10 +807,14 @@ program
       saveDb({ version: 1, works: [] });
       console.log(pc.green('write ') + pc.dim(cwdRel(DB_PATH)));
     }
-    // Seed config if missing
     if (!dry && !fs.existsSync(CONFIG_PATH)) {
       saveConfig(DEFAULT_CONFIG);
       console.log(pc.green('write ') + pc.dim(cwdRel(CONFIG_PATH)));
+    }
+    // optionally run the site wizard
+    if (opts.wizard) {
+      // re-use the site command’s action
+      await program.parseAsync(['node','prae','site']);
     }
 
     console.log('\n' + pc.bold('Next steps:'));
@@ -778,6 +822,82 @@ program
     console.log('  • Generate:  ' + pc.cyan('praetorius generate'));
     console.log('');
   });
+
+// site command
+program
+  .command('site')
+  .alias('config')
+  .description('Wizard to edit site chrome (name, labels, subtitle, links, updated date)')
+  .action(async () => {
+    const cfg = loadConfig();
+    const s0  = cfg.site || DEFAULT_CONFIG.site;
+
+    const base = await prompt([
+      { type:'input', name:'firstName', message:'First name', initial: s0.firstName },
+      { type:'input', name:'lastName',  message:'Last name',  initial: s0.lastName },
+      { type:'input', name:'fullName',  message:'Full name (leave blank to use First + Last)', initial: s0.fullName || '' },
+      { type:'select', name:'listLabel', message:'List name', choices:[
+          {name:'Works List'},{name:'Portfolio'},{name:'Projects'},{name:'Works'},{name:'Custom…'}
+        ], initial: s0.listLabel && ['Works List','Portfolio','Projects','Works'].includes(s0.listLabel) ? s0.listLabel : 'Custom…' },
+    ]);
+
+    let listLabel = base.listLabel;
+    if (listLabel === 'Custom…') {
+      const c = await prompt([{ type:'input', name:'label', message:'Custom list name', initial: s0.listLabel || 'Works List' }]);
+      listLabel = c.label || 'Works List';
+    }
+
+    const sub = await prompt([
+      { type:'input', name:'subtitle', message:'Subtitle (optional)', initial: s0.subtitle || '' },
+      { type:'select', name:'updatedMode', message:'Updated date', choices:[{name:'auto'},{name:'manual'}],
+        initial: (s0.updated?.mode === 'manual') ? 'manual' : 'auto' }
+    ]);
+
+    let updated = { mode: sub.updatedMode, value: '' };
+    if (sub.updatedMode === 'manual') {
+      const d = await prompt([{ type:'input', name:'value', message:'Updated string (e.g., "Nov 7")', initial: s0.updated?.value || '' }]);
+      updated.value = d.value || '';
+    }
+
+    // Links
+    const links = [];
+    let more = true;
+    // Seed from existing if present
+    (Array.isArray(s0.links) ? s0.links : []).forEach(l => links.push({ ...l }));
+    if (!links.length) links.push({ label:'Home', href:'#', external:false });
+
+    while (more) {
+      const i = links.length - 1;
+      const cur = links[i] || { label:'', href:'', external:false };
+      const ans = await prompt([
+        { type:'input',  name:'label',    message:`Link ${i+1} label`, initial: cur.label },
+        { type:'input',  name:'href',     message:`Link ${i+1} URL`,   initial: cur.href },
+        { type:'confirm',name:'external', message:`Open in new tab?`,  initial: !!cur.external }
+      ]);
+      links[i] = { label: ans.label, href: ans.href, external: !!ans.external };
+      const cont = await prompt({ type:'confirm', name:'ok', message:'Add another link?', initial:false });
+      more = cont.ok;
+      if (more) links.push({ label:'', href:'', external:false });
+    }
+
+    // Save
+    const next = {
+      ...cfg,
+      site: {
+        ...s0,
+        firstName: base.firstName.trim(),
+        lastName:  base.lastName.trim(),
+        fullName:  (base.fullName || '').trim(),
+        listLabel,
+        subtitle:  (sub.subtitle || '').trim(),
+        updated,
+        links
+      }
+    };
+    saveConfig(next);
+    console.log(pc.green('site saved ') + pc.dim(cwdRel(CONFIG_PATH)));
+  });
+
 
 /* ------------------ add / wizard ------------------ */
 program
@@ -1439,7 +1559,7 @@ program
         return false;
       }
       const wantMin = !!opts.minify || !!cfg.output.minify;
-      let js = renderScriptFromDb(db, { minify: wantMin, theme: cfg.theme });
+            let js  = renderScriptFromDb(db, { minify: wantMin, theme: cfg.theme, site: cfg.site });
       let css = buildCssBundle();
       if (wantMin) {
         const esb = await lazyEsbuild();
