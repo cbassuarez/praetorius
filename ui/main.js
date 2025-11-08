@@ -626,7 +626,7 @@ if (badgeEl) badgeEl.style.display = (site.showBadge === false) ? 'none' : '';
     linksEl.appendChild(a);
   }
 }
-
+  }
 
   
 // Re-align whenever #works-console gains/loses the has-pdf class
