@@ -617,20 +617,42 @@ if (badgeEl) badgeEl.style.display = (site.showBadge === false) ? 'none' : '';
     
     if (linksEl){
   linksEl.innerHTML = '';
-  const list = Array.isArray(site.links) ? site.links : [];
+
+  const raw = Array.isArray(site.links) ? site.links : [];
+  const cleaned = raw
+    .map((l) => {
+      if (!l) return null;
+      const label = String(l.label ?? '').trim();
+      let href = String(l.href ?? '').trim();
+      const external = (l.external !== false); // default = external
+
+      // Drop placeholders / empties
+      if (!label || !href || href === '#' || href === '/') return null;
+
+      // Add protocol if missing (treat bare domains as external)
+      const isAbs = /^(?:[a-z]+:)?\/\//i.test(href);
+      const isRel = href.startsWith('/') || href.startsWith('#');
+      const isMail = /^mailto:/i.test(href);
+      if (!isAbs && !isRel && !isMail) href = 'https://' + href.replace(/^\/+/, '');
+
+      return { label, href, external };
+    })
+    .filter(Boolean);
+
   const seen = new Set();
-  for (const l of list){
-    if (!l || !l.label || !l.href) continue;                   // strict
+  for (const l of cleaned){
     const key = (l.label + '|' + l.href).toLowerCase();
-    if (seen.has(key)) continue; seen.add(key);                 // dedupe
+    if (seen.has(key)) continue; seen.add(key);
+
     const a = document.createElement('a');
     a.className = 'wb-chip';
     a.textContent = l.label;
     a.href = l.href;
-    if (l.external !== false){ a.target = '_blank'; a.rel = 'noopener'; }
+    if (l.external) { a.target = '_blank'; a.rel = 'noopener'; }
     linksEl.appendChild(a);
   }
 }
+
   }
 
   
