@@ -884,3 +884,13 @@ flex:0 0 auto;
 @media (max-width: 600px){
   .wc-crumbs .wb-badge img{ height:16px; }
 }
+/* Works section must always be white, regardless of theme */
+#works-group,
+#works-group .wc-split { background: #fff !important; }
+
+/* If any global dark selector still bleeds through, neutralize it here */
+.prae-theme-dark #works-group,
+[data-theme="dark"] #works-group { background: #fff !important; }
+
+/* Keep the console surface dark against the white page */
+#works-console .wc-frame { background: rgba(0,0,0,0.85); }
