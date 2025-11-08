@@ -10,6 +10,7 @@ import http from 'node:http';
 import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
+import { doctor } from './doctor.js';
 
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
