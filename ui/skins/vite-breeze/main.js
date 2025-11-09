@@ -27,6 +27,14 @@
 })();
 
 ;(function(){
+    // Run AFTER DOM is parsed to avoid no-op clicks when script loads in <head>
+  function ready(fn){
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', fn, { once:true });
+    } else {
+      fn();
+    }
+  }
   // ---------------- Theme preboot (console-compatible) ----------------
   (function bootTheme(){
     function setThemeClasses(eff){
@@ -67,19 +75,27 @@
   const PRAE  = (window.PRAE = window.PRAE || {});
   const works = Array.isArray(PRAE.works) ? PRAE.works : [];
   const site  = (PRAE.config && PRAE.config.site) || {};
+  const pfMap = PRAE.pageFollowMaps || {}; // <— FIX: was missing
   if (typeof PRAE.ensureAudioTags === 'function') PRAE.ensureAudioTags();
 
-  const host       = document.querySelector('#works-console');
-  const headerNav  = document.getElementById('prae-nav');
-  const footer     = document.getElementById('prae-footer');
-  const shell      = document.querySelector('.vb-shell');
-  const pdfPane    = document.querySelector('.vb-pdfpane');
-  const pdfTitle   = document.querySelector('.vb-pdf-title');
-  const pdfClose   = document.querySelector('.vb-pdf-close');
-  const pdfFrame   = document.querySelector('.vb-pdf-frame');
-  if (!host) return;
+  // DOM refs are bound inside mount() so they exist when used
+  let host, headerNav, footer, shell, pdfPane, pdfTitle, pdfClose, pdfFrame;
+  function bindDom(){
+    host      = document.querySelector('#works-console');
+    headerNav = document.getElementById('prae-nav');
+    footer    = document.getElementById('prae-footer');
+    shell     = document.querySelector('.vb-shell');
+    pdfPane   = document.querySelector('.vb-pdfpane');
+    pdfTitle  = document.querySelector('.vb-pdf-title');
+    pdfClose  = document.querySelector('.vb-pdf-close');
+    pdfFrame  = document.querySelector('.vb-pdf-frame');
+  }
 
-  // Nav / Footer from config (kept minimal)
+  ready(mount);
+  function mount(){
+    bindDom();
+    if (!host) { console.warn('[prae] #works-console not found'); return; }
+// Nav / Footer from config (kept minimal)
   if (headerNav && Array.isArray(site.links)) {
     headerNav.innerHTML = site.links
       .filter(l => (l && l.label))
@@ -193,6 +209,7 @@
   document.addEventListener('keydown', (e)=>{
     if (e.key === 'Escape' && shell?.classList.contains('has-pdf')) hidePdfPane();
   }, { passive:true });
+  }
 
   // ---------------- Helpers ----------------
   function ensureAudioFor(w){
@@ -241,6 +258,12 @@
     const src = choosePdfViewer(raw);
     const abs = /^https?:\/\//i.test(src) ? src :
       ('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.9.179/web/viewer.html?file=' + encodeURIComponent(src));
+          
+          // If split-pane elements are missing (older markup), fall back to new tab (same behavior as before)
+    if (!shell || !pdfPane || !pdfFrame) {
+      window.open(abs, '_blank', 'noopener');
+      return;
+    }
 
     // Decide initial page: use page-follow map if available
     let initPage = 1;
