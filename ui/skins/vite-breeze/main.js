@@ -94,6 +94,17 @@
   ready(mount);
   function mount(){
     bindDom();
+    // Bind PDF.js load once the iframe node actually exists
+if (pdfFrame && !pdfFrame.dataset.bound) {
+  pdfFrame.addEventListener('load', () => {
+    pdfViewerReady = true;
+    if (pendingPdfGoto && (!pendingPdfGoto.slug || pendingPdfGoto.slug === currentPdfSlug)) {
+      gotoPdfPage(pendingPdfGoto.pdfPage);
+      pendingPdfGoto = null;
+    }
+  });
+  pdfFrame.dataset.bound = '1';
+}
     if (!host) { console.warn('[prae] #works-console not found'); return; }
 // Nav / Footer from config (kept minimal)
   if (headerNav && Array.isArray(site.links)) {
@@ -353,19 +364,15 @@ pdfViewerReady = false;
     if(m) return `https://drive.google.com/file/d/${m[1]}/view?usp=drivesdk`;
     return u;
   }
+  
   function choosePdfViewer(url){
-    // Drive "view" → direct binary (enables PDF.js paging + CORS-friendly fetch)
-    const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
-    const file = m
-      ? `https://drive.google.com/uc?export=download&id=${m[1]}`
-      : url;
-    // Match console: Mozilla viewer, page-width, toolbar hidden, sidebar closed
-    return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
-  }
+  const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+  const file = m ? `https://drive.google.com/uc?export=download&id=${m[1]}` : url;
+  return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
+}
 
-    // 3) Otherwise, fall back to the raw URL (browser PDF plugin)
-    return url;
-  }
+  
+  
   // Minimal printed→PDF page support (if pageFollowMaps exists)
   function computePdfPage(slug, tSec){
     const cfg = pfMap[slug]; if (!cfg) return 1;
@@ -393,6 +400,7 @@ pdfViewerReady = false;
   let currentPdfSlug = null;
   let pdfViewerReady = false;
   let pendingPdfGoto = null;
+  let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
 
   function gotoPdfPage(pageNum){
     if (!pdfFrame || !pdfFrame.src) return;
@@ -410,14 +418,7 @@ pdfViewerReady = false;
     pdfFrame.src = url.toString();
   }
 
-  // Flush queued goto once the viewer finishes (re)loading
-  pdfFrame?.addEventListener('load', () => {
-    pdfViewerReady = true;
-    if (pendingPdfGoto && (!pendingPdfGoto.slug || pendingPdfGoto.slug === currentPdfSlug)) {
-      gotoPdfPage(pendingPdfGoto.pdfPage);
-      pendingPdfGoto = null;
-    }
-  });
+  
 
   // Accept ticks from the audio side
   window.addEventListener('wc:pdf-goto', (e) => {
@@ -428,7 +429,6 @@ pdfViewerReady = false;
     }
     gotoPdfPage(pdfPage);
   });
-let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
   function detachPageFollow(){
     if (pageFollow.audio && pageFollow._on){
       pageFollow.audio.removeEventListener('timeupdate', pageFollow._on);
