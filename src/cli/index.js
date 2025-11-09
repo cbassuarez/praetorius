@@ -10,6 +10,7 @@ import http from 'node:http';
 import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
+import updateNotifier from 'update-notifier';
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
 // Theme tokens (light/dark only; no auto)
@@ -763,6 +764,49 @@ program
   .alias('prae')
   .description('Praetorius — Works Console scaffolder & wizard')
   .version(pkgJson.version || '0.0.0');
+
+// Non-blocking update hint (industry standard)
+try {
+  updateNotifier({
+    pkg: { name: pkgJson.name || 'praetorius', version: pkgJson.version || '0.0.0' }
+  }).notify();
+} catch {}
+
+// Rich, example-driven help footer
+program.addHelpText('after', `
+
+Quick start:
+  $ prae init -o prae-out
+  $ prae add
+  $ prae generate -o dist --minify
+  $ prae preview --no-open --port 5173
+
+Import / Export:
+  # JSON / CSV / YAML (csv/yaml loaders are lazy)
+  $ prae import works.csv --assume-new-id --assume-new-slug
+  $ prae export --format=csv > works.csv
+
+Score / Page-Follow:
+  $ prae score add 3
+  $ prae score list 3
+  $ prae score validate 3
+
+Squarespace single-embed:
+  $ prae generate --embed -o paste
+  # Paste paste/embed.html into a Code block.
+
+UI bundle (template.html + main.js + style.css → dist/):
+  $ prae generate --ui-src ui --html template.html --app-js app.js --app-css app.css
+
+Troubleshooting:
+  • CSV imports need "csv-parse"   → npm i csv-parse
+  • YAML imports need "yaml"       → npm i yaml
+  • Minification needs "esbuild"   → npm i esbuild
+  • URL checks (doctor): add src/cli/doctor.js exporting "doctor(argv)", or run with --offline
+
+Testing internals (without running the CLI):
+  $ PRAE_TEST_EXPORTS=1 node -e "import('./src/cli/index.js'); console.log(!!globalThis.__PRAE_TEST__)"
+`);
 
 /* ------------------ preview (tiny static server) ------------------ */
 function contentTypeFor(p) {
@@ -1908,4 +1952,11 @@ program
     console.log(pc.green('undo complete ') + pc.dim(`restored from ${last}`));
   });
 /* ------------------ run ------------------ */
-program.parseAsync(process.argv);
+if (process.env.PRAE_TEST_EXPORTS !== '1') {
+  program.parseAsync(process.argv);
+} else {
+  globalThis.__PRAE_TEST__ = {
+    parseTimeToSecStrict, normalizeScore, validateScore,
+    migrateDb, renderScriptFromDb, secToHuman,
+  };
+}
