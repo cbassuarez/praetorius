@@ -196,6 +196,10 @@ function renderScriptFromDb(db, opts = {}) {
 const DEFAULT_CONFIG = Object.freeze({
   theme: 'dark',
   output: { minify: false, embed: false },
+  ui: {
+      skin: 'console',          // 'console' (current), 'vite-breeze', 'cards-tabs', 'docs-reader'
+      allowUrlOverride: true    // ?skin=vite-breeze in preview/index.html
+    },
   site: {
     firstName: '',
     lastName:  '',
@@ -711,6 +715,11 @@ function loadConfig() {
       minify: !!out.minify,
       embed:  !!out.embed
     },
+ui: {
+      ...DEFAULT_CONFIG.ui,
+      ...(raw.ui || {}),
+      skin: (raw.ui?.skin ?? DEFAULT_CONFIG.ui.skin)
+    },
     site: {
       ...DEFAULT_CONFIG.site,
       ...(raw.site || {}),
@@ -727,6 +736,10 @@ function saveConfig(cfg) {
     output: {
       minify: !!cfg.output?.minify,
       embed:  !!cfg.output?.embed
+    },
+ui: {
+      skin: String(cfg.ui?.skin || 'console'),
+      allowUrlOverride: !!cfg.ui?.allowUrlOverride
     },
     site: {
       firstName: String(cfg.site?.firstName || ''),
@@ -1743,6 +1756,7 @@ program
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
   .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'ui')
+  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin)', '')
   .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')
@@ -1806,7 +1820,20 @@ program
       if (!opts.noUi) {
         // Prefer project UI dir; fall back to packaged /ui
         const htmlName = opts.html || 'template.html';
-        const candidates = [uiSrcDir, pkgUiDir];
+        const skinKey  = String(opts.skin || cfg.ui?.skin || 'console');
+
+        // Allow URL override in preview by writing skin into index.html data attr (used by main.js)
+        const chosenSkin = skinKey;
+
+        // Candidate search order:
+        //  1) project /ui/skins/<skin>, 2) packaged /ui/skins/<skin>,
+        //  3) project /ui (legacy),     4) packaged /ui (legacy)
+        const candidates = [
+          path.join(uiSrcDir, 'skins', chosenSkin),
+          path.join(pkgUiDir, 'skins', chosenSkin),
+          uiSrcDir,
+          pkgUiDir
+        ];
         const uiRoot = candidates.find(d => existsFile(path.join(d, htmlName)));
 
         if (uiRoot) {
@@ -1844,7 +1871,8 @@ program
           }
 
           // Build dist/index.html by injecting links/scripts before </body>
-          let html = fs.readFileSync(tplIn, 'utf8');
+          let html = fs.readFileSync(tplIn, 'utf8')
+            .replace('<html', `<html data-skin="${chosenSkin}"`);
           const inj = [
             `<link rel="stylesheet" href="./${cssFile}">`,
             haveStyle ? `<link rel="stylesheet" href="./${opts.appCss || 'app.css'}">` : '',
