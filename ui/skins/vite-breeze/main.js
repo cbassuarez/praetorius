@@ -264,8 +264,8 @@
     if (!w.pdf) return;
     const raw = normalizePdfUrl(w.pdf);
     const src = choosePdfViewer(raw);
-    const abs = /^https?:\/\//i.test(src) ? src :
-      ('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.9.179/web/viewer.html?file=' + encodeURIComponent(src));
+// choosePdfViewer() always returns an absolute URL
+    const abs = src;
           
           // If split-pane elements are missing (older markup), fall back to new tab (same behavior as before)
     if (!shell || !pdfPane || !pdfFrame) {
@@ -346,18 +346,18 @@
     return u;
   }
   function choosePdfViewer(url){
-    // 1) Google Drive → use its embeddable preview (no CORS/XHR required)
+    // 1) Google Drive → use its embed (no CORS/XHR)
     const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
     if (m) return `https://drive.google.com/file/d/${m[1]}/preview`;
 
-    // 2) Same-origin or known CORS-friendly CDNs → PDF.js viewer (page control works)
+    // 2) Same-origin / friendly CDNs → Mozilla’s hosted PDF.js viewer
     const sameOrigin = url.startsWith(location.origin);
-    const corsOk = /^(https?:\/\/)?([^/]+\.)?(githubusercontent\.com|jsdelivr\.net|unpkg\.com|cloudflare-ipfs\.com|cbassuarez\.com|stagedevices\.com|dexdsl\.org)\//i.test(url);
+    const corsOk = /^(https?:\/\/)?([^/]+\.)?(githubusercontent\.com|unpkg\.com|cloudflare-ipfs\.com|cbassuarez\.com|stagedevices\.com|dexdsl\.org)\//i.test(url);
     if (sameOrigin || corsOk){
-      return `https://cdn.jsdelivr.net/npm/pdfjs-dist@3.9.179/web/viewer.html?file=${encodeURIComponent(url)}#page=1&zoom=page-width&toolbar=0`;
+      return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(url)}#page=1&zoom=page-width&toolbar=0`;
     }
 
-    // 3) Everything else → embed raw URL (let the browser’s PDF plugin render)
+    // 3) Otherwise, fall back to the raw URL (browser PDF plugin)
     return url;
   }
   // Minimal printed→PDF page support (if pageFollowMaps exists)
