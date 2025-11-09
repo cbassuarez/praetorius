@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Praetorius — App Mode</title>
+  <title>Praetorius — Interactive Portfolio</title>
 </head>
 <body>
   <header class="vb-header">
     <div class="vb-logo">Praetorius</div>
-    <nav class="vb-nav" id="prae-nav"></nav>
+    <nav class="vb-nav" id="prae-nav" aria-label="Site links"></nav>
   </header>
 
   <main class="vb-onecol">
+    <!-- one-column, console-aligned list -->
     <section id="works-console" class="vb-list" aria-label="Works list"></section>
   </main>
 <footer class="vb-footer" id="prae-footer" role="contentinfo">
