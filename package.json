@@ -15,7 +15,7 @@
     "assets"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.17"
   },
   "exports": {
     ".": {
@@ -27,10 +27,26 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "prepare": "chmod +x src/cli/index.js"
+    "lint": "node -e \"process.exit(0)\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run -t unit",
+    "test:e2e": "vitest run -t e2e",
+    "e2e:smoke": "node scripts/e2e-smoke.mjs",
+    "prepack": "node scripts/prepack-verify.mjs && chmod +x src/cli/index.js",
+    "prepublishOnly": "npm run test && npm pack --dry-run",
+    "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "vite": "^7.2.2"
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@vitest/coverage-v8": "^4.0.8",
+    "conventional-changelog-cli": "^4.1.0",
+    "execa": "^9.6.0",
+    "husky": "^9.1.7",
+    "vite": "^7.2.2",
+    "vitest": "^4.0.8"
   },
   "dependencies": {
     "ajv": "^8.17.1",
