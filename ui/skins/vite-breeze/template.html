@@ -8,19 +8,14 @@
 <body>
   <header class="vb-header">
     <div class="vb-logo">Praetorius</div>
-    <nav class="vb-nav">
-      <a href="#">Home</a><a href="#">Projects</a><a href="#" data-action="run">Run</a><a href="#" data-action="docs">Docs</a>
-    </nav>
+    <nav class="vb-nav" id="prae-nav"></nav>
   </header>
 
-  <section class="vb-toolbar">
-    <button data-action="new">New Project</button>
-    <button data-action="runner">Run Task</button>
-    <button data-action="connect">Connect GitHub</button>
-  </section>
-
-  <main class="vb-grid">
-    <section id="works-console" class="vb-cards"></section>
+  <main class="vb-onecol">
+    <section id="works-console" class="vb-list" aria-label="Works list"></section>
   </main>
+<footer class="vb-footer" id="prae-footer" role="contentinfo">
+    <!-- Populated from .prae/config.json (site.links, updated, copyrightName) -->
+  </footer>
 </body>
 </html>

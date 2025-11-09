@@ -1762,6 +1762,7 @@ program
   .option('--app-css <file>','UI CSS output filename', 'app.css')
   .option('--no-ui',        'skip building UI (HTML/JS/CSS) even if present', false)
 
+
   .action(async (opts) => {
     const outDir = path.resolve(process.cwd(), opts.out);
     fs.mkdirSync(outDir, { recursive: true });
@@ -1873,6 +1874,9 @@ program
           // Build dist/index.html by injecting links/scripts before </body>
           let html = fs.readFileSync(tplIn, 'utf8')
             .replace('<html', `<html data-skin="${chosenSkin}"`);
+
+          // Ensure the chosen light/dark theme class lands on <body>
+          html = upsertBodyTheme(html, cfg.theme);
           const inj = [
             `<link rel="stylesheet" href="./${cssFile}">`,
             haveStyle ? `<link rel="stylesheet" href="./${opts.appCss || 'app.css'}">` : '',
