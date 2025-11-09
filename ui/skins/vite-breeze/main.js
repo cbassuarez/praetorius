@@ -92,7 +92,18 @@
     pdfFrame  = document.querySelector('.vb-pdf-frame');
   }
 
-  ready(mount);
+  ready(()=> {
+   try { mount(); }
+   catch (e) {
+     console.error('[prae][vite-breeze] mount failed:', e);
+     try {
+       const el = document.createElement('div');
+       el.style.cssText = 'color:#f66;padding:8px 12px';
+       el.textContent = 'Prae skin error — see console for details';
+       (document.getElementById('works-console') || document.body).prepend(el);
+     } catch(_) {}
+   }
+ });
   function mount(){
     bindDom();
     // Bind PDF.js load once the iframe node actually exists
@@ -136,14 +147,14 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   })();
 
   // ---------------- HUD + Works list ----------------
- host.innerHTML = '';
- // Put HUD *before* the list so re-renders don’t nuke it
+ // Don’t clear the list up front—build new rows and replace later.
+ // Create HUD once, as a sibling before the list so it survives re-renders.
  let hudAt = document.getElementById('wc-hud');
- if (!hudAt) {
+ if (!hudAt && host && host.parentNode) {
    hudAt = document.createElement('div');
    hudAt.id = 'wc-hud';
    hudAt.className = 'wc-hud';
-   host.parentNode.insertBefore(hudAt, host);
+   host.parentNode.insertBefore(hudAt, host); // stable position
  }
  hudBox = hudAt;
  ensureHudDom();
@@ -160,9 +171,10 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
    const id = hudState.last.id || (works[0] && works[0].id); if (!id) return;
    playAt(id, hudState.last.at||0);
  });
-  works.forEach(w => {
-    const cues = Array.isArray(w.cues) ? w.cues : [];
-    const el = document.createElement('article');
+  const frag = document.createDocumentFragment();
+ works.forEach(w => {
+   const cues = Array.isArray(w.cues) ? w.cues : [];
+   const el = document.createElement('article');
     el.className = 'work';
     el.id = 'work-' + (w.slug || w.id);
 
@@ -186,11 +198,11 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
         ${w.pdf ? `<button class="btn" type="button" data-act="pdf" data-id="${w.id}">PDF</button>` : ''}
       </div>
       <div class="note" hidden></div>`;
-    host.appendChild(el);
-
-    // Ensure a matching <audio> exists (id = wc-a<ID>)
-    ensureAudioFor(w);
-  });
+    frag.appendChild(el);
+   ensureAudioFor(w);
+ });
+ // Replace list contents in one shot, HUD remains outside
+ if (host) host.replaceChildren(frag);
 
   // ---------------- Interactions ----------------
   host.addEventListener('click', (e)=>{
@@ -276,6 +288,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
       const src = normalizeSrc(raw);
       if (src) { a.src = src; a.load(); }
     }
+    
     // Show title and 0:00/--:-- right away
     hudUpdate(id, a);
     const seekAndPlay = ()=>{
@@ -497,29 +510,28 @@ pdfViewerReady = false;
  }
 
  let hudRefs = null;
- function ensureHudDom(){
-   if (!hudBox) return null;
-   if (hudRefs) return hudRefs;
-   hudBox.innerHTML = '';
-  // Ensure predictable node for styling/tests
-  hudBox.id = hudBox.id || 'wc-hud';
-   const wrap = document.createElement('div'); wrap.className = 'wc-hud-row';
-   const tag  = document.createElement('span'); tag.className  = 'tag';
-   const time = document.createElement('span'); time.className = 'hud-time';
-   const vol  = document.createElement('span'); vol.className  = 'soft hud-vol';
-   const spd  = document.createElement('span'); spd.className  = 'soft hud-speed';
-   const meter= document.createElement('div');  meter.className= 'meter';
-   const fill = document.createElement('span'); meter.appendChild(fill);
-   const acts = document.createElement('div');  acts.className = 'hud-actions';
-   const btn  = document.createElement('button');
-   btn.type='button'; btn.className='btn hud-btn'; btn.setAttribute('data-hud','toggle'); btn.textContent='Play ▷';
-   acts.appendChild(btn);
-   tag.textContent = 'Now playing —';
-   wrap.append(tag, time, vol, spd, meter, acts);
-   hudBox.appendChild(wrap);
-   hudRefs = { tag, time, vol, spd, fill, btn };
-   return hudRefs;
- }
+function ensureHudDom(){
+  if (!hudBox) return null;
+  if (hudRefs) return hudRefs;
+  hudBox.innerHTML = '';
+  const wrap  = document.createElement('div'); wrap.className = 'wc-hud-row';
+  const tag   = document.createElement('span'); tag.className  = 'tag';
+  const time  = document.createElement('span'); time.className = 'hud-time';
+  const vol   = document.createElement('span'); vol.className  = 'soft hud-vol';
+  const spd   = document.createElement('span'); spd.className  = 'soft hud-speed';
+  const meter = document.createElement('div');  meter.className= 'meter';
+  const fill  = document.createElement('span'); meter.appendChild(fill);
+  const acts  = document.createElement('div');  acts.className = 'hud-actions';
+  const btn   = document.createElement('button');
+  btn.type='button'; btn.className='btn hud-btn'; btn.setAttribute('data-hud','toggle'); btn.textContent='Play ▷';
+  acts.appendChild(btn);
+  tag.textContent = 'Now playing —';
+  wrap.append(tag, time, vol, spd, meter, acts);
+  hudBox.appendChild(wrap);
+  hudRefs = { tag, time, vol, spd, fill, btn };
+  return hudRefs;
+}
+
 
  function hudUpdate(id, a){
    const r = ensureHudDom(); if (!r) return;
