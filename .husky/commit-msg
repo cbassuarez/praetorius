@@ -1,1 +1,4 @@
-npx --no commitlint --edit "$1"
+#!/usr/bin/env sh
+# Husky v9+ (no husky.sh)
+# Use the locally installed commitlint so args aren't eaten by npm/npx
+./node_modules/.bin/commitlint --edit "$1"
