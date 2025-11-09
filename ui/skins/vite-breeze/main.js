@@ -1,3 +1,31 @@
+// -------- Theme preboot (aligns with console) ----------
+(function bootTheme(){
+  function setThemeClasses(eff){
+    var host = document.getElementById('works-console');
+    try {
+      host?.classList.remove('prae-theme-light','prae-theme-dark');
+      host?.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+    } catch(_) {}
+  }
+  function run(){
+    try{
+      var saved = localStorage.getItem('wc.theme');
+      if (saved && saved.trim().charAt(0)==='{'){
+        try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
+      }
+      var eff = (saved === 'light') ? 'light' : 'dark';
+      document.getElementById('works-console')?.setAttribute('data-theme', eff);
+      setThemeClasses(eff);
+      document.documentElement.style.colorScheme = (eff === 'dark' ? 'dark' : 'light');
+    }catch(e){}
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', run, { once:true });
+  } else {
+    run();
+  }
+})();
+
 ;(function(){
   // ---------------- Theme preboot (console-compatible) ----------------
   (function bootTheme(){
@@ -41,9 +69,14 @@
   const site  = (PRAE.config && PRAE.config.site) || {};
   if (typeof PRAE.ensureAudioTags === 'function') PRAE.ensureAudioTags();
 
-  const host      = document.querySelector('#works-console');
-  const headerNav = document.getElementById('prae-nav');
-  const footer    = document.getElementById('prae-footer');
+  const host       = document.querySelector('#works-console');
+  const headerNav  = document.getElementById('prae-nav');
+  const footer     = document.getElementById('prae-footer');
+  const shell      = document.querySelector('.vb-shell');
+  const pdfPane    = document.querySelector('.vb-pdfpane');
+  const pdfTitle   = document.querySelector('.vb-pdf-title');
+  const pdfClose   = document.querySelector('.vb-pdf-close');
+  const pdfFrame   = document.querySelector('.vb-pdf-frame');
   if (!host) return;
 
   // Nav / Footer from config (kept minimal)
@@ -63,6 +96,16 @@
         ${links.map(l => `<a href="${esc(l.href||'#')}" ${l.external?'target="_blank" rel="noopener"':''}>${esc(l.label||'Link')}</a>`).join('')}
       </div>`;
   }
+
+// Brand (header) from config: Your Name / subtitle
+  (function brandFromConfig(){
+    const nameEl = document.querySelector('[data-site-title]');
+    const subEl  = document.querySelector('[data-site-subtitle]');
+    const full   = site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ').trim() || '';
+    const sub    = site.subtitle || '';
+    if (nameEl && full) nameEl.textContent = full;
+    if (subEl)  subEl.textContent = sub || 'Selected works';
+  })();
 
   // ---------------- Works list with console-aligned actions ----------------
   host.innerHTML = '';
@@ -89,7 +132,7 @@
       <div class="actions">
         <button class="btn" type="button" data-act="open" data-id="${w.id}">Open</button>
         <button class="btn" type="button" data-act="copy" data-id="${w.id}">Copy URL</button>
-        ${w.pdf ? `<a class="btn" href="${esc(w.pdf)}" target="_blank" rel="noopener">PDF</a>` : ''}
+        ${w.pdf ? `<button class="btn" type="button" data-act="pdf" data-id="${w.id}">PDF</button>` : ''}
       </div>
       <div class="note" hidden></div>`;
     host.appendChild(el);
@@ -103,8 +146,7 @@
     const btn = e.target.closest('button, a');
     if (!btn) return;
     const act = btn.getAttribute('data-act');
-    if (!act) return;
-    if (btn.tagName === 'A') return; // PDF links pass through
+    if (!act) return;                // allow normal <a> links (none used now)
     e.preventDefault();
 
     if (act === 'open') {
@@ -140,7 +182,17 @@
         flash(btn, url);
       }
     }
+    if (act === 'pdf') {
+      const id = Number(btn.getAttribute('data-id')||0);
+      openPdfFor(id);
+    }
   });
+  
+  // PDF close + Esc
+  pdfClose?.addEventListener('click', hidePdfPane);
+  document.addEventListener('keydown', (e)=>{
+    if (e.key === 'Escape' && shell?.classList.contains('has-pdf')) hidePdfPane();
+  }, { passive:true });
 
   // ---------------- Helpers ----------------
   function ensureAudioFor(w){
@@ -178,6 +230,39 @@
     };
     if (a.readyState >= 1) seekAndPlay();
     else a.addEventListener('loadedmetadata', ()=> seekAndPlay(), { once:true });
+  }
+  
+  function openPdfFor(id){
+    const meta = findWorkById(id);
+    if (!meta) return;
+    const w = meta.data;
+    if (!w.pdf) return;
+    const raw = normalizePdfUrl(w.pdf);
+    const src = choosePdfViewer(raw);
+    const abs = /^https?:\/\//i.test(src) ? src :
+      ('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.9.179/web/viewer.html?file=' + encodeURIComponent(src));
+
+    // Decide initial page: use page-follow map if available
+    let initPage = 1;
+    if (pfMap[w.slug]) {
+      try { initPage = computePdfPage(w.slug, 0); } catch(_) {}
+    }
+    // Set up UI and load
+    if (pdfTitle) pdfTitle.textContent = String(w.title || 'Score');
+    shell?.classList.add('has-pdf');
+    if (pdfPane) pdfPane.removeAttribute('aria-hidden');
+    // Reset viewer (avoid stale hash race)
+    const base = abs.split('#')[0];
+    pdfFrame.src = 'about:blank';
+    // Next tick load the intended page
+    requestAnimationFrame(()=> {
+      pdfFrame.src = `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0`;
+    });
+  }
+  function hidePdfPane(){
+    shell?.classList.remove('has-pdf');
+    pdfPane?.setAttribute('aria-hidden','true');
+    pdfFrame.src = 'about:blank';
   }
 
   function markPlaying(id, on){
@@ -220,6 +305,44 @@
     if(m) return `https://drive.google.com/uc?export=download&id=${m[1]}`;
     return u;
   }
+  function normalizePdfUrl(u){
+    if(!u) return '';
+    const m = u.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+    if(m) return `https://drive.google.com/file/d/${m[1]}/view?usp=drivesdk`;
+    return u;
+  }
+  function choosePdfViewer(url){
+    const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+    if (m) {
+      const direct = `https://drive.google.com/uc?export=download&id=${m[1]}`;
+      return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(direct)}#page=1&zoom=page-width&toolbar=0`;
+    }
+    return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(url)}#page=1&zoom=page-width&toolbar=0`;
+  }
+  // Minimal printed→PDF page support (if pageFollowMaps exists)
+  function computePdfPage(slug, tSec){
+    const cfg = pfMap[slug]; if (!cfg) return 1;
+    const printed = printedPageForTime(cfg, tSec||0);
+    return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
+  }
+  function printedPageForTime(cfg, tSec){
+    const T = (tSec || 0) + (cfg.mediaOffsetSec || 0);
+    let current = cfg.pageMap?.[0]?.page ?? 1;
+    for(const row of (cfg.pageMap || [])){
+      const at = (typeof row.at === 'number') ? row.at : time(row.at);
+      if(T >= at) current = row.page; else break;
+    }
+    return current;
+  }
+  function time(s){
+    if(typeof s === 'number') return s;
+    if(!s) return 0;
+    if(/^\d+$/.test(s)) return parseInt(s,10);
+    const m = String(s).match(/^(\d+):([0-5]?\d)$/);
+    if(!m) return 0;
+    return parseInt(m[1],10)*60 + parseInt(m[2],10);
+  }
+  
   function flash(el, text){
     try{
       const n = document.createElement('span');

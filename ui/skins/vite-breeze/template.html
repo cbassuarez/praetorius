@@ -6,14 +6,27 @@
   <title>Praetorius — Interactive Portfolio</title>
 </head>
 <body>
-  <header class="vb-header">
-    <div class="vb-logo">Praetorius</div>
-    <nav class="vb-nav" id="prae-nav" aria-label="Site links"></nav>
-  </header>
+  <header class="vb-header" role="banner">
+    <div class="vb-brand">
+     <div class="vb-title"><span data-site-title>Your Name</span></div>
+    <div class="vb-sub"   ><span data-site-subtitle>Selected works</span></div>
+   </div>
+    <nav class="vb-nav" id="prae-nav" aria-label="Links"></nav>
+    <a class="vb-badge" href="https://www.npmjs.com/package/praetorius" target="_blank" rel="noopener" aria-label="Powered by Praetorius">
+      <span>Powered by</span><strong>Praetorius</strong>
+    </a>
+  </header
 
-  <main class="vb-onecol">
-    <!-- one-column, console-aligned list -->
-    <section id="works-console" class="vb-list" aria-label="Works list"></section>
+  <!-- Split shell: left list + right PDF pane (in-page) -->
+  <main class="vb-shell" role="main">
+   <section id="works-console" class="vb-list" aria-label="Works list"></section>
+    <aside class="vb-pdfpane" aria-label="Score PDF" aria-hidden="true">
+      <header class="vb-pdfbar">
+        <div class="vb-pdf-title" aria-live="polite"></div>
+        <button type="button" class="vb-pdf-close" aria-label="Close PDF">✕</button>
+      </header>
+      <iframe class="vb-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    </aside>
   </main>
 <footer class="vb-footer" id="prae-footer" role="contentinfo">
     <!-- Populated from .prae/config.json (site.links, updated, copyrightName) -->
