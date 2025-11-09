@@ -80,12 +80,8 @@
 
   // DOM refs are bound inside mount() so they exist when used
   let host, headerNav, footer, shell, pdfPane, pdfTitle, pdfClose, pdfFrame;
-  // HUD state
-let hudBox; 
-const state = { last: { id:null, at:0 }, vol:1.0, rate:1.0 };
   function bindDom(){
     host      = document.querySelector('#works-console');
-    hudBox    = document.getElementById('wc-hud');
     headerNav = document.getElementById('prae-nav');
     footer    = document.getElementById('prae-footer');
     shell     = document.querySelector('.vb-shell');
@@ -140,52 +136,6 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
 
   // ---------------- Works list with console-aligned actions ----------------
   host.innerHTML = '';
- // --- HUD container (prefer existing stub; otherwise create before the list) ---
- const list = host; // #works-console
- if (!hudBox) {
-   hudBox = document.createElement('div');
-   hudBox.id = 'wc-hud';
-   hudBox.className = 'wc-hud';
-   list.parentNode.insertBefore(hudBox, list);
- }
- ensureHudDom(); // bind or render the HUD UI
-
-// Play/Pause toggle
-if (!hudBox.dataset.bound) {
-  hudBox.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-hud="toggle"]');
-    if (!btn) return;
-
-    const now = getActiveAudioInfo();
-    if (now.audio && !now.audio.paused) {
-      // Pause + remember position
-      state.last = { id: now.id, at: now.audio.currentTime || 0 };
-      now.audio.pause();
-      hudUpdate(now.id, now.audio);
-      return;
-    }
-    // Resume last, or first work
-    const id = state.last.id || (works[0] && works[0].id);
-    if (!id) return;
-    const a = document.getElementById('wc-a' + id);
-    if (!a) return;
-
-    // lazy src normalize
-    if (!a.src) {
-      const raw = a.getAttribute('data-audio') || (findWorkById(id)?.data?.audio) || '';
-      const src = normalizeSrc(raw);
-      if (src) { a.src = src; a.load(); }
-    }
-    if (state.last.at) { try { a.currentTime = state.last.at; } catch(_){} }
-
-    a.play().catch(()=>{});
-    bindAudio(id);
-    hudUpdate(id, a);
-    markPlaying(id, true);
-  });
-  hudBox.dataset.bound = '1';
-}
-
   works.forEach(w => {
     const cues = Array.isArray(w.cues) ? w.cues : [];
     const el = document.createElement('article');
@@ -506,78 +456,6 @@ pdfViewerReady = false;
     audio.addEventListener('seeking', onTick, { passive:true });
     onTick();
   }
-  
-  function getActiveAudioInfo(){
-  for (const w of works){
-    const a = document.getElementById('wc-a' + w.id);
-    if (a && !a.paused && !a.ended) return { id: w.id, audio: a };
-  }
-  return { id: null, audio: null };
-}
-
-// --- HUD DOM + updates ---
-let hudRefs = null;
-function ensureHudDom(){
-  if (hudRefs) return hudRefs;
-
-  // If markup exists, adopt it; else build it
-  let wrap = hudBox.querySelector('.wc-hud-row');
-  if (!wrap) {
-    hudBox.innerHTML = '';
-    wrap = document.createElement('div'); wrap.className = 'wc-hud-row';
-    wrap.innerHTML = `
-      <span class="tag">Now playing —</span>
-      <span class="hud-time">0:00 / --:--</span>
-      <span class="soft hud-vol">vol:100</span>
-      <span class="soft hud-speed">speed:1.00x</span>
-      <div class="meter"><span></span></div>
-      <div class="hud-actions">
-        <button type="button" class="btn hud-btn" data-hud="toggle">Play ▷</button>
-      </div>`;
-    hudBox.appendChild(wrap);
-  }
-  const tag   = wrap.querySelector('.tag');
-  const time  = wrap.querySelector('.hud-time');
-  const vol   = wrap.querySelector('.hud-vol');
-  const speed = wrap.querySelector('.hud-speed');
-  const fill  = wrap.querySelector('.meter > span');
-  const btn   = wrap.querySelector('[data-hud="toggle"]');
-  hudRefs = { tag, time, vol, speed, fill, btn };
-  return hudRefs;
-}
-
-function hudUpdate(id, a){
-  const r = ensureHudDom(); if (!r) return;
-  const w = findWorkById(id)?.data;
-  const title = w ? w.title : '—';
-  const dur = (a && Number.isFinite(a.duration)) ? formatTime(a.duration|0) : '--:--';
-  const cur = (a && Number.isFinite(a.currentTime)) ? formatTime(a.currentTime|0) : '0:00';
-  const pct = (a && a.duration) ? Math.max(0, Math.min(100, (a.currentTime/a.duration)*100)) : 0;
-
-  r.tag.textContent   = `Now playing — ${title}`;
-  r.time.textContent  = `${cur} / ${dur}`;
-  r.vol.textContent   = `vol:${Math.round((a ? a.volume : state.vol)*100)}`;
-  r.speed.textContent = `speed:${(a ? a.playbackRate : state.rate).toFixed(2)}x`;
-  r.fill.style.inset  = `0 ${100-pct}% 0 0`;
-  r.btn.textContent   = (a && !a.paused) ? 'Pause ❚❚' : 'Play ▷';
-  r.btn.setAttribute('aria-label', (a && !a.paused) ? 'Pause' : 'Play');
-}
-
-function bindAudio(id){
-  const a = document.getElementById('wc-a' + id);
-  if (!a) return;
-  a.volume = state.vol;
-  a.playbackRate = state.rate;
-  if (!a.dataset.bound){
-    a.addEventListener('timeupdate', ()=> hudUpdate(id,a), { passive:true });
-    a.addEventListener('ratechange', ()=> hudUpdate(id,a), { passive:true });
-    a.addEventListener('volumechange', ()=> hudUpdate(id,a), { passive:true });
-    a.addEventListener('loadedmetadata', ()=> hudUpdate(id,a), { once:true, passive:true });
-    a.addEventListener('ended', ()=> hudUpdate(id,a), { passive:true });
-    a.dataset.bound = '1';
-  }
-}
-
   
   function flash(el, text){
     try{
