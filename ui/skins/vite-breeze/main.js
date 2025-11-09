@@ -177,11 +177,9 @@
       } else {
         // Accept array or string; fallback to other fields
         const paras = Array.isArray(w.openNote) ? w.openNote
-                    : (typeof w.openNote === 'string' && w.openNote.trim()) ? [w.openNote]
-                    : (w.note && String(w.note).trim()) ? [w.note]
-                    : (w.description && String(w.description).trim()) ? [w.description]
-                    : (w.one && String(w.one).trim()) ? [w.one]
-                    : ['No description yet.'];
+                    : (w.openNote ? [w.openNote]
+                    : (w.description ? [w.description]
+                   : (w.one ? [w.one] : [])));
         paras.forEach(p=>{
           const d = document.createElement('p');
           d.textContent = String(p||'');
@@ -252,6 +250,9 @@
         });
       }
       markPlaying(id, true);
+      // NEW: enable page-follow for this work
+      const meta = findWorkById(id);
+      if (meta?.data?.slug) attachPageFollow(meta.data.slug, a);
     };
     if (a.readyState >= 1) seekAndPlay();
     else a.addEventListener('loadedmetadata', ()=> seekAndPlay(), { once:true });
@@ -275,9 +276,15 @@
 
     // Decide initial page: use page-follow map if available
     let initPage = 1;
-    if (pfMap[w.slug]) {
-      try { initPage = computePdfPage(w.slug, 0); } catch(_) {}
-    }
+     currentPdfSlug = w.slug || null;
+    try {
+      // If we’re already following THIS work’s audio, start at the current page
+      if (pageFollow.slug && pageFollow.slug === currentPdfSlug) {
+        initPage = computePdfPage(pageFollow.slug, pageFollow.audio?.currentTime || 0);
+      } else if (pfMap[currentPdfSlug]) {
+        initPage = computePdfPage(currentPdfSlug, 0);
+      }
+    } catch(_){}
     // Set up UI and load
     if (pdfTitle) pdfTitle.textContent = String(w.title || 'Score');
     shell?.classList.add('has-pdf');
@@ -288,15 +295,16 @@
     pdfFrame.src  = 'about:blank';
     // Next tick load the intended URL
     requestAnimationFrame(()=> {
-      pdfFrame.src = isPdfJs
-        ? `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0`
-        : abs; // Drive preview or raw PDF
+pdfViewerReady = false;
+      pdfFrame.src = `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`;
     });
   }
   function hidePdfPane(){
     shell?.classList.remove('has-pdf');
     pdfPane?.setAttribute('aria-hidden','true');
     pdfFrame.src = 'about:blank';
+    currentPdfSlug = null;
+    pdfViewerReady = false;
   }
 
   function markPlaying(id, on){
@@ -346,16 +354,14 @@
     return u;
   }
   function choosePdfViewer(url){
-    // 1) Google Drive → use its embed (no CORS/XHR)
+    // Drive "view" → direct binary (enables PDF.js paging + CORS-friendly fetch)
     const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
-    if (m) return `https://drive.google.com/file/d/${m[1]}/preview`;
-
-    // 2) Same-origin / friendly CDNs → Mozilla’s hosted PDF.js viewer
-    const sameOrigin = url.startsWith(location.origin);
-    const corsOk = /^(https?:\/\/)?([^/]+\.)?(githubusercontent\.com|unpkg\.com|cloudflare-ipfs\.com|cbassuarez\.com|stagedevices\.com|dexdsl\.org)\//i.test(url);
-    if (sameOrigin || corsOk){
-      return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(url)}#page=1&zoom=page-width&toolbar=0`;
-    }
+    const file = m
+      ? `https://drive.google.com/uc?export=download&id=${m[1]}`
+      : url;
+    // Match console: Mozilla viewer, page-width, toolbar hidden, sidebar closed
+    return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
+  }
 
     // 3) Otherwise, fall back to the raw URL (browser PDF plugin)
     return url;
@@ -382,6 +388,73 @@
     const m = String(s).match(/^(\d+):([0-5]?\d)$/);
     if(!m) return 0;
     return parseInt(m[1],10)*60 + parseInt(m[2],10);
+  }
+    // ---- PDF.js page-follow (mirror of console) ----
+  let currentPdfSlug = null;
+  let pdfViewerReady = false;
+  let pendingPdfGoto = null;
+
+  function gotoPdfPage(pageNum){
+    if (!pdfFrame || !pdfFrame.src) return;
+    // Only handle Mozilla PDF.js viewer
+    if (!/\/viewer\.html/i.test(pdfFrame.src)) return;
+    const url  = new URL(pdfFrame.src, location.href);
+    const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
+    const cur  = Number(hash.get('page') || '1');
+    const next = Number(pageNum || 1);
+    if (cur === next) return;
+    hash.set('page', String(next));
+    if (!hash.has('zoom'))    hash.set('zoom','page-width');
+    if (!hash.has('sidebar')) hash.set('sidebar','0');
+    url.hash = '#' + hash.toString();
+    pdfFrame.src = url.toString();
+  }
+
+  // Flush queued goto once the viewer finishes (re)loading
+  pdfFrame?.addEventListener('load', () => {
+    pdfViewerReady = true;
+    if (pendingPdfGoto && (!pendingPdfGoto.slug || pendingPdfGoto.slug === currentPdfSlug)) {
+      gotoPdfPage(pendingPdfGoto.pdfPage);
+      pendingPdfGoto = null;
+    }
+  });
+
+  // Accept ticks from the audio side
+  window.addEventListener('wc:pdf-goto', (e) => {
+    const { slug, pdfPage } = (e && e.detail) || {};
+    if (!pdfViewerReady || !shell?.classList.contains('has-pdf') || (slug && slug !== currentPdfSlug)) {
+      pendingPdfGoto = { slug, pdfPage };
+      return;
+    }
+    gotoPdfPage(pdfPage);
+  });
+let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
+  function detachPageFollow(){
+    if (pageFollow.audio && pageFollow._on){
+      pageFollow.audio.removeEventListener('timeupdate', pageFollow._on);
+      pageFollow.audio.removeEventListener('seeking', pageFollow._on);
+    }
+    pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
+  }
+  function attachPageFollow(slug, audio){
+    detachPageFollow();
+    if (!slug || !audio) return;
+    const cfg = pfMap[slug];
+    if (!cfg) return;
+    const onTick = ()=>{
+      const printed = printedPageForTime(cfg, audio.currentTime || 0);
+      if (printed !== pageFollow.lastPrinted){
+        pageFollow.lastPrinted = printed;
+        const pdfPage = computePdfPage(slug, audio.currentTime || 0);
+        window.dispatchEvent(new CustomEvent('wc:pdf-goto', {
+          detail: { slug, printedPage: printed, pdfPage }
+        }));
+      }
+    };
+    pageFollow = { audio, slug, lastPrinted:null, _on:onTick };
+    audio.addEventListener('timeupdate', onTick, { passive:true });
+    audio.addEventListener('seeking', onTick, { passive:true });
+    onTick();
   }
   
   function flash(el, text){
