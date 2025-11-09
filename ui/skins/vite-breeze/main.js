@@ -1,3 +1,4 @@
+import './style.css';
 // -------- Theme preboot (aligns with console) ----------
 (function bootTheme(){
   function setThemeClasses(eff){
