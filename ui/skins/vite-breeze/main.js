@@ -78,6 +78,12 @@
   const pfMap = PRAE.pageFollowMaps || {}; // <— FIX: was missing
   if (typeof PRAE.ensureAudioTags === 'function') PRAE.ensureAudioTags();
 
+  // —— Hoisted shared state (avoid TDZ in minified build) ——
+  let currentPdfSlug  = null;
+  let pdfViewerReady  = false;
+  let pendingPdfGoto  = null;
+  let pageFollow      = { audio:null, slug:null, lastPrinted:null, _on:null };
+
   // DOM refs are bound inside mount() so they exist when used
   let host, headerNav, footer, shell, pdfPane, pdfTitle, pdfClose, pdfFrame, hudBox;
  const hudState = { last: { id:null, at:0 } };
@@ -147,31 +153,13 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   })();
 
   // ---------------- HUD + Works list ----------------
- // Don’t clear the list up front—build new rows and replace later.
- // Create HUD once, as a sibling before the list so it survives re-renders.
- let hudAt = document.getElementById('wc-hud');
- if (!hudAt && host && host.parentNode) {
-   hudAt = document.createElement('div');
-   hudAt.id = 'wc-hud';
-   hudAt.className = 'wc-hud';
-   host.parentNode.insertBefore(hudAt, host); // stable position
- }
- hudBox = hudAt;
- ensureHudDom();
- // Toggle: pause if playing; otherwise resume last or start first work
- hudBox.addEventListener('click', (e)=>{
-   const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
-   const now = getActiveAudioInfo();
-   if (now.audio && !now.audio.paused){
-     hudState.last = { id: now.id, at: now.audio.currentTime||0 };
-     now.audio.pause();
-     hudUpdate(now.id, now.audio);
-     return;
-   }
-   const id = hudState.last.id || (works[0] && works[0].id); if (!id) return;
-   playAt(id, hudState.last.at||0);
- });
+  // Build everything into a fragment; HUD is the FIRST child inside the list.
   const frag = document.createDocumentFragment();
+  hudBox = document.createElement('div');
+  hudBox.id = 'wc-hud';
+  hudBox.className = 'wc-hud';
+  frag.appendChild(hudBox);
+  ensureHudDom();
  works.forEach(w => {
    const cues = Array.isArray(w.cues) ? w.cues : [];
    const el = document.createElement('article');
@@ -201,8 +189,22 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     frag.appendChild(el);
    ensureAudioFor(w);
  });
- // Replace list contents in one shot, HUD remains outside
- if (host) host.replaceChildren(frag);
+ // Replace list contents in one shot; HUD is inside #works-console (keeps grid=2 children)
+  if (host) host.replaceChildren(frag);
+
+  // HUD toggle after insertion
+  hudBox.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
+    const now = getActiveAudioInfo();
+    if (now.audio && !now.audio.paused){
+      hudState.last = { id: now.id, at: now.audio.currentTime||0 };
+      now.audio.pause();
+      hudUpdate(now.id, now.audio);
+      return;
+    }
+    const id = hudState.last.id || (works[0] && works[0].id); if (!id) return;
+    playAt(id, hudState.last.at||0);
+  });
 
   // ---------------- Interactions ----------------
   host.addEventListener('click', (e)=>{
@@ -439,11 +441,7 @@ pdfViewerReady = false;
     if(!m) return 0;
     return parseInt(m[1],10)*60 + parseInt(m[2],10);
   }
-    // ---- PDF.js page-follow (mirror of console) ----
-  let currentPdfSlug = null;
-  let pdfViewerReady = false;
-  let pendingPdfGoto = null;
-  let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
+
 
   function gotoPdfPage(pageNum){
     if (!pdfFrame || !pdfFrame.src) return;
