@@ -175,8 +175,16 @@
         const isHidden = note.hasAttribute('hidden');
         note.toggleAttribute('hidden', !isHidden);
       } else {
-        (w.openNote || []).forEach(p=>{
-          const d = document.createElement('p'); d.textContent = String(p||'');
+        // Accept array or string; fallback to other fields
+        const paras = Array.isArray(w.openNote) ? w.openNote
+                    : (typeof w.openNote === 'string' && w.openNote.trim()) ? [w.openNote]
+                    : (w.note && String(w.note).trim()) ? [w.note]
+                    : (w.description && String(w.description).trim()) ? [w.description]
+                    : (w.one && String(w.one).trim()) ? [w.one]
+                    : ['No description yet.'];
+        paras.forEach(p=>{
+          const d = document.createElement('p');
+          d.textContent = String(p||'');
           note.appendChild(d);
         });
         note.removeAttribute('hidden');
@@ -275,11 +283,14 @@
     shell?.classList.add('has-pdf');
     if (pdfPane) pdfPane.removeAttribute('aria-hidden');
     // Reset viewer (avoid stale hash race)
-    const base = abs.split('#')[0];
-    pdfFrame.src = 'about:blank';
-    // Next tick load the intended page
+    const isPdfJs = /\/viewer\.html/i.test(abs);
+    const base    = abs.split('#')[0];
+    pdfFrame.src  = 'about:blank';
+    // Next tick load the intended URL
     requestAnimationFrame(()=> {
-      pdfFrame.src = `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0`;
+      pdfFrame.src = isPdfJs
+        ? `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0`
+        : abs; // Drive preview or raw PDF
     });
   }
   function hidePdfPane(){
@@ -335,12 +346,19 @@
     return u;
   }
   function choosePdfViewer(url){
+    // 1) Google Drive → use its embeddable preview (no CORS/XHR required)
     const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
-    if (m) {
-      const direct = `https://drive.google.com/uc?export=download&id=${m[1]}`;
-      return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(direct)}#page=1&zoom=page-width&toolbar=0`;
+    if (m) return `https://drive.google.com/file/d/${m[1]}/preview`;
+
+    // 2) Same-origin or known CORS-friendly CDNs → PDF.js viewer (page control works)
+    const sameOrigin = url.startsWith(location.origin);
+    const corsOk = /^(https?:\/\/)?([^/]+\.)?(githubusercontent\.com|jsdelivr\.net|unpkg\.com|cloudflare-ipfs\.com|cbassuarez\.com|stagedevices\.com|dexdsl\.org)\//i.test(url);
+    if (sameOrigin || corsOk){
+      return `https://cdn.jsdelivr.net/npm/pdfjs-dist@3.9.179/web/viewer.html?file=${encodeURIComponent(url)}#page=1&zoom=page-width&toolbar=0`;
     }
-    return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(url)}#page=1&zoom=page-width&toolbar=0`;
+
+    // 3) Everything else → embed raw URL (let the browser’s PDF plugin render)
+    return url;
   }
   // Minimal printed→PDF page support (if pageFollowMaps exists)
   function computePdfPage(slug, tSec){
