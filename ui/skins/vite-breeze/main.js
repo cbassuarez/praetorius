@@ -78,15 +78,8 @@
   const pfMap = PRAE.pageFollowMaps || {}; // <— FIX: was missing
   if (typeof PRAE.ensureAudioTags === 'function') PRAE.ensureAudioTags();
 
-  // —— Hoisted shared state (avoid TDZ in minified build) ——
-  let currentPdfSlug  = null;
-  let pdfViewerReady  = false;
-  let pendingPdfGoto  = null;
-  let pageFollow      = { audio:null, slug:null, lastPrinted:null, _on:null };
-
   // DOM refs are bound inside mount() so they exist when used
-  let host, headerNav, footer, shell, pdfPane, pdfTitle, pdfClose, pdfFrame, hudBox;
- const hudState = { last: { id:null, at:0 } };
+  let host, headerNav, footer, shell, pdfPane, pdfTitle, pdfClose, pdfFrame;
   function bindDom(){
     host      = document.querySelector('#works-console');
     headerNav = document.getElementById('prae-nav');
@@ -98,18 +91,7 @@
     pdfFrame  = document.querySelector('.vb-pdf-frame');
   }
 
-  ready(()=> {
-   try { mount(); }
-   catch (e) {
-     console.error('[prae][vite-breeze] mount failed:', e);
-     try {
-       const el = document.createElement('div');
-       el.style.cssText = 'color:#f66;padding:8px 12px';
-       el.textContent = 'Prae skin error — see console for details';
-       (document.getElementById('works-console') || document.body).prepend(el);
-     } catch(_) {}
-   }
- });
+  ready(mount);
   function mount(){
     bindDom();
     // Bind PDF.js load once the iframe node actually exists
@@ -152,17 +134,11 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     if (subEl)  subEl.textContent = sub || 'Selected works';
   })();
 
-  // ---------------- HUD + Works list ----------------
-  // Build everything into a fragment; HUD is the FIRST child inside the list.
-  const frag = document.createDocumentFragment();
-  hudBox = document.createElement('div');
-  hudBox.id = 'wc-hud';
-  hudBox.className = 'wc-hud';
-  frag.appendChild(hudBox);
-  ensureHudDom();
- works.forEach(w => {
-   const cues = Array.isArray(w.cues) ? w.cues : [];
-   const el = document.createElement('article');
+  // ---------------- Works list with console-aligned actions ----------------
+  host.innerHTML = '';
+  works.forEach(w => {
+    const cues = Array.isArray(w.cues) ? w.cues : [];
+    const el = document.createElement('article');
     el.className = 'work';
     el.id = 'work-' + (w.slug || w.id);
 
@@ -186,24 +162,10 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
         ${w.pdf ? `<button class="btn" type="button" data-act="pdf" data-id="${w.id}">PDF</button>` : ''}
       </div>
       <div class="note" hidden></div>`;
-    frag.appendChild(el);
-   ensureAudioFor(w);
- });
- // Replace list contents in one shot; HUD is inside #works-console (keeps grid=2 children)
-  if (host) host.replaceChildren(frag);
+    host.appendChild(el);
 
-  // HUD toggle after insertion
-  hudBox.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
-    const now = getActiveAudioInfo();
-    if (now.audio && !now.audio.paused){
-      hudState.last = { id: now.id, at: now.audio.currentTime||0 };
-      now.audio.pause();
-      hudUpdate(now.id, now.audio);
-      return;
-    }
-    const id = hudState.last.id || (works[0] && works[0].id); if (!id) return;
-    playAt(id, hudState.last.at||0);
+    // Ensure a matching <audio> exists (id = wc-a<ID>)
+    ensureAudioFor(w);
   });
 
   // ---------------- Interactions ----------------
@@ -290,9 +252,6 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
       const src = normalizeSrc(raw);
       if (src) { a.src = src; a.load(); }
     }
-    
-    // Show title and 0:00/--:-- right away
-    hudUpdate(id, a);
     const seekAndPlay = ()=>{
       try { a.currentTime = Math.max(0, t|0); } catch(_){}
       const p = a.play();
@@ -302,10 +261,6 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
         });
       }
       markPlaying(id, true);
-      hudState.last = { id, at: t|0 };
-    bindAudio(id);
-    // ensure a frame after timeupdate registers
-     requestAnimationFrame(()=> hudUpdate(id, a));
       // NEW: enable page-follow for this work
       const meta = findWorkById(id);
       if (meta?.data?.slug) attachPageFollow(meta.data.slug, a);
@@ -441,7 +396,11 @@ pdfViewerReady = false;
     if(!m) return 0;
     return parseInt(m[1],10)*60 + parseInt(m[2],10);
   }
-
+    // ---- PDF.js page-follow (mirror of console) ----
+  let currentPdfSlug = null;
+  let pdfViewerReady = false;
+  let pendingPdfGoto = null;
+  let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
 
   function gotoPdfPage(pageNum){
     if (!pdfFrame || !pdfFrame.src) return;
@@ -498,67 +457,6 @@ pdfViewerReady = false;
     onTick();
   }
   
- // --- HUD helpers (ported from ui/main.js, trimmed for this skin) ---
- function getActiveAudioInfo(){
-   for (const w of works){
-     const a = document.getElementById('wc-a'+w.id);
-     if (a && !a.paused && !a.ended) return { id:w.id, audio:a };
-   }
-   return { id:null, audio:null };
- }
-
- let hudRefs = null;
-function ensureHudDom(){
-  if (!hudBox) return null;
-  if (hudRefs) return hudRefs;
-  hudBox.innerHTML = '';
-  const wrap  = document.createElement('div'); wrap.className = 'wc-hud-row';
-  const tag   = document.createElement('span'); tag.className  = 'tag';
-  const time  = document.createElement('span'); time.className = 'hud-time';
-  const vol   = document.createElement('span'); vol.className  = 'soft hud-vol';
-  const spd   = document.createElement('span'); spd.className  = 'soft hud-speed';
-  const meter = document.createElement('div');  meter.className= 'meter';
-  const fill  = document.createElement('span'); meter.appendChild(fill);
-  const acts  = document.createElement('div');  acts.className = 'hud-actions';
-  const btn   = document.createElement('button');
-  btn.type='button'; btn.className='btn hud-btn'; btn.setAttribute('data-hud','toggle'); btn.textContent='Play ▷';
-  acts.appendChild(btn);
-  tag.textContent = 'Now playing —';
-  wrap.append(tag, time, vol, spd, meter, acts);
-  hudBox.appendChild(wrap);
-  hudRefs = { tag, time, vol, spd, fill, btn };
-  return hudRefs;
-}
-
-
- function hudUpdate(id, a){
-   const r = ensureHudDom(); if (!r) return;
-   const w = findWorkById(id)?.data;
-   const title = w ? w.title : '—';
-   const dur = (a && Number.isFinite(a.duration)) ? formatTime(a.duration|0) : '--:--';
-   const cur = (a && Number.isFinite(a.currentTime)) ? formatTime(a.currentTime|0) : '0:00';
-   const pct = (a && a.duration) ? Math.max(0, Math.min(100, (a.currentTime/a.duration)*100)) : 0;
-   r.tag.textContent   = `Now playing — ${title}`;
-   r.time.textContent  = `${cur} / ${dur}`;
-   r.vol.textContent   = `vol:${Math.round(((a ? a.volume : 1)*100))}`;
-   r.spd.textContent   = `speed:${(a ? a.playbackRate : 1).toFixed(2)}x`;
-   r.fill.style.inset  = `0 ${100-pct}% 0 0`;
-   r.btn.textContent   = (a && !a.paused) ? 'Pause ❚❚' : 'Play ▷';
- }
-
- function bindAudio(id){
-   const a = document.getElementById('wc-a'+id); if (!a) return;
-   if (!a.dataset.hud){
-     a.addEventListener('timeupdate',   ()=> hudUpdate(id,a), { passive:true });
-     a.addEventListener('ratechange',   ()=> hudUpdate(id,a), { passive:true });
-     a.addEventListener('volumechange', ()=> hudUpdate(id,a), { passive:true });
-     a.addEventListener('loadedmetadata',()=> hudUpdate(id,a), { once:true, passive:true });
-     a.addEventListener('ended',        ()=> hudUpdate(id,a), { passive:true });
-     a.dataset.hud = '1';
-   }
- }
-
-
   function flash(el, text){
     try{
       const n = document.createElement('span');
