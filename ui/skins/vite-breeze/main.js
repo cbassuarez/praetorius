@@ -90,6 +90,10 @@
     pdfClose  = document.querySelector('.vb-pdf-close');
     pdfFrame  = document.querySelector('.vb-pdf-frame');
   }
+  // HUD + playback state
+let hudBox; // will be created in mount()
+const state = { last: { id: null, at: 0 }, vol: 1.0, rate: 1.0 };
+
 
   ready(mount);
   function mount(){
@@ -136,6 +140,46 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
 
   // ---------------- Works list with console-aligned actions ----------------
   host.innerHTML = '';
+  // Ensure HUD container exists at the top of the list
+hudBox = host.querySelector('.wc-hud');
+if (!hudBox) {
+  hudBox = document.createElement('div');
+  hudBox.className = 'wc-hud';
+  host.appendChild(hudBox);
+}
+ensureHudDom(); // render idle HUD immediately
+ // HUD play/pause toggle
+if (hudBox && !hudBox.dataset.bound) {
+  hudBox.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-hud="toggle"]');
+    if (!btn) return;
+
+    const now = getActiveAudioInfo();
+    if (now.audio && !now.audio.paused) {
+      now.audio.pause();
+      state.last = { id: now.id, at: now.audio.currentTime || 0 };
+      hudUpdate(now.id, now.audio);
+    } else {
+      const id = state.last.id || now.id;
+      if (!id) return;
+      const a = document.getElementById('wc-a' + id);
+      if (!a) return;
+      // lazy src normalize
+      if (!a.src) {
+        const raw = a.getAttribute('data-audio') || '';
+        const src = normalizeSrc(raw);
+        if (src) { a.src = src; a.load(); }
+      }
+      stopAllAudio(a);
+      a.play().catch(()=>{});
+      bindAudio(id);
+      hudUpdate(id, a);
+      markPlaying(id, true);
+    }
+  });
+  hudBox.dataset.bound = '1';
+}
+
   works.forEach(w => {
     const cues = Array.isArray(w.cues) ? w.cues : [];
     const el = document.createElement('article');
@@ -215,6 +259,8 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
         flash(btn, url);
       }
     }
+   
+
     if (act === 'pdf') {
       const id = Number(btn.getAttribute('data-id')||0);
       openPdfFor(id);
@@ -254,6 +300,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     }
     const seekAndPlay = ()=>{
       try { a.currentTime = Math.max(0, t|0); } catch(_){}
+      stopAllAudio(a); // prevent overlapping audio
       const p = a.play();
       if (p && typeof p.catch === 'function'){
         p.catch(err=>{
@@ -261,6 +308,10 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
         });
       }
       markPlaying(id, true);
+      state.last = { id, at: t|0 };
+bindAudio(id);
+hudUpdate(id, a);
+
       // NEW: enable page-follow for this work
       const meta = findWorkById(id);
       if (meta?.data?.slug) attachPageFollow(meta.data.slug, a);
@@ -268,7 +319,86 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     if (a.readyState >= 1) seekAndPlay();
     else a.addEventListener('loadedmetadata', ()=> seekAndPlay(), { once:true });
   }
-  
+  function stopAllAudio(exceptEl){
+  document.querySelectorAll('audio').forEach(a=>{
+    if (exceptEl && a === exceptEl) return;
+    try{ a.pause(); a.currentTime = 0; }catch(_){}
+  });
+}
+function getActiveAudioInfo(){
+  for (const meta of works){
+    const a = document.getElementById('wc-a' + meta.id);
+    if (a && !a.paused && !a.ended) return { id: meta.id, audio: a };
+  }
+  return { id: null, audio: null };
+}
+
+// --- HUD ---
+let hudRefs = null;
+function ensureHudDom(){
+  if (!hudBox) return null;
+  if (hudRefs) return hudRefs;
+
+  hudBox.innerHTML = '';
+  const wrap  = document.createElement('div'); wrap.className = 'wc-hud-row';
+  const tag   = document.createElement('span'); tag.className = 'tag';
+  const time  = document.createElement('span'); time.className = 'hud-time';
+  const vol   = document.createElement('span'); vol.className = 'soft hud-vol';
+  const speed = document.createElement('span'); speed.className = 'soft hud-speed';
+  const meter = document.createElement('div');  meter.className = 'meter';
+  const fill  = document.createElement('span'); meter.appendChild(fill);
+  const acts  = document.createElement('div');  acts.className = 'hud-actions';
+  const btn   = document.createElement('button');
+  btn.type='button'; btn.className='btn hud-btn'; btn.setAttribute('data-hud','toggle');
+  btn.textContent = 'Play ▷';
+  acts.appendChild(btn);
+
+  tag.textContent = 'Now playing —';
+  wrap.append(tag, time, vol, speed, meter, acts);
+  hudBox.appendChild(wrap);
+
+  hudRefs = { tag, time, vol, speed, fill, btn };
+  return hudRefs;
+}
+
+function hudUpdate(id, a){
+  const r = ensureHudDom(); if (!r) return;
+  const w = findWorkById(id)?.data;
+  const title = w ? w.title : '—';
+  const dur = (a && Number.isFinite(a.duration)) ? formatTime(a.duration|0) : '--:--';
+  const cur = (a && Number.isFinite(a.currentTime)) ? formatTime(a.currentTime|0) : '0:00';
+  const pct = (a && a.duration) ? Math.max(0, Math.min(100, (a.currentTime/a.duration)*100)) : 0;
+
+  r.tag.textContent   = `Now playing — ${title}`;
+  r.time.textContent  = `${cur} / ${dur}`;
+  r.vol.textContent   = `vol:${Math.round(state.vol*100)}`;
+  r.speed.textContent = `speed:${state.rate.toFixed(2)}x`;
+  r.fill.style.inset  = `0 ${100-pct}% 0 0`;
+  r.btn.textContent   = (a && a.paused) ? 'Play ▷' : 'Pause ❚❚';
+  r.btn.setAttribute('aria-label', (a && a.paused) ? 'Play' : 'Pause');
+}
+
+function clearHud(){
+  if (!hudBox) return;
+  hudBox.innerHTML = '';
+  hudRefs = null;
+}
+
+function bindAudio(id){
+  const a = document.getElementById('wc-a' + id);
+  if (!a) return;
+  a.volume = state.vol;
+  a.playbackRate = state.rate;
+  if (!a.dataset.bound){
+    a.addEventListener('timeupdate', ()=> hudUpdate(id,a), { passive:true });
+    a.addEventListener('ratechange', ()=> hudUpdate(id,a), { passive:true });
+    a.addEventListener('volumechange', ()=> hudUpdate(id,a), { passive:true });
+    a.addEventListener('loadedmetadata', ()=> hudUpdate(id,a), { once:true, passive:true });
+    a.addEventListener('ended', ()=> hudUpdate(id,a), { passive:true });
+    a.dataset.bound = '1';
+  }
+}
+
   function openPdfFor(id){
     const meta = findWorkById(id);
     if (!meta) return;
