@@ -73,7 +73,7 @@
   if (urlSkin) document.documentElement.setAttribute('data-skin', urlSkin);
 
   const PRAE  = (window.PRAE = window.PRAE || {});
-  const works = Array.isArray(PRAE.works) ? PRAE.works : [];
+  let works = []; // populate inside mount() so we read after PRAE.works loads
   const site  = (PRAE.config && PRAE.config.site) || {};
   const pfMap = PRAE.pageFollowMaps || {}; // <— FIX: was missing
   if (typeof PRAE.ensureAudioTags === 'function') PRAE.ensureAudioTags();
@@ -98,6 +98,24 @@ const state = { last: { id: null, at: 0 }, vol: 1.0, rate: 1.0 };
   ready(mount);
   function mount(){
     bindDom();
+    // Read the live data now (other scripts may populate window.PRAE later)
+    works = Array.isArray(PRAE.works) ? PRAE.works.map((w, i) => ({
+      ...w,
+      id:  (w?.id != null ? Number(w.id) : i + 1),
+      slug: w?.slug || String((w?.id ?? (i + 1)))
+    })) : [];
+
+    // If still empty, render an idle HUD so the pane isn’t “blank-blank”
+    if (!works.length) {
+      host.innerHTML = '';
+      hudBox = document.createElement('div');
+      hudBox.className = 'wc-hud';
+      host.appendChild(hudBox);
+      ensureHudDom();
+      // Optional: uncomment to re-check once after a tick if data comes late
+      // setTimeout(() => (!Array.isArray(PRAE.works) || !PRAE.works.length) ? null : mount(), 0);
+      return;
+    }
     // Bind PDF.js load once the iframe node actually exists
 if (pdfFrame && !pdfFrame.dataset.bound) {
   pdfFrame.addEventListener('load', () => {
@@ -601,4 +619,10 @@ pdfViewerReady = false;
   function esc(s){
     return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
+  // If your generator emits when data is ready, re-mount once.
+window.addEventListener('prae:works-ready', () => {
+  const hasCards = document.querySelector('#works-console .work');
+  if (!hasCards) mount();
+});
+
 })();
