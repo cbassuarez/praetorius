@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Praetorius — Typefolio</title>
+  <link rel="stylesheet" href="./style.css"/>
+</head>
+<body class="prae-theme-dark" data-theme="dark">
+  <header class="tf-header" role="banner">
+    <div class="tf-header-left">
+      <div class="tf-brand">
+        <span class="tf-title" data-site-title>Praetorius</span>
+        <span class="tf-subtitle" data-site-subtitle>Portfolio</span>
+      </div>
+      <nav id="prae-nav" class="tf-nav" aria-label="Site"></nav>
+    </div>
+    <div class="tf-header-right">
+      <button id="wc-theme-toggle" class="tf-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme" title="Toggle theme"></button>
+    </div>
+  </header>
+
+  <div id="works-console" class="tf-shell" role="main">
+    <div class="tf-layout" aria-live="polite">
+      <aside id="tf-index" class="tf-index" aria-label="Works index"></aside>
+      <main id="tf-reader" class="tf-reader" aria-label="Reader" data-state="empty"></main>
+    </div>
+    <section id="tf-controls" class="tf-controls" aria-label="Type controls"></section>
+  </div>
+
+  <div class="tf-backdrop" data-pdf-backdrop hidden></div>
+  <aside class="tf-pdfpane vb-pdfpane" aria-label="Score PDF" aria-hidden="true" role="dialog" aria-modal="true">
+    <header class="tf-pdfbar">
+      <div class="tf-pdf-title vb-pdf-title" aria-live="polite"></div>
+      <button type="button" class="tf-pdf-close vb-pdf-close" aria-label="Close PDF">✕</button>
+    </header>
+    <iframe class="tf-pdf-frame vb-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+  </aside>
+
+  <footer id="prae-footer" class="tf-footer" role="contentinfo"></footer>
+
+  <script type="module" src="./main.js" defer></script>
+</body>
+</html>
