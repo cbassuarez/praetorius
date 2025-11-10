@@ -154,6 +154,8 @@ ensureHudRoot();
     getRoot: hudGetRoot
   };
   PRAE.hud = Object.assign({}, PRAE.hud || {}, hudApi);
+  PRAE.hud.ensure();
+  hudBox = PRAE.hud.getRoot();
   const hudState = { last: { id:null, at:0 } };
   function bindDom(){
     host      = document.querySelector('#works-console');
@@ -218,7 +220,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   host.innerHTML = '';
   // Create HUD as a SIBLING before #works-console so list renders never remove it
   // HUD already exists from early bootstrap; just ensure internals + styles
-ensureHudDom();
+  PRAE.hud.ensure();
 
   works.forEach(w => {
     const cues = Array.isArray(w.cues) ? w.cues : [];
@@ -254,7 +256,7 @@ ensureHudDom();
 
   // ---------------- Interactions ----------------
   // HUD toggle
-  hudBox.addEventListener('click', (e)=>{
+  if (hudBox) hudBox.addEventListener('click', (e)=>{
     const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
     const now = getActiveAudioInfo();
     if (now.audio && !now.audio.paused){

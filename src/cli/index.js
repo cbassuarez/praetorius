@@ -37,6 +37,7 @@ const HUD_EMBED_CSS = `#wc-hud[data-component="prae-hud"]{outline:1px solid tran
 #wc-hud[data-component="prae-hud"] [data-part="meter"]>span{display:block;height:100%;width:0;background:var(--accent,#fff);transition:width .2s linear;}
 #wc-hud[data-component="prae-hud"] [data-part="toggle"]{padding:6px 10px;border-radius:8px;border:1px solid var(--chip-bd,rgba(255,255,255,.16));background:var(--chip-bg,rgba(255,255,255,.06));color:inherit;cursor:pointer;}
 #wc-hud[data-component="prae-hud"] [data-part="toggle"]:hover{background:var(--chip-bg-h,rgba(255,255,255,.1));}
+#wc-hud[data-component="prae-hud"]:empty{display:none!important;}
 `;
 // Minimal renderer injected only for --embed so the snippet is self-contained.
 const EMBED_RENDER = `(function(){
