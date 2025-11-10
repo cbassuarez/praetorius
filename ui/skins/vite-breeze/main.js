@@ -622,3 +622,110 @@ pdfViewerReady = false;
   }
 })();
 
+
+;(function enhanceHudIcons(){
+  if (typeof document === 'undefined') return;
+  const SELECTOR = '#vb-hud .hud-actions .hud-btn, #wc-hud .hud-actions .hud-btn';
+
+  const createIcon = (name) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    svg.setAttribute('data-hud-icon', name);
+
+    if (name === 'pause') {
+      const left = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      left.setAttribute('x', '7');
+      left.setAttribute('y', '5');
+      left.setAttribute('width', '4');
+      left.setAttribute('height', '14');
+      left.setAttribute('rx', '1.4');
+      left.setAttribute('fill', 'currentColor');
+      const right = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      right.setAttribute('x', '13');
+      right.setAttribute('y', '5');
+      right.setAttribute('width', '4');
+      right.setAttribute('height', '14');
+      right.setAttribute('rx', '1.4');
+      right.setAttribute('fill', 'currentColor');
+      svg.append(left, right);
+    } else {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M9 5.75a.75.75 0 0 1 1.14-.63l7.5 5.25a.75.75 0 0 1 0 1.26l-7.5 5.25A.75.75 0 0 1 9 16.89V5.75Z');
+      path.setAttribute('fill', 'currentColor');
+      svg.append(path);
+    }
+    return svg;
+  };
+
+  const resolveIconName = (btn) => {
+    const attr = (btn.getAttribute('data-icon') || '').toLowerCase();
+    if (attr === 'pause' || attr === 'play') return attr;
+    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+    if (label.includes('pause')) return 'pause';
+    return 'play';
+  };
+
+  const resolveLabel = (btn, icon) => {
+    const label = btn.getAttribute('aria-label');
+    if (label && label.trim().length) return label;
+    return icon === 'pause' ? 'Pause' : 'Play';
+  };
+
+  const updateButton = (btn) => {
+    const icon = resolveIconName(btn);
+    const label = resolveLabel(btn, icon);
+
+    let sr = btn.querySelector('.hud-sr');
+    if (!sr) {
+      sr = document.createElement('span');
+      sr.className = 'hud-sr';
+      btn.prepend(sr);
+    }
+    sr.textContent = label;
+
+    const next = createIcon(icon);
+    const current = btn.querySelector('svg[data-hud-icon]');
+    if (current) {
+      current.replaceWith(next);
+    } else {
+      btn.append(next);
+    }
+  };
+
+  const enhanceButton = (btn) => {
+    if (!btn || btn.dataset.hudIconReady === '1') {
+      if (btn) updateButton(btn);
+      return;
+    }
+    btn.dataset.hudIconReady = '1';
+    updateButton(btn);
+    const observer = new MutationObserver(() => updateButton(btn));
+    observer.observe(btn, { attributes: true, attributeFilter: ['aria-label', 'data-icon'] });
+    btn.__hudIconObserver = observer;
+  };
+
+  const applyAll = () => {
+    const buttons = document.querySelectorAll(SELECTOR);
+    if (!buttons.length) return false;
+    buttons.forEach(enhanceButton);
+    return true;
+  };
+
+  const boot = () => {
+    if (applyAll()) return;
+    const target = document.body || document.documentElement;
+    const watcher = new MutationObserver(() => {
+      if (applyAll()) watcher.disconnect();
+    });
+    watcher.observe(target, { childList: true, subtree: true });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
+})();
+
