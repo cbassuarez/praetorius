@@ -6,33 +6,24 @@
   <title>Praetorius — Typefolio</title>
   <link rel="stylesheet" href="./style.css"/>
 </head>
-<body class="prae-theme-light" data-theme="light">
-  <header class="tf-header" role="banner">
-    <div class="tf-header-inner">
-      <div class="tf-brand">
-        <span class="tf-site-title" data-site-title>Praetorius</span>
-        <span class="tf-site-subtitle" data-site-subtitle>Works</span>
-      </div>
-      <div class="tf-header-meta">
-        <span class="tf-current-work" data-current-work>Selected work</span>
-        <nav id="prae-nav" class="tf-nav" aria-label="Site"></nav>
-      </div>
-      <div class="tf-header-actions">
-        <button id="wc-theme-toggle" class="tf-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme" title="Toggle theme">Theme</button>
-        <button type="button" class="tf-toc-toggle" data-action="toc" aria-expanded="false">Table of Contents</button>
-      </div>
-    </div>
+<body data-theme="light">
+  <header id="tf-head" class="tf-head" role="banner" data-has-current="0">
+    <span class="tf-head-site" data-site-title>Praetorius</span>
+    <span class="tf-head-dash" aria-hidden="true">—</span>
+    <span id="tf-current-title" class="tf-head-current"></span>
+    <span class="tf-head-dot" aria-hidden="true">·</span>
+    <a id="wc-theme-toggle" class="tf-theme-link" href="#">Theme: Light</a>
   </header>
 
-  <aside id="tf-toc" class="tf-toc" aria-label="Table of Contents" hidden></aside>
+  <main id="tf-book" class="tf-book" aria-label="Book">
+    <div id="tf-flow" class="tf-flow" lang="en"></div>
+  </main>
 
-  <section id="tf-controls" class="tf-controls" aria-label="Reader controls"></section>
-
-  <main id="tf-reader" class="tf-reader" aria-label="Book reader" data-pages="0" data-index="0"></main>
-
-  <section id="tf-actions" class="tf-actions" aria-label="Work actions"></section>
-
-  <footer id="tf-footer" class="tf-footer" role="contentinfo"></footer>
+  <footer id="tf-foot" class="tf-foot" role="contentinfo">
+    <span class="tf-foot-pages">Page <span id="tf-page-now">1</span> / <span id="tf-page-total">1</span></span>
+    <span id="tf-hud" class="tf-hud" aria-live="polite" hidden></span>
+    <span class="tf-foot-copy" data-site-footnote></span>
+  </footer>
 
   <script type="module" src="./main.js" defer></script>
 </body>

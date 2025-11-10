@@ -1,75 +1,48 @@
 :root {
   color-scheme: light;
-  --bg: #f7f2ea;
-  --ink: #1c1610;
-  --ink-soft: rgba(28, 22, 16, 0.66);
-  --muted: rgba(28, 22, 16, 0.48);
-  --accent: #7c4c32;
-  --border: rgba(28, 22, 16, 0.18);
-  --selection: rgba(124, 76, 50, 0.18);
-  --contrast-bg: #0d0d10;
-  --contrast-ink: #f8f5ef;
-
-  --font-serif: "Libre Caslon Text", "EB Garamond", "Iowan Old Style", "Hoefler Text", "Palatino", "Book Antiqua", Georgia, "Times New Roman", serif;
+  --bg: #f8f3ea;
+  --ink: #1a120a;
+  --ink-soft: rgba(26, 18, 10, 0.7);
+  --muted: rgba(26, 18, 10, 0.5);
+  --accent: #8b5a2b;
+  --border: rgba(26, 18, 10, 0.18);
+  --selection: rgba(139, 90, 43, 0.2);
+  --font-serif: "Libre Caslon Text", "EB Garamond", "Georgia", "Times New Roman", serif;
   --font-sans: "Source Sans Pro", "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
-
-  --fs-base: 1rem;
-  --fs-sm: clamp(0.85rem, 0.82rem + 0.15vw, 0.95rem);
-  --fs-lg: clamp(1.2rem, 1.1rem + 0.4vw, 1.5rem);
-  --fs-title: clamp(1.85rem, 1.6rem + 1.2vw, 2.6rem);
-  --fs-display: clamp(2.5rem, 2.1rem + 1.6vw, 3.4rem);
-
-  --lh-body: 1.58;
-  --lh-tight: 1.3;
-  --lh-title: 1.1;
-
+  --fs-base: clamp(1rem, 0.95rem + 0.2vw, 1.1rem);
+  --fs-lead: clamp(1.15rem, 1.05rem + 0.6vw, 1.5rem);
+  --fs-title: clamp(2rem, 1.7rem + 1.8vw, 3rem);
+  --lh-body: 1.65;
+  --lh-title: 1.2;
   --measure: 66ch;
-  --column-gap: 3rem;
-  --page-pad: clamp(1.5rem, 1.2rem + 1.8vw, 2.75rem);
-  --max-width: min(95vw, 1200px);
-
-  --dur-fast: 120ms;
-  --dur-med: 220ms;
-  --ease-standard: cubic-bezier(0.33, 1, 0.68, 1);
-
-  --radius-sm: 0.35rem;
-  --radius-md: 0.75rem;
-  --focus-ring: 0 0 0 3px rgba(124, 76, 50, 0.45);
+  --column-gap: clamp(2rem, 5vw, 5rem);
+  --head-h: 40px;
+  --foot-h: 40px;
+  --spread-pad: clamp(1.5rem, 4vw, 4rem);
+  --focus-ring: 0 0 0 2px rgba(139, 90, 43, 0.4);
 }
 
 body[data-theme="light"] {
   color-scheme: light;
-  --bg: #f7f2ea;
-  --ink: #1c1610;
-  --ink-soft: rgba(28, 22, 16, 0.66);
-  --muted: rgba(28, 22, 16, 0.48);
-  --accent: #7c4c32;
-  --border: rgba(28, 22, 16, 0.18);
-  --selection: rgba(124, 76, 50, 0.18);
-  --contrast-bg: #0d0d10;
-  --contrast-ink: #f8f5ef;
+  --bg: #f8f3ea;
+  --ink: #1a120a;
+  --ink-soft: rgba(26, 18, 10, 0.7);
+  --muted: rgba(26, 18, 10, 0.5);
+  --accent: #8b5a2b;
+  --border: rgba(26, 18, 10, 0.18);
+  --selection: rgba(139, 90, 43, 0.2);
 }
 
 body[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #141215;
-  --ink: #f4efe8;
-  --ink-soft: rgba(244, 239, 232, 0.72);
-  --muted: rgba(244, 239, 232, 0.5);
-  --accent: #d7af7f;
-  --border: rgba(244, 239, 232, 0.16);
-  --selection: rgba(215, 175, 127, 0.18);
-  --contrast-bg: #f8f5ef;
-  --contrast-ink: #120f0a;
-}
-
-body.tf-contrast {
-  --bg: var(--contrast-bg);
-  --ink: var(--contrast-ink);
-  --ink-soft: color-mix(in srgb, var(--contrast-ink) 70%, transparent 30%);
-  --muted: color-mix(in srgb, var(--contrast-ink) 55%, transparent 45%);
-  --border: color-mix(in srgb, var(--contrast-ink) 35%, transparent 65%);
+  --bg: #151013;
+  --ink: #f5efe6;
+  --ink-soft: rgba(245, 239, 230, 0.7);
+  --muted: rgba(245, 239, 230, 0.5);
+  --accent: #ddb787;
+  --border: rgba(245, 239, 230, 0.18);
+  --selection: rgba(221, 183, 135, 0.2);
 }
 
 * {
@@ -92,656 +65,347 @@ body {
   font-kerning: normal;
   font-variant-ligatures: common-ligatures;
   font-variant-numeric: oldstyle-nums proportional-nums;
-  -webkit-font-smoothing: antialiased;
-  padding: var(--page-pad) clamp(1.25rem, 5vw, 3rem);
   display: flex;
   flex-direction: column;
-  gap: clamp(1.5rem, 2vw, 3rem);
+}
+
+body::selection,
+body *::selection {
+  background: var(--selection);
+  color: inherit;
 }
 
 body.tf-pdf-open {
   overflow: hidden;
 }
 
-body::selection,
-body *::selection {
-  background: var(--selection);
-  color: var(--ink);
+#tf-head,
+#tf-foot {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+  padding: 0 var(--spread-pad);
+  height: var(--head-h);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
+#tf-foot {
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+  height: var(--foot-h);
+  font-size: 0.9rem;
+}
+
+#tf-head {
+  justify-content: flex-start;
+}
+
+.tf-head-site {
   font-family: var(--font-serif);
-  font-weight: 400;
-  color: var(--ink);
-  text-wrap: balance;
-  line-height: var(--lh-title);
-}
-
-p {
-  max-width: var(--measure);
-}
-
-a {
-  color: inherit;
-}
-
-a:hover,
-a:focus {
-  color: var(--accent);
-}
-
-button {
-  font: inherit;
-}
-
-.tf-header,
-.tf-footer {
-  width: 100%;
-  max-width: var(--max-width);
-  margin: 0 auto;
-  background: color-mix(in srgb, var(--bg) 90%, rgba(255, 255, 255, 0.25));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: clamp(1rem, 0.9rem + 1.5vw, 1.8rem);
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.tf-header-inner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: clamp(1rem, 2vw, 2rem);
-}
-
-.tf-brand {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.tf-site-title {
-  font-size: var(--fs-title);
-  font-variant: small-caps;
-  letter-spacing: 0.08em;
-}
-
-.tf-site-subtitle {
-  font-size: var(--fs-sm);
-  letter-spacing: 0.2em;
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--muted);
 }
 
-.tf-header-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  min-width: 12rem;
-  flex: 1 1 auto;
+.tf-head-dash,
+.tf-head-dot {
+  opacity: 0.6;
 }
 
-.tf-current-work {
-  font-size: var(--fs-lg);
+.tf-head[data-has-current="0"] .tf-head-dash,
+.tf-head[data-has-current="0"] .tf-head-current,
+.tf-head[data-has-current="0"] .tf-head-dot {
+  display: none;
+}
+
+.tf-head-current {
   font-style: italic;
   color: var(--ink-soft);
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.tf-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem 1rem;
-  font-family: var(--font-sans);
-  font-size: var(--fs-sm);
+.tf-theme-link {
+  color: inherit;
+  text-decoration: underline;
+  margin-left: auto;
 }
 
-.tf-nav a {
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  padding-bottom: 0.15rem;
-  transition: border-color var(--dur-fast) var(--ease-standard);
-}
-
-.tf-nav a:hover,
-.tf-nav a:focus-visible {
-  border-color: var(--border);
-}
-
-.tf-header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.tf-theme-toggle,
-.tf-toc-toggle,
-.tf-controls button,
-.tf-actions button,
-.tf-footer button {
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 85%, rgba(255, 255, 255, 0.05));
-  color: var(--ink);
-  padding: 0.65rem 1.05rem;
-  min-width: 44px;
-  min-height: 44px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard),
-    color var(--dur-fast) var(--ease-standard),
-    border-color var(--dur-fast) var(--ease-standard);
-}
-
-.tf-theme-toggle:hover,
-.tf-theme-toggle:focus-visible,
-.tf-toc-toggle:hover,
-.tf-toc-toggle:focus-visible,
-.tf-controls button:hover,
-.tf-controls button:focus-visible,
-.tf-actions button:hover,
-.tf-actions button:focus-visible,
-.tf-footer button:hover,
-.tf-footer button:focus-visible {
-  background: color-mix(in srgb, var(--bg) 70%, rgba(255, 255, 255, 0.2));
+.tf-theme-link:focus-visible,
+.tf-foot a:focus-visible,
+.tf-flow a:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
-.tf-theme-toggle[aria-pressed="true"],
-.tf-controls button[aria-pressed="true"],
-.tf-footer button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 20%, var(--bg) 80%);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%);
+#tf-book {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: calc(100vh - var(--head-h) - var(--foot-h));
+  padding: var(--spread-pad);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.tf-controls,
-.tf-actions,
-.tf-footer {
-  width: 100%;
-  max-width: var(--max-width);
-  margin: 0 auto;
-}
-
-.tf-controls {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
-  align-items: center;
-  justify-items: stretch;
-}
-
-.tf-controls button {
-  font-family: var(--font-sans);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.85rem;
-}
-
-.tf-reader {
-  position: relative;
-  width: 100%;
-  max-width: var(--max-width);
-  margin: 0 auto;
-  background: color-mix(in srgb, var(--bg) 85%, rgba(255, 255, 255, 0.35));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: clamp(1.5rem, 1.3rem + 1.8vw, 3rem);
+#tf-flow {
   column-count: 2;
   column-gap: var(--column-gap);
   column-fill: auto;
-  column-rule: 1px solid color-mix(in srgb, var(--border) 70%, transparent 30%);
-  max-height: min(80vh, 900px);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-behavior: smooth;
+  column-width: var(--measure);
+  max-width: 100vw;
+  width: 100%;
   hyphens: auto;
-  text-rendering: optimizeLegibility;
 }
 
-.tf-reader[data-columns="1"] {
-  column-count: 1;
-  column-rule: none;
-}
-
-@media (max-width: 960px) {
-  .tf-reader {
+@media (max-width: 900px) {
+  #tf-flow {
     column-count: 1;
-    column-rule: none;
-    max-height: none;
-    overflow-y: auto;
-    overflow-x: hidden;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tf-reader {
-    scroll-behavior: auto;
-  }
+.tf-work {
+  break-inside: avoid-column;
+  display: inline-block;
+  width: 100%;
+  max-width: var(--measure);
+  margin: 0 0 clamp(3rem, 5vw, 4rem);
+  padding-right: 0.01px;
+  color: inherit;
 }
 
-.tf-reader:focus {
-  outline: none;
-}
-
-.tf-article {
-  break-inside: avoid;
-  font-size: 1em;
+.tf-work:not(:first-of-type) {
+  break-before: column;
 }
 
 .tf-title {
-  font-size: var(--fs-display);
-  margin: 0 0 0.75rem;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  margin: 0;
+  font-weight: 400;
+  text-wrap: balance;
 }
 
 .tf-slug {
-  font-size: var(--fs-sm);
-  letter-spacing: 0.12em;
+  margin: 0.5rem 0 0;
+  font-family: var(--font-sans);
+  letter-spacing: 0.18em;
   text-transform: uppercase;
+  font-size: 0.85rem;
   color: var(--muted);
-  margin: 0 0 1.5rem;
 }
 
 .tf-lead {
-  font-size: calc(var(--fs-base) * 1.1);
-  line-height: calc(var(--lh-body) * 1.04);
-  margin: 0 0 1.4rem;
+  font-size: var(--fs-lead);
+  margin: 1rem 0 1.5rem;
+  color: var(--ink-soft);
 }
 
-.tf-body p {
-  margin: 0 0 1.25rem;
-}
-
+.tf-meta,
 .tf-cues {
+  margin: 0.5rem 0 0;
   font-family: var(--font-sans);
-  font-size: var(--fs-sm);
+  font-size: 0.85rem;
   letter-spacing: 0.05em;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 1.5rem 0;
-}
-
-.tf-cues button {
-  border: 1px solid var(--border);
-  background: transparent;
-  font: inherit;
-  padding: 0.45rem 0.9rem;
-  min-width: 44px;
-  min-height: 44px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard),
-    color var(--dur-fast) var(--ease-standard);
-}
-
-.tf-cues button:hover,
-.tf-cues button:focus-visible {
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg) 82%);
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.tf-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  justify-content: center;
-}
-
-.tf-actions button[aria-disabled="true"],
-.tf-footer button[aria-disabled="true"] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.tf-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem 1.5rem;
-  font-family: var(--font-sans);
-  font-size: var(--fs-sm);
-}
-
-.tf-footer-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.tf-footer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.tf-footer small {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.tf-toc {
-  position: fixed;
-  inset: 0;
-  background: color-mix(in srgb, var(--bg) 40%, rgba(0, 0, 0, 0.55));
-  backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1rem, 4vw, 3rem);
-  z-index: 20;
-}
-
-.tf-toc[hidden] {
-  display: none;
-}
-
-.tf-toc-panel {
-  background: var(--bg);
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  max-width: min(720px, 90vw);
-  width: 100%;
-  max-height: min(85vh, 720px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.25);
-}
-
-.tf-toc-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
-}
-
-.tf-toc-header h2 {
-  font-size: 1.3rem;
-  margin: 0;
-}
-
-.tf-toc-close {
-  border: 1px solid var(--border);
-  background: transparent;
-  font: inherit;
-  padding: 0.55rem 0.9rem;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  min-width: 44px;
-  min-height: 44px;
-}
-
-.tf-toc-close:hover,
-.tf-toc-close:focus-visible {
-  background: color-mix(in srgb, var(--accent) 15%, var(--bg) 85%);
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.tf-toc-list {
-  list-style: none;
-  margin: 0;
-  padding: 1.25rem;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.tf-toc-list li {
-  border-radius: var(--radius-sm);
-}
-
-.tf-toc-list button {
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
-  padding: 0.85rem 1rem;
-  font-family: var(--font-serif);
-  line-height: 1.4;
-  min-height: 44px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard),
-    border-color var(--dur-fast) var(--ease-standard);
-}
-
-.tf-toc-title {
-  display: block;
-  font-weight: 600;
-}
-
-.tf-toc-slug {
-  display: block;
-  font-family: var(--font-sans);
-  font-size: 0.8rem;
-  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
-  margin-top: 0.15rem;
 }
 
-.tf-toc-list button:hover,
-.tf-toc-list button:focus-visible {
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg) 82%);
-  border-color: var(--accent);
-  outline: none;
-  box-shadow: var(--focus-ring);
+.tf-meta a,
+.tf-cues a {
+  color: inherit;
+  text-decoration: underline;
 }
 
-.tf-toc-list button[aria-current="true"] {
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg) 88%);
-  border-color: var(--accent);
+.tf-cues a {
+  font-variant: small-caps;
 }
 
-.tf-edge-zone {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 12%;
+.tf-flow p {
+  margin: 0 0 1.2rem;
+}
+
+.tf-flow p:last-child {
+  margin-bottom: 0;
+}
+
+.tf-copy-fallback {
+  display: block;
+  margin-top: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.tf-flow a:hover,
+.tf-theme-link:hover,
+.tf-foot a:hover {
+  color: var(--accent);
+}
+
+.tf-foot {
+  justify-content: space-between;
+  gap: clamp(1rem, 3vw, 2.5rem);
+}
+
+.tf-foot-pages {
+  font-variant-numeric: tabular-nums;
+}
+
+.tf-hud {
+  flex: 1 1 auto;
+  text-align: center;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tf-foot-copy {
+  text-align: right;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.tf-foot-copy:empty::after {
+  content: '';
+}
+
+.tf-pdf-root {
+  position: fixed;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 999;
 }
 
-.tf-edge-zone button {
-  pointer-events: auto;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-family: var(--font-sans);
-  font-size: 0.8rem;
-  letter-spacing: 0.08em;
-  background: transparent;
-  border: 1px solid transparent;
-  padding: 0.75rem 0.6rem;
-  min-height: 120px;
-}
-
-.tf-edge-zone button:hover,
-.tf-edge-zone button:focus-visible {
-  background: color-mix(in srgb, var(--accent) 16%, var(--bg) 84%);
-  border-color: var(--accent);
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.tf-edge-zone--left {
-  left: 0;
-}
-
-.tf-edge-zone--right {
-  right: 0;
-}
-
-.tf-edge-zone[hidden] {
+.tf-pdf-root[hidden] {
   display: none;
-}
-
-.tf-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-@media (max-width: 720px) {
-  body {
-    padding: clamp(1rem, 2.5vw, 1.5rem);
-  }
-
-  .tf-header,
-  .tf-footer,
-  .tf-reader {
-    border-radius: var(--radius-sm);
-  }
-
-  .tf-edge-zone {
-    display: none;
-  }
-
-  .tf-controls {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  }
 }
 
 .tf-pdf-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
-  z-index: 40;
 }
 
-.tf-pdf-backdrop[hidden] {
-  display: none;
-}
-
-.tf-pdfpane {
-  position: fixed;
-  inset: 5vh 8vw;
+.tf-pdf-overlay {
   display: flex;
   flex-direction: column;
+  width: min(90vw, 960px);
+  height: min(90vh, 720px);
   background: var(--bg);
   color: var(--ink);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.35);
-  z-index: 41;
-  min-height: 60vh;
-  max-height: 90vh;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.25);
+  position: relative;
+  z-index: 1;
 }
 
-.tf-pdfpane[hidden] {
-  display: none;
-}
-
-.tf-pdfbar {
+.tf-pdf-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   font-family: var(--font-sans);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
 }
 
 .tf-pdf-title {
-  font-weight: 600;
-  font-size: 1rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tf-pdf-close {
-  border: 1px solid var(--border);
-  background: transparent;
-  font: inherit;
-  padding: 0.45rem 0.9rem;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  min-width: 44px;
-  min-height: 44px;
-}
-
-.tf-pdf-close:hover,
-.tf-pdf-close:focus-visible {
-  background: color-mix(in srgb, var(--accent) 20%, var(--bg) 80%);
-  outline: none;
-  box-shadow: var(--focus-ring);
+  color: inherit;
+  text-decoration: underline;
+  margin-left: 1rem;
 }
 
 .tf-pdf-frame {
-  flex: 1;
+  flex: 1 1 auto;
   border: 0;
   width: 100%;
   background: #ffffff;
 }
 
 @media (max-width: 900px) {
-  .tf-pdfpane {
-    inset: 6vh 5vw;
+  #tf-head,
+  #tf-foot {
+    flex-wrap: nowrap;
+    font-size: 0.85rem;
+    padding: 0 clamp(1rem, 4vw, 2rem);
+  }
+
+  .tf-head-current {
+    max-width: 45vw;
+  }
+
+  #tf-book {
+    padding: clamp(1.25rem, 5vw, 2.5rem);
   }
 }
 
 @media print {
-  :root,
-  body,
-  body[data-theme="dark"],
-  body[data-theme="light"] {
+  :root {
     --bg: #ffffff;
-    --ink: #111111;
-    --ink-soft: rgba(17, 17, 17, 0.7);
-    --border: rgba(17, 17, 17, 0.2);
-    color-scheme: light;
+    --ink: #000000;
   }
 
   body {
-    padding: 0;
     background: #ffffff;
-    color: #111111;
+    color: #000000;
+    font-size: 12pt;
   }
 
-  .tf-header,
-  .tf-controls,
-  .tf-actions,
-  .tf-footer {
+  #tf-head,
+  #tf-foot,
+  #wc-theme-toggle,
+  .tf-theme-link,
+  .tf-foot-copy {
     display: none !important;
   }
 
-  .tf-reader {
-    max-height: none;
-    column-count: 1 !important;
-    column-gap: 0;
-    column-rule: none;
-    border: none;
-    padding: 0;
+  #tf-book {
+    height: auto;
     overflow: visible;
+    padding: 2.5cm 2.5cm 2cm;
   }
 
-  .tf-reader article {
-    page-break-after: always;
+  #tf-flow {
+    column-count: 1;
+    column-gap: 0;
+  }
+
+  .tf-work {
+    break-before: page;
+    max-width: 100%;
+    margin-bottom: 2cm;
+  }
+
+  .tf-pdf-root {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }
