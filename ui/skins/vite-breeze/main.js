@@ -1,38 +1,89 @@
 // HUD logic + Vite Breeze skin glue.
 // Edit HUD logic in: ui/skins/vite-breeze/main.js → emitted to dist/app.js
+
+const PRAE_THEME_STORAGE_KEY = 'wc.theme';
+const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
+
+function praeNormalizeTheme(value){
+  return value === 'dark' ? 'dark' : 'light';
+}
+
+function praeReadStoredTheme(){
+  try {
+    var saved = localStorage.getItem(PRAE_THEME_STORAGE_KEY);
+    if (saved && saved.trim().charAt(0) === '{') {
+      try { saved = (JSON.parse(saved) || {}).mode || 'light'; } catch (_) { saved = 'light'; }
+    }
+    return praeNormalizeTheme(saved);
+  } catch (_) {
+    return 'light';
+  }
+}
+
+function praeSyncThemeOnDom(mode){
+  var eff = praeNormalizeTheme(mode);
+  var host = document.getElementById('works-console');
+  var body = document.body;
+  var doc = document.documentElement;
+  try {
+    if (doc) doc.setAttribute('data-theme', eff);
+    if (host) {
+      host.classList.remove('prae-theme-light', 'prae-theme-dark');
+      host.classList.add(eff === 'light' ? PRAE_THEME_CLASSNAMES[0] : PRAE_THEME_CLASSNAMES[1]);
+      host.removeAttribute('data-theme-mode');
+      host.setAttribute('data-theme', eff);
+    }
+    if (body) {
+      body.classList.remove('prae-theme-light', 'prae-theme-dark');
+      body.classList.add(eff === 'light' ? PRAE_THEME_CLASSNAMES[0] : PRAE_THEME_CLASSNAMES[1]);
+      body.setAttribute('data-theme', eff);
+    }
+  } catch (_) {}
+  if (doc && doc.style) doc.style.colorScheme = (eff === 'dark' ? 'dark' : 'light');
+  return eff;
+}
+
+function praeApplyTheme(mode, opts){
+  var eff = praeSyncThemeOnDom(mode);
+  if (!opts || opts.persist !== false) {
+    try { localStorage.setItem(PRAE_THEME_STORAGE_KEY, eff); } catch (_) {}
+  }
+  try {
+    var btn = document.getElementById('wc-theme-toggle');
+    if (btn) {
+      btn.setAttribute('aria-checked', String(eff === 'dark'));
+      btn.setAttribute('data-mode', eff);
+      btn.classList.remove('is-light', 'is-dark');
+      btn.classList.add(eff === 'dark' ? 'is-dark' : 'is-light');
+      btn.setAttribute('title', 'Toggle theme (Alt/Opt+D) · current: ' + eff);
+    }
+  } catch (_) {}
+  return eff;
+}
+
+function praeCurrentTheme(){
+  var body = document.body;
+  if (body) {
+    var attr = body.getAttribute('data-theme');
+    if (attr === 'light' || attr === 'dark') return attr;
+  }
+  return praeReadStoredTheme();
+}
+
 // -------- Theme preboot (aligns with console) ----------
 (function bootTheme(){
-  function setThemeClasses(eff){
-    var host = document.getElementById('works-console');
-    var body = document.body;
-    try {
-      host?.classList.remove('prae-theme-light','prae-theme-dark');
-      host?.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
-      if (body){
-        body.classList.remove('prae-theme-light','prae-theme-dark');
-        body.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
-        body.setAttribute('data-theme', eff);
-      }
-    } catch(_) {}
-  }
   function run(){
-    try{
-      var saved = localStorage.getItem('wc.theme');
-      if (saved && saved.trim().charAt(0)==='{'){
-        try { saved = (JSON.parse(saved)||{}).mode || 'light'; } catch(_){ saved = 'light'; }
-      }
-      var eff = (saved === 'dark') ? 'dark' : 'light';
-      document.getElementById('works-console')?.setAttribute('data-theme', eff);
-      document.body?.setAttribute('data-theme', eff);
-      setThemeClasses(eff);
-      document.documentElement.style.colorScheme = (eff === 'dark' ? 'dark' : 'light');
-    }catch(e){}
+    var eff = praeReadStoredTheme();
+    if (document.body) {
+      praeApplyTheme(eff, { persist:false });
+    } else {
+      praeSyncThemeOnDom(eff);
+      document.addEventListener('DOMContentLoaded', function(){
+        praeApplyTheme(eff, { persist:false });
+      }, { once:true });
+    }
   }
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', run, { once:true });
-  } else {
-    run();
-  }
+  run();
 })();
 
 ;(function(){
@@ -44,44 +95,33 @@
       fn();
     }
   }
-  // ---------------- Theme preboot (console-compatible) ----------------
-  (function bootTheme(){
-    function setThemeClasses(eff){
-      var host = document.getElementById('works-console');
-      var body = document.body;
-      try {
-        host?.classList.remove('prae-theme-light','prae-theme-dark');
-        host?.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
-        if (body){
-          body.classList.remove('prae-theme-light','prae-theme-dark');
-          body.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
-          body.setAttribute('data-theme', eff);
-        }
-      } catch(_){}
+  ready(function(){ praeApplyTheme(praeCurrentTheme(), { persist:false }); });
+
+  function cycleTheme(){
+    var next = praeCurrentTheme() === 'dark' ? 'light' : 'dark';
+    praeApplyTheme(next);
+  }
+
+  ready(function bindThemeToggle(){
+    var btn = document.getElementById('wc-theme-toggle');
+    if (!btn) return;
+    btn.addEventListener('click', function(){
+      cycleTheme();
+    }, { passive:true });
+    btn.addEventListener('keydown', function(ev){
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        cycleTheme();
+      }
+    });
+  });
+
+  document.addEventListener('keydown', function(e){
+    if ((e.altKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+      e.preventDefault();
+      cycleTheme();
     }
-    function run(){
-      try{
-        var con   = document.getElementById('works-console');
-        var saved = localStorage.getItem('wc.theme');
-        if (saved && saved.trim().charAt(0)==='{'){
-          try { saved = (JSON.parse(saved)||{}).mode || 'light'; } catch(_){ saved = 'light'; }
-        }
-        var eff = (saved === 'dark') ? 'dark' : 'light';
-        if (con){
-          con.removeAttribute('data-theme-mode');
-          con.setAttribute('data-theme', eff);
-        }
-        document.body?.setAttribute('data-theme', eff);
-        setThemeClasses(eff);
-        document.documentElement.style.colorScheme = (eff === 'dark' ? 'dark' : 'light');
-      } catch(e){}
-    }
-    if (document.readyState === 'loading'){
-      document.addEventListener('DOMContentLoaded', run, { once:true });
-    } else {
-      run();
-    }
-  })();
+  }, { passive:false });
 
   // ---------------- Data + chrome ----------------
   const qs = new URLSearchParams(location.search);
