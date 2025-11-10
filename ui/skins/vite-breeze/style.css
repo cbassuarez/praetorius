@@ -201,3 +201,77 @@ a:hover{opacity:1}
   background:var(--chip-bg-h);
 }
 #wc-hud[data-component="prae-hud"]:empty{ display:none !important; }
+/* === HUD Play/Pause — Liquid Glass Icons (CSS-only) === */
+/* Scope: only the first two .hud-btn inside #wc-hud/.vb-hud */
+#wc-hud .hud-actions .hud-btn,
+.vb-hud .hud-actions .hud-btn {
+  position: relative;
+  overflow: hidden;
+  /* Keep text for screen readers, hide visually */
+  color: transparent;
+  text-shadow: none;
+}
+
+#wc-hud .hud-actions .hud-btn::before,
+.vb-hud .hud-actions .hud-btn::before {
+  content: "";
+  position: absolute;
+  inset: 9px;               /* centers a ~22px icon inside a 36–40px button */
+  pointer-events: none;
+  background:
+    radial-gradient(80% 80% at 30% 25%, rgba(255,255,255,.85), rgba(255,255,255,.35) 60%, rgba(255,255,255,0) 61%),
+    linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.75));
+  /* Icon via mask */
+  -webkit-mask: var(--hud-icon) center / contain no-repeat;
+  mask: var(--hud-icon) center / contain no-repeat;
+  filter:
+    drop-shadow(0 1px 2px rgba(0,0,0,.35))
+    drop-shadow(0 6px 16px rgba(255,255,255,.20));
+  transition: transform .18s ease, filter .25s ease, opacity .2s ease;
+}
+
+/* Play icon for the first button */
+#wc-hud .hud-actions .hud-btn:nth-child(1),
+.vb-hud .hud-actions .hud-btn:nth-child(1) {
+  --hud-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>');
+}
+
+/* Pause icon for the second button */
+#wc-hud .hud-actions .hud-btn:nth-child(2),
+.vb-hud .hud-actions .hud-btn:nth-child(2) {
+  --hud-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>');
+}
+
+/* Subtle interactive polish */
+#wc-hud .hud-actions .hud-btn:hover::before,
+.vb-hud .hud-actions .hud-btn:hover::before {
+  transform: translateY(-1px) scale(1.05);
+  filter:
+    drop-shadow(0 1px 2px rgba(0,0,0,.35))
+    drop-shadow(0 10px 24px rgba(255,255,255,.28));
+}
+#wc-hud .hud-actions .hud-btn:active::before,
+.vb-hud .hud-actions .hud-btn:active::before {
+  transform: translateY(1px) scale(.96);
+  opacity: .9;
+}
+
+/* Optional: gentle halo that breathes on hover */
+#wc-hud .hud-actions .hud-btn::after,
+.vb-hud .hud-actions .hud-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 120% at -20% -20%, rgba(255,255,255,.35), rgba(255,255,255,0) 55%),
+    linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,0) 40%);
+  mix-blend-mode: screen;
+  opacity: .35;
+  transition: opacity .25s ease, transform .25s ease;
+}
+#wc-hud .hud-actions .hud-btn:hover::after,
+.vb-hud .hud-actions .hud-btn:hover::after {
+  opacity: .55;
+  transform: translateY(-1px);
+}
