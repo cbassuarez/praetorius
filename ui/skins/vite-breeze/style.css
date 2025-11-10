@@ -166,3 +166,84 @@ a:hover{opacity:1}
   background:var(--chip-bg); color:var(--text); cursor:pointer;
 }
 #wc-hud .hud-actions .hud-btn:hover{ background:var(--chip-bg-h) }
+/* --- Fix: keep wc-hud visible and aligned --- */
+#works-console .wc-hud {
+  display: flex !important;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--glass, rgba(255,255,255,.04));
+  -webkit-backdrop-filter: saturate(120%) blur(10px);
+  backdrop-filter: saturate(120%) blur(10px);
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+}
+#works-console .wc-hud .meter {
+  flex: 1;
+  height: 4px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+#works-console .wc-hud .meter > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent, #fff);
+  transition: width .2s linear;
+}
+#works-console .wc-hud:empty { display: none !important; }
+
+
+/* --- HUD visibility + grid placement fix --- */
+#wc-hud{
+  grid-column:1;
+  display:flex !important;
+  align-items:center;gap:.75rem;
+  padding:.6rem .9rem;margin:0 0 14px;
+  border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--glass);-webkit-backdrop-filter:saturate(120%) blur(10px);
+  backdrop-filter:saturate(120%) blur(10px);
+}
+#wc-hud .meter{flex:1;height:4px;background:var(--line);border-radius:999px;overflow:hidden}
+#wc-hud .meter>span{display:block;height:100%;width:0;background:var(--accent,#fff);transition:width .2s linear}
+/* Put HUD and list in column 1; PDF pane in column 2 */
+.vb-shell > #wc-hud,
+.vb-shell > #works-console { grid-column: 1; }
+.vb-shell > .vb-pdfpane    { grid-column: 2; }
+
+/* HUD base styling */
+#wc-hud{
+  display:flex; align-items:center; gap:10px; padding:8px 10px;
+  border:1px solid var(--line); border-radius:var(--radius);
+  background:var(--glass);
+  -webkit-backdrop-filter:saturate(120%) blur(10px); backdrop-filter:saturate(120%) blur(10px);
+  margin:0 0 12px;
+}
+#wc-hud .meter{ flex:1; height:4px; background:var(--line); border-radius:999px; overflow:hidden }
+#wc-hud .meter > span{ display:block; height:100%; width:0; background:var(--accent) }
+#wc-hud .soft{ color:var(--muted) }
+#wc-hud .hud-actions .hud-btn{
+  padding:6px 10px; border-radius:8px; border:1px solid var(--chip-bd);
+  background:var(--chip-bg); color:var(--text); cursor:pointer;
+}
+#wc-hud .hud-actions .hud-btn:hover{ background:var(--chip-bg-h) }
+
+
+/* --- HUD visibility + meter fix (Prae HUD Fixer) --- */
+#wc-hud {
+  display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;
+  border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--glass);margin-bottom:12px;
+  -webkit-backdrop-filter:saturate(120%) blur(10px);
+  backdrop-filter:saturate(120%) blur(10px);
+}
+#wc-hud .meter{flex:1;height:4px;background:var(--line);border-radius:999px;overflow:hidden}
+#wc-hud .meter>span{display:block;height:100%;width:0;background:var(--accent,#fff);transition:width .2s linear}
+#wc-hud .soft{color:var(--muted)}
+#wc-hud .hud-actions .hud-btn{padding:6px 10px;border-radius:8px;border:1px solid var(--chip-bd);background:var(--chip-bg);color:var(--text);cursor:pointer}
+#wc-hud .hud-actions .hud-btn:hover{background:var(--chip-bg-h)}
