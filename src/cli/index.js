@@ -1974,8 +1974,8 @@ async function runDocsWizard(opts = {}, meta = {}) {
       name: 'section',
       message,
       choices: sorted.map((section) => ({
-        name: `${section.title}${section.hidden ? ' (hidden)' : ''}`,
-        value: section.id
+        name: section.id,
+        message: `${section.title}${section.hidden ? ' (hidden)' : ''}`
       }))
     });
     return sections.find((section) => section.id === ans.section) || null;
@@ -1989,8 +1989,8 @@ async function runDocsWizard(opts = {}, meta = {}) {
       .forEach((section) => {
         section.pages.forEach((page) => {
           choices.push({
-            name: `${section.title} → ${page.title}${page.hidden ? ' (hidden)' : ''}`,
-            value: `${section.id}::${page.slug}`
+            name: `${section.id}::${page.slug}`,
+            message: `${section.title} → ${page.title}${page.hidden ? ' (hidden)' : ''}`
           });
         });
       });
@@ -2012,13 +2012,13 @@ async function runDocsWizard(opts = {}, meta = {}) {
         name: 'action',
         message: 'IA adjustments?',
         choices: [
-          { name: 'Continue', value: 'continue' },
-          { name: 'Reorder sections', value: 'reorder', disabled: sections.length < 2 },
-          { name: 'Rename section', value: 'rename', disabled: !sections.length },
-          { name: 'Hide/show section', value: 'toggle', disabled: !sections.length },
-          { name: 'Create new section', value: 'create' },
-          { name: 'Rename page', value: 'page-rename', disabled: !sections.some((s) => s.pages.length) },
-          { name: 'Hide/show page', value: 'page-toggle', disabled: !sections.some((s) => s.pages.length) }
+          { name: 'continue', message: 'Continue' },
+          { name: 'reorder', message: 'Reorder sections', disabled: sections.length < 2 },
+          { name: 'rename', message: 'Rename section', disabled: !sections.length },
+          { name: 'toggle', message: 'Hide/show section', disabled: !sections.length },
+          { name: 'create', message: 'Create new section' },
+          { name: 'page-rename', message: 'Rename page', disabled: !sections.some((s) => s.pages.length) },
+          { name: 'page-toggle', message: 'Hide/show page', disabled: !sections.some((s) => s.pages.length) }
         ]
       });
 
@@ -2102,7 +2102,7 @@ async function runDocsWizard(opts = {}, meta = {}) {
   const homepageChoice = async () => {
     const pageChoices = [];
     if (detection.readme.exists) {
-      pageChoices.push({ name: 'Use README.md as homepage', value: 'README.md' });
+      pageChoices.push({ name: 'README.md', message: 'Use README.md as homepage' });
     }
     sections
       .slice()
@@ -2110,12 +2110,12 @@ async function runDocsWizard(opts = {}, meta = {}) {
       .forEach((section) => {
         section.pages.forEach((page) => {
           pageChoices.push({
-            name: `${section.title} → ${page.title}`,
-            value: page.source
+            name: page.source,
+            message: `${section.title} → ${page.title}`
           });
         });
       });
-    pageChoices.push({ name: 'Generate a new intro page…', value: '__new__' });
+    pageChoices.push({ name: '__new__', message: 'Generate a new intro page…' });
 
     if (!pageChoices.length) return '';
 
@@ -2209,8 +2209,8 @@ async function runDocsWizard(opts = {}, meta = {}) {
         name: 'strategy',
         message: 'Group tabs by…',
         choices: [
-          { name: 'Fence info string (```ts group=install)' , value: 'fence' },
-          { name: 'Snippets folder mapping', value: 'snippets' }
+          { name: 'fence', message: 'Fence info string (```ts group=install)' },
+          { name: 'snippets', message: 'Snippets folder mapping' }
         ],
         initial: codeTabs.strategy === 'snippets' ? 'snippets' : 'fence'
       });
@@ -2248,8 +2248,8 @@ async function runDocsWizard(opts = {}, meta = {}) {
         name: 'engine',
         message: 'Search indexer',
         choices: [
-          { name: 'Lightweight keywords', value: 'light' },
-          { name: 'Fuse.js (fuzzy)', value: 'fuse' }
+          { name: 'light', message: 'Lightweight keywords' },
+          { name: 'fuse', message: 'Fuse.js (fuzzy)' }
         ],
         initial: search.engine === 'fuse' ? 'fuse' : 'light'
       });
@@ -2308,9 +2308,9 @@ async function runDocsWizard(opts = {}, meta = {}) {
       name: 'policy',
       message: 'Alt text policy',
       choices: [
-        { name: 'Require alt text (block missing)', value: 'require' },
-        { name: 'Warn when missing', value: 'warn' },
-        { name: 'Auto from filename when missing', value: 'auto' }
+        { name: 'require', message: 'Require alt text (block missing)' },
+        { name: 'warn', message: 'Warn when missing' },
+        { name: 'auto', message: 'Auto from filename when missing' }
       ],
       initial: assets.altPolicy
     });
@@ -2342,9 +2342,9 @@ async function runDocsWizard(opts = {}, meta = {}) {
         name: 'mode',
         message: 'Works links should open…',
         choices: [
-          { name: 'Auto (prefer internal pages)', value: 'auto' },
-          { name: 'Internal docs pages', value: 'internal' },
-          { name: 'External URLs', value: 'external' }
+          { name: 'auto', message: 'Auto (prefer internal pages)' },
+          { name: 'internal', message: 'Internal docs pages' },
+          { name: 'external', message: 'External URLs' }
         ],
         initial: worksConfig.linkMode || 'auto'
       });
