@@ -135,8 +135,17 @@ ensureHudRoot();
   function hudSetPlaying(on){
     const r = ensureHudDom();
     if (!r?.btn) return;
-    r.btn.setAttribute('aria-label', on ? 'Pause' : 'Play');
-    r.btn.dataset.icon = on ? 'pause' : 'play';
+    const active = !!on;
+    const label  = active ? 'Pause' : 'Play';
+    r.btn.setAttribute('aria-label', label);
+    r.btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    r.btn.dataset.icon = active ? 'pause' : 'play';
+    r.btn.classList.toggle('is-playing', active);
+    const root = r.root || hudBox;
+    if (root){
+      root.classList.toggle('is-active', active);
+      root.setAttribute('aria-hidden', active ? 'false' : 'true');
+    }
   }
   function hudSetProgress(ratio){
     const r = ensureHudDom();
@@ -257,7 +266,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   // ---------------- Interactions ----------------
   // HUD toggle
   if (hudBox) hudBox.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
+    const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn || btn.dataset.hudManaged === 'liquid') return;
     const now = getActiveAudioInfo();
     if (now.audio && !now.audio.paused){
       hudState.last = { id: now.id, at: now.audio.currentTime||0 };
@@ -620,5 +629,126 @@ pdfViewerReady = false;
   function esc(s){
     return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
+})();
+
+// --- HUD Playback Controller (no WAAPI; robust multi-player wiring)
+(()=>{
+  const hud = document.getElementById('wc-hud') || document.getElementById('vb-hud');
+  if (!hud) return;
+
+  const actions = hud.querySelector('.hud-actions') || hud.appendChild(Object.assign(document.createElement('div'), { className: 'hud-actions' }));
+  let toggleBtn = actions.querySelector('#hud-toggle');
+  if (!toggleBtn) {
+    toggleBtn = Object.assign(document.createElement('button'), {
+      id: 'hud-toggle',
+      className: 'hud-btn',
+      type: 'button'
+    });
+    toggleBtn.setAttribute('data-hud', 'toggle');
+    actions.prepend(toggleBtn);
+  }
+  toggleBtn.classList.add('hud-btn');
+  toggleBtn.dataset.hudManaged = 'liquid';
+
+  const ICONS = {
+    play:  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7-11-7z" fill="currentColor"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>'
+  };
+
+  const players = new Set();
+  const RELEVANT_EVENTS = ['play','playing','pause','ended','abort','emptied','suspend','stalled','waiting','seeked','timeupdate'];
+  const UPDATE_KEY = '__praeHudUpdate';
+
+  const isPlaying = el => !!el && !el.paused && !el.ended;
+  const anyPlaying = () => {
+    for (const el of players){
+      if (isPlaying(el)) return true;
+    }
+    return false;
+  };
+
+  function setHudActive(active){
+    hud.classList.toggle('is-active', !!active);
+    hud.setAttribute('aria-hidden', active ? 'false' : 'true');
+  }
+
+  function updateButtonIcon(){
+    if (!toggleBtn) return;
+    const playing = anyPlaying();
+    const hasPlayers = players.size > 0;
+    toggleBtn.innerHTML = playing ? ICONS.pause : ICONS.play;
+    toggleBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    toggleBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+    toggleBtn.classList.toggle('is-playing', playing);
+    toggleBtn.disabled = !hasPlayers;
+    toggleBtn.toggleAttribute('disabled', !hasPlayers);
+    toggleBtn.setAttribute('aria-disabled', hasPlayers ? 'false' : 'true');
+  }
+
+  function syncHud(){
+    setHudActive(anyPlaying());
+    updateButtonIcon();
+  }
+
+  function toggleFirstTarget(){
+    const pool = Array.from(players);
+    const target = pool.find(p => !p.muted) || pool[0];
+    if (!target) return;
+    if (target.paused){
+      target.play().then(()=>{
+        if (toggleBtn){
+          toggleBtn.classList.remove('flash-play');
+          void toggleBtn.offsetWidth;
+          toggleBtn.classList.add('flash-play');
+          setTimeout(()=> toggleBtn?.classList.remove('flash-play'), 450);
+        }
+      }).catch(()=>{});
+    } else {
+      target.pause();
+    }
+  }
+
+  function attachEvents(el){
+    if (!el || players.has(el)) return;
+    const update = ()=> syncHud();
+    el[UPDATE_KEY] = update;
+    RELEVANT_EVENTS.forEach(ev => el.addEventListener(ev, update, { passive: true }));
+    players.add(el);
+  }
+
+  function detachMissing(current){
+    const currentSet = new Set(current);
+    for (const el of Array.from(players)){
+      if (!currentSet.has(el)){
+        const update = el[UPDATE_KEY];
+        if (update){
+          RELEVANT_EVENTS.forEach(ev => el.removeEventListener(ev, update));
+          delete el[UPDATE_KEY];
+        }
+        players.delete(el);
+      }
+    }
+  }
+
+  function scan(){
+    const found = Array.from(document.querySelectorAll('audio, video'));
+    found.forEach(attachEvents);
+    detachMissing(found);
+    syncHud();
+  }
+
+  toggleBtn.addEventListener('click', (event)=>{
+    event.stopPropagation();
+    toggleFirstTarget();
+  });
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', scan, { once: true });
+  } else {
+    scan();
+  }
+
+  const mo = new MutationObserver(()=> scan());
+  mo.observe(document.documentElement, { childList: true, subtree: true });
 })();
 
