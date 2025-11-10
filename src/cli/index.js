@@ -391,11 +391,20 @@ function resolveBuiltinSkinKey(input) {
 }
 
 function builtinSkinList() {
+  const blurbs = {
+    'vite-breeze': 'Liquid Glass portfolio shell (split layout + PDF pane)',
+    'docs-reader': 'spacious docs UI (left nav, right outline, copy-on-code)',
+    'cards-tabs': 'portfolio dashboard (cards + tabs from works list)',
+    'kiosk': 'touch-first tiles for demos/galleries (oversized controls)',
+    'console': 'console view used for debugging + starter scaffolds',
+    'typefolio': 'typography-first layout (experimental)'
+  };
   return Object.entries(BUILTIN_SKINS).map(([key, meta]) => {
     const aliases = (meta.aliases && meta.aliases.length)
       ? ` (alias: ${meta.aliases.join(', ')})`
       : '';
-    return `${key}${aliases}`;
+    const purpose = blurbs[key] ? ` — ${blurbs[key]}` : (meta.label ? ` — ${meta.label}` : '');
+    return `${key}${aliases}${purpose}`;
   });
 }
 
@@ -1569,7 +1578,7 @@ const program = new Command();
 program
   .name('praetorius')
   .alias('prae')
-  .description('Praetorius — Works Console scaffolder & wizard')
+  .description('Praetorius — portfolio-first SPA generator. Works list drives UI.')
   .version(pkgJson.version || '0.0.0');
 
 // Non-blocking update hint (industry standard)
@@ -1581,6 +1590,28 @@ try {
 
 // Rich, example-driven help footer
 program.addHelpText('after', `
+Praetorius — portfolio-first SPA generator. Render your PRAE.works list, pick a skin, ship.
+All skins render your PRAE.works list. No mock data; no jobs/queues.
+
+Supported skins:
+  • vite-breeze — Liquid Glass portfolio shell (split layout + PDF pane).
+  • docs-reader (alias: docs) — spacious docs UI (left nav, right outline, copy-on-code).
+  • cards-tabs (alias: dashboard) — portfolio dashboard (cards + tabs from your works list).
+  • kiosk (alias: presentation) — touch-first tiles for demos/galleries (oversized controls).
+Theme: light/dark via the built-in #wc-theme-toggle. No WAAPI.
+
+Examples:
+  # Generate with default skin
+  $ prae generate
+
+  # Generate with a specific skin
+  $ prae generate --skin vite-breeze
+  $ prae generate --skin docs-reader
+  $ prae generate --skin cards-tabs
+  $ prae generate --skin kiosk
+
+  # Tip: deep-link a work or tab in supported skins by URL hash
+  # (actual hash keys depend on the skin; see README)
 
 Quick start:
   $ prae init -o prae-out
@@ -1605,10 +1636,6 @@ Squarespace single-embed:
 UI bundle (template.html + main.js + style.css → dist/):
   $ prae generate --ui-src ui --html template.html --app-js app.js --app-css app.css
 
-Skins:
-  • console (default) • vite-breeze • cards-tabs (alias: dashboard) • docs-reader (alias: docs) • kiosk (alias: presentation) • typefolio (alias: typography)
-  $ prae skin list
-
 Troubleshooting:
   • CSV imports need "csv-parse"   → npm i csv-parse
   • YAML imports need "yaml"       → npm i yaml
@@ -1624,8 +1651,10 @@ skinCmd
   .command('list')
   .description('List built-in UI skins and aliases')
   .action(() => {
-    console.log(pc.bold('Built-in skins:'));
+    console.log(pc.bold('Built-in skins (all render PRAE.works):'));
     builtinSkinList().forEach(entry => console.log('  - ' + entry));
+    console.log(pc.gray('Skins never fabricate projects; everything derives from PRAE.works.'));
+    console.log(pc.gray('Theme: light/dark via #wc-theme-toggle (no WAAPI).'));
   });
 
 /* ------------------ preview (tiny static server) ------------------ */
@@ -1804,6 +1833,7 @@ program
     console.log('\n' + pc.bold('Next steps:'));
     console.log('  • Add works: ' + pc.cyan('praetorius add'));
     console.log('  • Generate:  ' + pc.cyan('praetorius generate'));
+    console.log('  • Read:      ' + pc.cyan('README.md → Skins, Theming & Tokens, PDF + HUD, Accessibility'));
     console.log('');
   });
 
@@ -3440,7 +3470,7 @@ program
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
   .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'ui')
-  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Built-ins: console, vite-breeze, cards-tabs (alias: dashboard), docs-reader (alias: docs), kiosk (alias: presentation), typefolio (alias: typography)', '')
+  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Supported: vite-breeze — Liquid Glass portfolio shell; docs-reader (alias: docs) — spacious docs UI; cards-tabs (alias: dashboard) — portfolio dashboard; kiosk (alias: presentation) — touch-first tiles. All skins render PRAE.works only.', '')
   .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')

@@ -1,278 +1,162 @@
-# Praetorius — Interactive Works Console
+# Praetorius — portfolio-first SPA generator
 
-![npm](https://img.shields.io/npm/v/praetorius?label=praetorius\&logo=npm)
-![node](https://img.shields.io/badge/node-%E2%89%A5%2018-black)
-![license](https://img.shields.io/badge/license-MIT-black)
-![install](https://img.shields.io/badge/install-npm%20i%20-g%20praetorius)
+Praetorius — portfolio-first SPA generator. Render your works list, pick a skin, ship.
 
-**An interactive, artist‑made composition portfolio with robust PDF and playback support.**
+## Table of contents
+- [Key principles](#key-principles)
+- [Quick Start](#quick-start)
+- [Skins overview](#skins-overview)
+- [Works list contract (PRAEworks)](#works-list-contract-praeworks)
+- [Theming & Tokens](#theming--tokens)
+- [PDF + HUD](#pdf--hud)
+- [Accessibility](#accessibility)
+- [CLI reference (concise)](#cli-reference-concise)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
-Praetorius is a small, disciplined toolchain for composers, artists, educators, festivals, and universities to publish “score‑centric” works pages: synchronized audio, score PDFs with **page‑follow** (auto‑snapping to the current printed page), deep links, and a clean console‑style UI that drops into Squarespace (or any site builder) via a single code block.
+## Key principles
+- **Single source of truth:** `window.PRAE.works` drives every skin. No mock data.
+- **Skins are views:** each skin renders the same works list and HUD/PDF primitives.
+- **PDF + HUD glue:** the global HUD and PDF pane stay wired across skins.
+- **Theming:** light/dark via CSS tokens; ESM + `defer`; no WAAPI claims.
+- **Accessibility:** keyboard/touch parity, ≥44px targets, reduced-motion respected.
 
-> ![Example image2](https://raw.githubusercontent.com/cbassuarez/praetorius/4f7a17bbca81772543201cb7f41ef7bc2806b69f/praetorius_example_video.gif)
-
-> the score PDF *snaps* to the correct printed page while audio plays, so evaluators aren’t lost—and you aren’t judged on secondary characteristics.
-
----
-
-## Why it exists
-
-Presenting—or judging—score‑based works on the web often collapses into:
-
-1. the evaluator doesn’t know the score; 2) the evaluator gets lost between time and page; 3) judgments drift to secondary aesthetics. Praetorius restores **primary evidence**: *the work as score + sound*, tightly synchronized.
-
----
-
-## Key features
-
-* **PDF page‑follow**: printed page ↔︎ media time mapping (with `pdfStartPage`, `mediaOffsetSec`, and a `pageMap`).
-* **Works set authoring**: a CLI wizard writes `.prae/works.json`; a generator emits paste‑ready `dist/script.js` + `dist/styles.css`.
-* **Squarespace‑friendly**: paste one snippet, or host files and link—no theme collisions.
-* **Deep links**: `#work-<n>?t=<sec>` for precise sharing.
-* **Light | Dark theme tokens** only: predictable contrast, museum‑grade minimalism.
-* **No vendor lock‑in**: plain JS/CSS; deploy anywhere.
-
-Non‑goals: hosting your media, analytics, auth. You own your assets; Praetorius orchestrates them.
-
----
-
-## How it works (architecture overview)
-
-```
-.prae/works.json  ──▶  praetorius generate  ──▶  dist/script.js + dist/styles.css
-                        (optionally --embed to emit a single HTML snippet)
-
-Your site (Squarespace/Webflow/…)
-  └─ Code block loads dist/script.js (or pasted inline)
-      ├─ window.PRAE.works                (works array)
-      ├─ window.PRAE.pageFollowMaps       (slug→page map)
-      └─ window.PRAE.ensureAudioTags()    (<audio> hydration)
-
-main.js (your console UI)
-  └─ Consumes PRAE data + drives audio + PDF.js viewer
-```
-
-* **Single source of truth**: `.prae/works.json` (schema v1).
-* Optional `.prae/config.json` for defaults (theme, output flags)—see Roadmap.
-
----
-
-## Quick start
+## Quick Start
+### Requirements
+- Node.js ≥ 18.17 (per [`package.json`](package.json)).
 
 ### Install
-
 ```bash
-# Global
 npm i -g praetorius
-# or one-off
-npx praetorius@latest --help
 ```
 
-### Initialize a project
-
+### Generate
 ```bash
-mkdir my-portfolio && cd my-portfolio
-praetorius init --out dist
+prae generate
+prae generate --skin vite-breeze
+prae generate --skin docs-reader
+prae generate --skin cards-tabs
+prae generate --skin kiosk
 ```
 
-This creates a seed `dist/script.js`, `dist/styles.css` and `.prae/works.json` if missing.
+### Outputs
+- `dist/script.js` and `dist/styles.css` mirror your `window.PRAE.works` data.
+- UI bundles land beside them: `dist/app.js` plus `dist/app.css` (or `dist/style.css` for `docs-reader`).
+- `dist/index.html` (or your specified template) links the generated assets.
+- Toggle light/dark from the shared button `#wc-theme-toggle` embedded in each skin.
 
-### Add works (wizard)
+## Skins overview
+All skins expose Play / PDF / Copy / Open actions that update the global HUD and PDF pane consistently.
 
+### [vite-breeze](ui/skins/vite-breeze/)
+- Liquid Glass split layout with works on the left and a PDF pane on the right.
+- HUD stays pinned at the top with transport + now playing metadata.
+- Works cards emphasize imagery, cues, and quick actions.
+- Built-in PDF pane follows playback using your page maps.
+- Use for: elegant web portfolios with on-page score viewing.
+
+### [docs-reader](ui/skins/docs-reader/) (alias: `docs`)
+- Spacious documentation shell with left navigation and right outline.
+- Search focuses the input on `/` and highlights matches inline.
+- Code fences include copy affordances and optional language tabs.
+- Outline syncs to scroll and the works hero surfaces featured projects.
+- Use for: tutorials and "how it works" narratives about your works.
+
+### [cards-tabs](ui/skins/cards-tabs/) (alias: `dashboard`)
+- Dashboard skin: cards summarize works; tabs reveal cues, playback, and score panes.
+- Right-side detail rail keeps media controls and PDF together.
+- Global HUD + PDF toggles mirror the card selection.
+- Supports deep-linking tabs for quick sharing of focus views.
+- Use for: at-a-glance browsing with focused detail panels.
+
+### [kiosk](ui/skins/kiosk/) (alias: `presentation`)
+- Oversized tiles and buttons tuned for touch screens and gallery installs.
+- Minimal chrome keeps attention on works imagery and cues.
+- One-tap fullscreen toggle and swipe-friendly controls.
+- HUD and PDF buttons stretch to ≥44px for kiosks.
+- Use for: live demos, touch-first presentations, and installations.
+
+## Works list contract (PRAE.works)
+Skins read the works array seeded via `window.PRAE.works`. Common fields:
+- `id` (integer identifier).
+- `slug` (stable string used for hashes and lookup).
+- `title` (display name).
+- `one` (portfolio one-liner).
+- `cues` (optional) — array of `{ t, label }` where `t` is seconds.
+- `audio` (optional) — URL or `null` for playback.
+- `pdf` (optional) — URL or `null` for score viewing.
+- `score` (optional) — include `pdfStartPage`, `mediaOffsetSec`, `pageMap[]`, and optional
+  `pdfDelta` for page-follow.
+
+Deep links: some skins sync selection and tabs into the URL hash (e.g.,
+`#work=<id>&tab=playback`). The exact keys are skin-specific—inspect each skin template when you
+need to wire custom routing.
+
+## Theming & Tokens
+- `praeApplyTheme(mode, opts)` and `praeCurrentTheme()` are exposed globally by the skins.
+- Body/theme tokens live on `body[data-theme]` or the equivalent class; generated CSS
+  (`dist/app.css` or `dist/style.css`) applies light/dark palettes.
+- Toggle via the shared `#wc-theme-toggle` control; skins call into the helpers so theme changes
+  propagate consistently.
+- Animations rely on CSS transitions only. Reduced-motion preferences short-circuit transitions.
+- ESM bundles ship with `<script type="module" defer>`; no Web Animations API assumptions.
+
+## PDF + HUD
+- The global HUD (`#wc-hud`) announces the current work, progress bar, and transport state.
+- The PDF pane reuses a single viewer element so skins avoid duplicating embeds.
+- Mozilla's PDF.js viewer is supported when you supply a compatible URL; fallback iframes
+  respect the same IDs.
+- Skins wire the HUD buttons to the shared playback APIs exposed in `window.PRAE`.
+- Page-follow maps derived from your works JSON drive automatic page jumps.
+
+## Accessibility
+- Keyboard support covers navigation, playback controls, and dialog toggles across skins.
+- Tabs and accordions expose proper ARIA attributes (e.g., `role="tablist"`, `aria-selected`).
+- Touch targets meet or exceed 44px sizing—including kiosk HUD buttons.
+- Contrast tokens are tuned for light and dark variants; check your accent colors for WCAG compliance.
+- Motion-sensitive flows respect `prefers-reduced-motion` and disable nonessential transitions.
+
+## CLI reference (concise)
 ```bash
-praetorius add
-# Answer prompts for title, one-liner, audio, pdf, cues, and (optionally) page-follow mapping
+prae generate
+prae generate --skin <name>
+prae skin list
 ```
 
-### Generate site assets
+Supported skin flags: `vite-breeze`, `docs-reader` (`docs`), `cards-tabs` (`dashboard`),
+`kiosk` (`presentation`).
 
+Examples:
 ```bash
-praetorius generate --out dist
-# emits dist/script.js (+ styles.css if not present)
+# Generate with default skin
+prae generate
+
+# Generate with a specific skin
+prae generate --skin vite-breeze
+prae generate --skin docs-reader
+prae generate --skin cards-tabs
+prae generate --skin kiosk
+
+# Tip: deep-link a work or tab in supported skins by URL hash
+# (actual hash keys depend on the skin; see README)
 ```
 
-### Integrate in your site
-
-* **Squarespace**: add a **Code** block → paste `dist/script.js` (or use `--embed` to emit a single snippet). Add `dist/styles.css` to **Design → Custom CSS**.
-* Any other platform (Webflow/Wix/Jekyll/etc.): include the script and CSS as you would any static assets.
-
-
----
-
-## Data model (`.prae/works.json`)
-
-Minimal, human‑readable schema (v1):
-
-```json
-{
-  "version": 1,
-  "works": [
-    {
-      "id": 1,
-      "slug": "soundnoisemusic",
-      "title": "String Quartet No. 2 — SOUNDNOISEMUSIC",
-      "one": "A through-composed/indeterminate quartet…",
-      "audio": "https://…/audio.mp3",
-      "pdf": "https://…/score.pdf",
-      "cues": [ { "label": "@10:30", "t": 630 } ],
-      "score": {
-        "pdfStartPage": 11,
-        "mediaOffsetSec": 0,
-        "pageMap": [
-          { "at": "0:30", "page": 1 },
-          { "at": "1:00", "page": 2 }
-        ]
-      }
-    }
-  ]
-}
-```
-
-Fields:
-
-* `id` (int), `slug` (string), `title` (string), `one` (string)
-* `audio` (URL | null), `pdf` (URL | null)
-* `cues[]` with `{ label, t }` (seconds)
-* Optional `score`: `pdfStartPage` (printed p.1 → PDF page), `mediaOffsetSec` (can be negative), `pageMap[]` rows `{ at: "mm:ss"|seconds, page: int }`, optional `pdfDelta`
-
----
-
-## PDF Page‑Follow (concept & practice)
-
-**Goal**: While audio plays, the PDF viewer jumps to the correct **printed** page.
-
-* `pdfStartPage`: the PDF page number that corresponds to **printed page 1**.
-* `mediaOffsetSec`: if the recording’s bar 1 doesn’t begin at 0:00 (pre‑roll, announcements), use a positive or negative integer to align.
-* `pageMap`: waypoints like `{ at: "7:49", page: 10 }` defined in **printed** page numbers.
-
-Example mapping:
-
-```json
-{
-  "pdfStartPage": 11,
-  "mediaOffsetSec": 0,
-  "pageMap": [
-    { "at": "0:00", "page": 1 },
-    { "at": "1:07", "page": 2 },
-    { "at": "5:49", "page": 7 }
-  ]
-}
-```
-
-**Gotchas**
-
-* Use **PDF.js viewer** URLs for reliable page navigation; plain Drive “preview” iframes don’t expose paging. Your console can wrap Drive links via a direct `uc?export=download&id=...` and pass them to PDF.js.
-* Times must be monotonic; pages ≥ 1. Negative `mediaOffsetSec` is allowed.
-
----
-
-## Squarespace & other platforms
-
-**Squarespace/Wordpress (recommended workflow)**
-
-1. Add a **Code** block to your page.
-2. Paste the generated `dist/script.js` contents (or run `praetorius generate --embed` and paste the single snippet).
-3. Add `dist/styles.css` in **Design → Custom CSS**.
-4. Ensure your main console script (e.g., `main.js`) reads:
-
-   ```js
-   const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || {};
-   // then use as you already do
-   ```
-
-**Other platforms**
-
-* **Webflow/Wix/Framer**: add custom HTML/JS to the page and include the CSS.
-* **Static/JAMStack**: copy `dist/*` into your web root and reference in your template.
-
-**Hosting**
-
-* Host audio/PDF on your preferred CDN; for Google Drive links, prefer direct download URLs and PDF.js for navigation.
-
----
-
-## Accessibility & performance
-
-* **ARIA**: console output uses `aria-live` for status; PDF pane and controls carry labels.
-* **Keyboard**: CLI input is keyboard‑first; buttons mirror commands; Esc closes the PDF pane.
-* **Color & theme**: strictly **light | dark** tokens for predictable contrast.
-* **Performance**: audio is lazy‑loaded (`data-audio` → `src` on first play); PDF viewer is iframed; minimal DOM churn; no framework.
-* **CSP/CORS**: allow your media/CDN origins; prefer PDF.js with a `file=` param for third‑party PDFs.
-
----
-
-## Theming (light | dark only)
-
-Praetorius keeps the visual surface neutral (black/white). The CLI will expose a `config.theme` default in a future release; for now your UI can toggle via the `data-theme` attribute (`light` | `dark`). No system/auto mode by design.
-
----
-
-## Troubleshooting / FAQ
-
-**PDF doesn’t page‑follow**
-
-* Ensure your generated script includes `window.PRAE.pageFollowMaps` and your console reads it.
-* Use PDF.js viewer URLs; Drive “preview” pages can’t be controlled.
-
-**Google Drive audio doesn’t play**
-
-* Convert `…/file/d/<ID>/view` → `https://drive.google.com/uc?export=download&id=<ID>`.
-
-**CLI errors (validation)**
-
-* Run `praetorius list` to inspect the DB.
-* Times must be `mm:ss` or integers; pages ≥ 1. Slugs unique; IDs unique.
-
-**Autoplay blocked**
-
-* Click any Play once to unlock; the console shows a hint toast.
-
----
-
-## Roadmap 
-
-~~**Sprint 0 — Hardening**~~
-
-~~* TDZ/runtime fixes; atomic writes (.tmp → fsync → rename) + `.bak`; dual bin (`praetorius`/`prae`); `prae doctor` (schema + duplicates).~~
-
-~~**Sprint 1 — Core authoring**~~
-
-~~* `edit`, `rm`, `order`, `import` (json/csv), `export` (json/csv). IDs stable; display order managed.~~
-
-~~**Sprint 2 — Score/page‑follow**~~
-
-~~* First‑class `score` editor/validator; preview printed→PDF mapping; strict normalization.~~
-
-~~**Sprint 3 — Output modes**~~
-
-~~* `--embed` single‑snippet for Squarespace; `--minify`; `--js/--css` filename control; theme light|dark only.~~
-
-**Sprint 4 — Preview & Watch**
-
-* Local preview server; `generate --watch` with nice logs.
-
-**Sprint 5 — Doctor++ & URL checks**
-
-* HEAD checks for assets; Drive normalization hints; CORS warnings; PDF.js suggestions.
-
-**Sprint 6 — Migrations, history, undo**
-
-* Schema migration tool; history snapshots; `undo` to last snapshot.
-
-**Sprint 7 — CI/CD & DX**
-
-* GitHub Actions for tests + publish on tag; snapshot/E2E tests; update‑notifier; rich `--help`.
-
----
+## Troubleshooting
+- Empty page? Ensure `window.PRAE.works` is populated—missing data yields an empty works list.
+- Disabled audio or PDF buttons? Provide valid `audio`/`pdf` URLs per work; absent values disable the
+  action gracefully.
+- Theme toggle missing? Confirm your template includes `#wc-theme-toggle` or wire one via the
+  exported helpers.
+- PDF not opening? Verify the URL is reachable and compatible with PDF.js (e.g., Google Drive
+  `uc?export=download` links).
+- CLI import hiccups? Install optional deps (`csv-parse`, `yaml`, `esbuild`) when prompted.
 
 ## Contributing
-
-Issues and PRs welcome: open an issue with a minimal repro (DB sample, links). Conventional commits appreciated; unit tests for time parsing and score validation are especially helpful.
+- Follow conventional commits; docs-only changes use the `docs:` scope.
+- Keep skins honest: they must never fabricate works—everything flows from `window.PRAE.works`.
+- Update documentation alongside CLI strings to keep help and README aligned.
+- Run linting/tests as needed (`npm run test`) before submitting PRs.
 
 ## License
-
-MIT. © Seb Suarez.
-
-## Acknowledgements
-
-Design and authorship: **Seb Suarez**. Built for artists and evaluators who deserve to see (and hear) the work on its own terms.
+[MIT](LICENSE)
