@@ -13,18 +13,35 @@
       <span class="ts-site-subtitle" data-site-subtitle></span>
     </div>
     <nav id="prae-nav" class="ts-nav" aria-label="Site links"></nav>
-    <span id="wc-theme-toggle" class="ts-theme-toggle" role="switch" aria-checked="false" tabindex="0">Light</span>
+    <button id="wc-theme-toggle" class="ts-theme-toggle" type="button" role="switch" aria-checked="false">Light</button>
   </header>
 
   <main class="ts-main" role="main">
-    <button id="ts-reset" class="ts-reset" type="button">Reset layout</button>
-    <section id="ts-field" class="ts-field" aria-label="Typescatter canvas"></section>
+    <section id="ts-field" class="ts-field" aria-label="Typescatter works"></section>
   </main>
 
-  <footer class="ts-footer" role="contentinfo">
-    <div data-now-playing></div>
-    <div data-footer-info></div>
+  <footer id="ts-footer" class="ts-footer" role="contentinfo">
+    <div class="ts-footer-left">
+      <span class="ts-footer-copy" data-footer-copy></span>
+      <a class="prae-badge" data-footer-badge href="https://www.npmjs.com/package/praetorius" target="_blank" rel="noopener"></a>
+    </div>
+    <div class="ts-footer-title" data-footer-title data-empty="1"></div>
+    <div class="ts-footer-controls" role="toolbar" aria-label="Work controls">
+      <button type="button" class="ts-foot-btn" data-role="pdf" aria-disabled="true" disabled>PDF</button>
+      <button type="button" class="ts-foot-btn" data-role="play" aria-disabled="true" aria-pressed="false" disabled>Play ▷</button>
+      <div class="ts-foot-cues">
+        <button type="button" class="ts-foot-btn" data-role="cues" aria-disabled="true" aria-haspopup="true" aria-expanded="false" disabled>Play@</button>
+        <div class="ts-cue-pop" data-cue-list hidden></div>
+      </div>
+    </div>
+    <span class="ts-footer-live" data-footer-live aria-live="polite"></span>
   </footer>
+
+  <div class="ts-live" data-live aria-live="polite"></div>
+  <aside class="ts-hint" data-hint hidden>
+    <p class="ts-hint-text">Tip: click a title to reveal its details; drag to arrange.</p>
+    <button type="button" class="ts-hint-dismiss" data-hint-dismiss>Dismiss</button>
+  </aside>
 
   <script type="module" src="./main.js" defer></script>
 </body>

@@ -1,12 +1,3 @@
-import {
-  forceSimulation,
-  forceCollide,
-  forceLink,
-  forceManyBody,
-  forceX,
-  forceY
-} from 'https://cdn.skypack.dev/d3-force@3?min';
-
 const PRAE_THEME_STORAGE_KEY = 'wc.theme';
 const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
 
@@ -153,32 +144,55 @@ const pfMap = (() => {
 
 const HASH_WORK_KEY = 'work';
 const SESSION_HINT_KEY = 'ts-hint-shown';
-const MODULE_PADDING = 12;
-const CLUSTER_FORCE = 0.08;
+const SAFE_MARGIN = 64;
+const COLLISION_PADDING = 24;
+const MAX_ROTATION = 2; // degrees
 
 const state = {
   field: null,
-  footer: null,
-  footerNowPlaying: null,
-  footerInfo: null,
-  resetBtn: null,
   worksById: new Map(),
-  activeWorkId: null,
-  modules: [],
-  nodes: [],
-  nodesById: new Map(),
-  clusterCenters: new Map(),
+  items: [],
+  itemById: new Map(),
   positions: new Map(),
-  links: [],
-  simulation: null,
+  activeWorkId: null,
   dragging: null,
-  fieldSize: { width: 0, height: 0 },
-  isHoverCapable: typeof window.matchMedia === 'function' ? window.matchMedia('(hover: hover) and (pointer: fine)').matches : false,
-  prefersReducedMotion: typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  description: { popover: null, sheet: null, currentWork: null, interactive: false },
-  pdf: { pane: null, frame: null, title: null, close: null, backdrop: null, viewerReady: false, pendingGoto: null, currentSlug: null, restoreFocus: null, followAudio: null, followHandler: null, followSlug: null, lastPrinted: null },
+  reduceMotion: false,
+  layoutQueued: false,
+  layoutToken: 0,
+  footer: {
+    root: null,
+    copy: null,
+    badge: null,
+    title: null,
+    pdfBtn: null,
+    playBtn: null,
+    cuesBtn: null,
+    cueList: null,
+    live: null
+  },
+  ariaLive: null,
+  hint: null,
+  hintShown: false,
+  pdf: {
+    pane: null,
+    frame: null,
+    title: null,
+    close: null,
+    backdrop: null,
+    viewerReady: false,
+    pendingGoto: null,
+    currentSlug: null,
+    restoreFocus: null,
+    followAudio: null,
+    followHandler: null,
+    followSlug: null,
+    lastPrinted: null
+  },
   timers: new Map(),
-  hintShown: false
+  footerActiveTitle: '',
+  cuesOpen: false,
+  resizeHandle: null,
+  lastSeed: ''
 };
 
 try {
@@ -229,21 +243,62 @@ function ensureAudioSrc(audio, work) {
   return true;
 }
 
+function stopTimer(workId) {
+  const info = state.timers.get(workId);
+  if (info) {
+    cancelAnimationFrame(info.raf);
+    state.timers.delete(workId);
+  }
+}
+
+function scheduleTimer(workId) {
+  const record = findWorkById(workId);
+  const audio = document.getElementById('wc-a' + workId) || record?.audio;
+  if (!audio) return;
+  stopTimer(workId);
+  const tick = () => {
+    updateFooterPlaybackState();
+    const info = state.timers.get(workId);
+    if (info) info.raf = requestAnimationFrame(tick);
+  };
+  state.timers.set(workId, { raf: requestAnimationFrame(tick), audio });
+}
+
+function bindAudioEvents(id, audio) {
+  if (!audio) return;
+  if (audio.dataset.tsBound === '1') return;
+  audio.dataset.tsBound = '1';
+  audio.addEventListener('play', () => {
+    markPlaying(id, true);
+    scheduleTimer(id);
+    updateFooterPlaybackState();
+    attachPageFollow(findWorkById(id)?.data?.slug, audio);
+  });
+  audio.addEventListener('pause', () => {
+    markPlaying(id, false);
+    updateFooterPlaybackState();
+  });
+  audio.addEventListener('ended', () => {
+    markPlaying(id, false);
+    updateFooterPlaybackState();
+  });
+  audio.addEventListener('timeupdate', () => {
+    scheduleTimer(id);
+  });
+  audio.addEventListener('loadedmetadata', () => {
+    scheduleTimer(id);
+    updateFooterPlaybackState();
+  });
+}
+
 function markPlaying(workId, playing) {
-  state.modules.forEach((module) => {
-    if (module.work.id !== workId) return;
-    module.el.classList.toggle('is-playing', !!playing);
-    if (playing) {
-      module.el.classList.add('is-active');
-    } else if (state.activeWorkId !== workId) {
-      module.el.classList.remove('is-active');
-    }
-    if (module.kind === 'action') {
-      const btn = module.el.querySelector('[data-role="play-toggle"]');
-      if (btn) btn.textContent = playing ? 'Pause' : 'Play';
+  state.items.forEach((item) => {
+    if (item.work.id !== workId) return;
+    item.el.classList.toggle('is-playing', !!playing);
+    if (!playing && state.activeWorkId !== workId) {
+      item.el.classList.remove('is-active');
     }
   });
-  if (!playing) stopTimer(workId);
 }
 
 function ensurePdfDom() {
@@ -416,11 +471,15 @@ function playAt(id, atSeconds) {
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
   if (!audio) return;
   ensureAudioSrc(audio, work);
+  pauseAllExcept(work.id);
   audio.currentTime = Math.max(0, atSeconds || 0);
   audio.play().catch(() => {});
   markPlaying(work.id, true);
   bindAudioEvents(work.id, audio);
   attachPageFollow(work.slug, audio);
+  state.activeWorkId = work.id;
+  setActiveItem(work.id);
+  updateFooterPlaybackState();
 }
 
 function togglePlayFor(id) {
@@ -433,90 +492,28 @@ function togglePlayFor(id) {
   if (!audio) return false;
   ensureAudioSrc(audio, work);
   if (audio.paused || audio.ended) {
+    pauseAllExcept(work.id);
     audio.play().catch(() => {});
     markPlaying(work.id, true);
     bindAudioEvents(work.id, audio);
     attachPageFollow(work.slug, audio);
+    state.activeWorkId = work.id;
+    setActiveItem(work.id);
+    updateFooterPlaybackState();
     return true;
   }
   audio.pause();
   markPlaying(work.id, false);
-  updateNowPlaying(null);
+  updateFooterPlaybackState();
   return true;
 }
 
-function stopTimer(workId) {
-  const info = state.timers.get(workId);
-  if (info) {
-    cancelAnimationFrame(info.raf);
-    state.timers.delete(workId);
-  }
-}
-
-function scheduleTimer(workId) {
-  const record = findWorkById(workId);
-  const audio = document.getElementById('wc-a' + workId) || record?.audio;
-  if (!audio) return;
-  stopTimer(workId);
-  const tick = () => {
-    updateTimer(workId, audio);
-    const info = state.timers.get(workId);
-    if (info) info.raf = requestAnimationFrame(tick);
-  };
-  state.timers.set(workId, { raf: requestAnimationFrame(tick), audio });
-}
-
-function updateTimer(workId, audio) {
-  const module = state.modules.find((item) => item.work.id === workId && item.kind === 'action');
-  const timerEl = module?.el.querySelector('[data-role="timer"]');
-  if (timerEl) timerEl.textContent = formatTime(audio?.currentTime || 0);
-}
-
-function bindAudioEvents(id, audio) {
-  if (!audio) return;
-  if (audio.dataset.tsBound === '1') return;
-  audio.dataset.tsBound = '1';
-  audio.addEventListener('play', () => {
-    markPlaying(id, true);
-    scheduleTimer(id);
-    updateNowPlaying({ id, audio });
+function pauseAllExcept(id) {
+  state.items.forEach((item) => {
+    if (item.work.id === id) return;
+    const audio = document.getElementById('wc-a' + item.work.id);
+    if (audio && !audio.paused) audio.pause();
   });
-  audio.addEventListener('pause', () => {
-    markPlaying(id, false);
-    updateNowPlaying(audio.paused ? null : { id, audio });
-  });
-  audio.addEventListener('ended', () => {
-    markPlaying(id, false);
-    updateNowPlaying(null);
-  });
-  audio.addEventListener('timeupdate', () => {
-    scheduleTimer(id);
-    if (!audio.paused) updateNowPlaying({ id, audio });
-  });
-  audio.addEventListener('loadedmetadata', () => {
-    scheduleTimer(id);
-    if (!audio.paused) updateNowPlaying({ id, audio });
-  });
-}
-
-function updateNowPlaying(payload) {
-  const now = state.footerNowPlaying;
-  const footer = state.footer;
-  if (!footer || !now) return;
-  if (!payload) {
-    footer.classList.remove('has-now-playing');
-    now.innerHTML = '';
-    now.removeAttribute('data-work');
-    return;
-  }
-  const record = findWorkById(payload.id);
-  const work = record?.data;
-  if (!work) return;
-  const total = payload.audio?.duration ? formatTime(payload.audio.duration) : '--:--';
-  const current = payload.audio?.currentTime ? formatTime(payload.audio.currentTime) : '0:00';
-  now.innerHTML = `<span aria-hidden="true" class="ts-now-icon">⏸</span>Now playing: ${work.title || work.slug || 'Work'} — ${current} / ${total}`;
-  now.dataset.work = String(work.id);
-  footer.classList.add('has-now-playing');
 }
 
 function ensureAudioTags() {
@@ -525,706 +522,12 @@ function ensureAudioTags() {
   }
 }
 
-function ensureFooter() {
-  if (state.footer) return;
-  const footer = document.querySelector('.ts-footer');
-  if (!footer) return;
-  state.footer = footer;
-  state.footerNowPlaying = footer.querySelector('[data-now-playing]');
-  state.footerInfo = footer.querySelector('[data-footer-info]');
-  if (state.footerNowPlaying) state.footerNowPlaying.setAttribute('aria-live', 'polite');
-}
-function computeMetaChips(work) {
-  const chips = [];
-  if (work.year) chips.push({ label: String(work.year), key: 'year' });
-  if (work.medium) chips.push({ label: String(work.medium), key: 'medium' });
-  if (work.duration) chips.push({ label: String(work.duration), key: 'duration' });
-  if (Array.isArray(work.tags)) {
-    work.tags.forEach((tag, idx) => {
-      chips.push({ label: String(tag), key: `tag-${idx}` });
-    });
-  }
-  if (!chips.length && work.slug) {
-    chips.push({ label: `#${work.slug}`, key: 'slug' });
-  }
-  return chips;
-}
-
-function getWorkDescription(work) {
-  const body = Array.isArray(work.openNote) ? work.openNote.join('\n\n') : String(work.one || '');
-  return body.trim();
-}
-
-function createModule(work, kind, options = {}) {
-  const el = document.createElement('div');
-  el.className = `ts-module ts-module--${kind}`;
-  el.dataset.workId = work.id != null ? String(work.id) : '';
-  el.dataset.moduleKind = kind;
-  el.tabIndex = 0;
-  el.setAttribute('role', 'group');
-  el.setAttribute('aria-label', `${work.title || work.slug || 'Work'} — ${kind}`);
-  el.setAttribute('aria-keyshortcuts', 'ArrowKeys,Shift+Arrow');
-  const handle = document.createElement('span');
-  handle.className = 'ts-module-handle';
-  handle.setAttribute('aria-hidden', 'true');
-  handle.textContent = '⋮⋮';
-  el.appendChild(handle);
-  if (kind === 'title') {
-    const title = document.createElement('h2');
-    title.className = 'ts-title';
-    title.textContent = work.title || work.slug || 'Untitled';
-    title.setAttribute('data-role', 'title-text');
-    el.appendChild(title);
-    const teaser = document.createElement('p');
-    teaser.className = 'ts-teaser';
-    teaser.textContent = getWorkDescription(work);
-    teaser.setAttribute('aria-hidden', 'true');
-    el.appendChild(teaser);
-    el.addEventListener('click', (event) => {
-      if (event.target.closest('button')) return;
-      event.preventDefault();
-      toggleDescription(work, el, { interactive: !state.isHoverCapable });
-    });
-    el.addEventListener('focus', () => toggleDescription(work, el, { interactive: true }));
-    if (state.isHoverCapable) {
-      el.addEventListener('mouseenter', () => toggleDescription(work, el, { hover: true }));
-      el.addEventListener('mouseleave', () => hideDescriptionIfHover(work));
-    }
-  } else if (kind === 'teaser') {
-    const teaser = document.createElement('p');
-    teaser.className = 'ts-teaser';
-    teaser.textContent = getWorkDescription(work);
-    el.appendChild(teaser);
-  } else if (kind === 'meta') {
-    const chip = document.createElement('span');
-    chip.className = 'ts-chip';
-    chip.textContent = options.label || '';
-    el.appendChild(chip);
-  } else if (kind === 'action') {
-    el.setAttribute('role', 'toolbar');
-    const buttons = buildActionButtons(work);
-    buttons.forEach((btn) => el.appendChild(btn));
-    const timer = document.createElement('span');
-    timer.className = 'ts-action-timer';
-    timer.dataset.role = 'timer';
-    timer.textContent = '0:00';
-    el.appendChild(timer);
-  }
-  el.addEventListener('pointerdown', (event) => beginDrag(event, el));
-  el.addEventListener('keydown', (event) => handleModuleKeydown(event, el));
-  el.addEventListener('focus', () => setActiveWork(work.id));
-  el.addEventListener('focusin', () => setActiveWork(work.id));
-  el.addEventListener('focusout', (event) => {
-    if (!el.contains(event.relatedTarget)) clearActiveWork(work.id);
-  });
-  if (state.isHoverCapable) {
-    el.addEventListener('mouseenter', () => setActiveWork(work.id));
-    el.addEventListener('mouseleave', (event) => {
-      if (!el.contains(event.relatedTarget)) clearActiveWork(work.id);
-    });
-  }
-  const module = { work, el, kind, id: `${work.id}-${options.key || kind}-${state.modules.length}` };
-  el.dataset.moduleId = module.id;
-  state.modules.push(module);
-  el.addEventListener('focus', onModuleFocus);
-  return module;
-}
-
-function buildActionButtons(work) {
-  const buttons = [];
-  const audioSrc = normalizeSrc(getAudioSourceFor(work));
-  if (audioSrc) {
-    const play = document.createElement('button');
-    play.type = 'button';
-    play.className = 'ts-btn';
-    play.textContent = 'Play';
-    play.dataset.role = 'play-toggle';
-    play.setAttribute('aria-label', `Play or pause ${work.title}`);
-    play.addEventListener('click', (event) => {
-      event.preventDefault();
-      const toggled = togglePlayFor(work.id);
-      if (!toggled) showFeedback('Audio unavailable');
-    });
-    buttons.push(play);
-    const cue = Array.isArray(work.cues) ? work.cues[0] : null;
-    const startAt = cue ? cueTime(cue.at) : (typeof work.start_at === 'number' ? work.start_at : null);
-    if (startAt != null && Number.isFinite(startAt)) {
-      const playAtBtn = document.createElement('button');
-      playAtBtn.type = 'button';
-      playAtBtn.className = 'ts-btn';
-      playAtBtn.textContent = 'Play @';
-      playAtBtn.setAttribute('aria-label', `Play ${work.title} at cue`);
-      playAtBtn.addEventListener('click', (event) => {
-        event.preventDefault();
-        playAt(work.id, startAt);
-      });
-      buttons.push(playAtBtn);
-    }
-  }
-  const scoreUrl = normalizePdfUrl(work.pdfUrl || work.pdf);
-  if (scoreUrl) {
-    const scoreBtn = document.createElement('button');
-    scoreBtn.type = 'button';
-    scoreBtn.className = 'ts-btn';
-    scoreBtn.textContent = 'Score';
-    scoreBtn.setAttribute('aria-label', `Open score for ${work.title}`);
-    scoreBtn.addEventListener('click', (event) => {
-      event.preventDefault();
-      openPdfFor(work.id);
-    });
-    buttons.push(scoreBtn);
-    const pdfBtn = document.createElement('button');
-    pdfBtn.type = 'button';
-    pdfBtn.className = 'ts-btn';
-    pdfBtn.textContent = 'PDF';
-    pdfBtn.setAttribute('aria-label', `Open PDF for ${work.title}`);
-    pdfBtn.addEventListener('click', (event) => {
-      event.preventDefault();
-      window.dispatchEvent(new CustomEvent('wc:pdf-open', { detail: { slug: work.slug } }));
-      openPdfFor(work.id);
-    });
-    buttons.push(pdfBtn);
-  }
-  const openBtn = document.createElement('button');
-  openBtn.type = 'button';
-  openBtn.className = 'ts-btn';
-  openBtn.textContent = 'Open';
-  openBtn.setAttribute('aria-label', `Open detail page for ${work.title}`);
-  openBtn.addEventListener('click', () => openWorkPage(work));
-  buttons.push(openBtn);
-  return buttons;
-}
-
-function openWorkPage(work) {
-  const slug = work?.slug;
-  if (!slug) return;
-  const base = PRAE.config?.site?.workRoot || '/works/';
-  const url = typeof PRAE.routes?.work === 'function' ? PRAE.routes.work(work) : `${base}${slug}`;
-  try {
-    window.location.href = url;
-  } catch (_) {
-    window.open(url, '_blank', 'noopener');
-  }
-}
-
-function showFeedback(text) {
-  if (!text) return;
-  const toast = document.createElement('div');
-  toast.className = 'ts-toast';
-  toast.textContent = text;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add('is-visible'));
-  setTimeout(() => {
-    toast.classList.remove('is-visible');
-    setTimeout(() => toast.remove(), 280);
-  }, 1600);
-}
-
-function moduleToNode(module, options = {}) {
-  const center = options.center || { x: 0, y: 0 };
-  const offsetX = options.offsetX ?? 0;
-  const offsetY = options.offsetY ?? 0;
-  const node = {
-    id: module.id,
-    work: module.work,
-    kind: module.kind,
-    el: module.el,
-    x: options.x ?? center.x + offsetX,
-    y: options.y ?? center.y + offsetY,
-    targetX: center.x + offsetX,
-    targetY: center.y + offsetY,
-    offsetX,
-    offsetY,
-    fx: null,
-    fy: null,
-    isDragging: false
-  };
-  measureNode(node);
-  return node;
-}
-
-function measureNode(node) {
-  node.width = node.el.offsetWidth;
-  node.height = node.el.offsetHeight;
-  node.radius = Math.max(node.width, node.height) / 2 + MODULE_PADDING;
-}
-
-function computeFieldSize() {
-  const rect = state.field?.getBoundingClientRect();
-  const width = rect?.width || window.innerWidth || 1024;
-  const height = rect?.height || window.innerHeight || 768;
-  state.fieldSize = { width, height };
-}
-
-function computeSeeds(count) {
-  computeFieldSize();
-  const width = state.fieldSize.width;
-  const height = state.fieldSize.height;
-  const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
-  const rows = Math.max(1, Math.ceil(count / cols));
-  const cellWidth = width / cols;
-  const cellHeight = height / rows;
-  const seeds = [];
-  let row = 0;
-  let col = 0;
-  for (let i = 0; i < count; i += 1) {
-    const x = (col + 0.5) * cellWidth;
-    const y = (row + 0.5) * cellHeight;
-    const jitterX = Math.min(cellWidth / 3, 40);
-    const jitterY = Math.min(cellHeight / 3, 40);
-    const rand = createSeededRandom(`seed-${i}`);
-    seeds.push({
-      x: x + (rand() - 0.5) * jitterX,
-      y: y + (rand() - 0.5) * jitterY
-    });
-    col += 1;
-    if (col >= cols) {
-      col = 0;
-      row += 1;
-    }
-  }
-  return seeds;
-}
-
-function setActiveWork(workId) {
-  if (state.activeWorkId === workId) return;
-  state.activeWorkId = workId;
-  state.modules.forEach((module) => {
-    if (module.work.id === workId) {
-      module.el.classList.add('is-active');
-    } else if (!module.el.classList.contains('is-playing')) {
-      module.el.classList.remove('is-active');
-    }
-  });
-  persistSelection(workId);
-}
-
-function clearActiveWork(workId) {
-  if (state.activeWorkId !== workId) return;
-  const stillHover = state.modules.some((module) => module.work.id === workId && module.el.matches(':hover, :focus-within'));
-  if (stillHover) return;
-  state.activeWorkId = null;
-  state.modules.forEach((module) => {
-    if (module.work.id === workId && !module.el.classList.contains('is-playing')) {
-      module.el.classList.remove('is-active');
-    }
-  });
-}
-
-function toggleDescription(work, anchor, opts = {}) {
-  if (!work) return;
-  if (!state.isHoverCapable) {
-    showSheet(work);
-    return;
-  }
-  if (opts.hover) {
-    openPopover(work, anchor, { interactive: false });
-    return;
-  }
-  const interactive = opts.interactive !== false;
-  if (state.description.currentWork === work.id && state.description.interactive === interactive) {
-    hideDescription();
-    return;
-  }
-  openPopover(work, anchor, { interactive });
-}
-
-function hideDescriptionIfHover(work) {
-  if (state.description.interactive) return;
-  if (state.description.currentWork !== work.id) return;
-  hideDescription();
-}
-function ensurePopover() {
-  if (state.description.popover) return state.description.popover;
-  const pop = document.createElement('div');
-  pop.className = 'ts-popover';
-  pop.setAttribute('role', 'dialog');
-  pop.setAttribute('aria-modal', 'false');
-  pop.setAttribute('hidden', '');
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'ts-popover-close ts-btn';
-  close.textContent = 'Close';
-  const body = document.createElement('div');
-  body.className = 'ts-popover-body';
-  pop.append(close, body);
-  document.body.appendChild(pop);
-  close.addEventListener('click', hideDescription);
-  pop.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      hideDescription();
-    }
-  });
-  state.description.popover = { root: pop, body, close };
-  return state.description.popover;
-}
-
-function ensureSheet() {
-  if (state.description.sheet) return state.description.sheet;
-  const sheet = document.createElement('div');
-  sheet.className = 'ts-sheet';
-  sheet.setAttribute('role', 'dialog');
-  sheet.setAttribute('aria-modal', 'true');
-  sheet.setAttribute('tabindex', '-1');
-  sheet.setAttribute('hidden', '');
-  sheet.innerHTML = `
-    <div class="ts-sheet-content">
-      <header class="ts-sheet-header">
-        <h3 data-role="title"></h3>
-        <button type="button" data-role="close" class="ts-btn" aria-label="Close description">Close</button>
-      </header>
-      <div class="ts-sheet-body"></div>
-    </div>`;
-  document.body.appendChild(sheet);
-  const close = sheet.querySelector('[data-role="close"]');
-  close?.addEventListener('click', hideSheet);
-  sheet.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      hideSheet();
-    }
-  });
-  state.description.sheet = {
-    root: sheet,
-    title: sheet.querySelector('[data-role="title"]'),
-    body: sheet.querySelector('.ts-sheet-body')
-  };
-  return state.description.sheet;
-}
-
-function openPopover(work, anchor, { interactive }) {
-  const pop = ensurePopover();
-  if (!pop?.root || !anchor) return;
-  const description = getWorkDescription(work);
-  pop.body.textContent = description;
-  pop.root.removeAttribute('hidden');
-  pop.root.dataset.workId = String(work.id);
-  pop.root.dataset.interactive = interactive ? '1' : '0';
-  state.description.currentWork = work.id;
-  state.description.interactive = interactive;
-  const rect = anchor.getBoundingClientRect();
-  const popRect = pop.root.getBoundingClientRect();
-  const top = Math.max(16, rect.bottom + 12 + window.scrollY);
-  const left = clamp(rect.left + rect.width / 2 - popRect.width / 2, 16, window.innerWidth - popRect.width - 16);
-  pop.root.style.left = `${left}px`;
-  pop.root.style.top = `${top}px`;
-  if (interactive) {
-    trapFocus(pop.root);
-    pop.close?.focus({ preventScroll: true });
-  } else {
-    releaseFocus(pop.root);
-  }
-}
-
-function hideDescription() {
-  const pop = state.description.popover;
-  if (pop?.root) {
-    pop.root.setAttribute('hidden', '');
-    releaseFocus(pop.root);
-  }
-  hideSheet();
-  state.description.currentWork = null;
-  state.description.interactive = false;
-}
-
-function showSheet(work) {
-  const sheet = ensureSheet();
-  if (!sheet?.root) return;
-  const description = getWorkDescription(work);
-  sheet.title.textContent = work.title || work.slug || 'Work';
-  sheet.body.textContent = description;
-  sheet.root.removeAttribute('hidden');
-  sheet.root.classList.add('is-open');
-  sheet.root.focus({ preventScroll: true });
-  trapFocus(sheet.root);
-  state.description.currentWork = work.id;
-  state.description.interactive = true;
-}
-
-function hideSheet() {
-  const sheet = state.description.sheet;
-  if (!sheet?.root) return;
-  sheet.root.setAttribute('hidden', '');
-  sheet.root.classList.remove('is-open');
-  releaseFocus(sheet.root);
-}
-
-function trapFocus(root) {
-  if (!root) return;
-  const focusable = root.querySelectorAll('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])');
-  if (!focusable.length) return;
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  const handler = (event) => {
-    if (event.key !== 'Tab') return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-  root.__trapHandler = handler;
-  root.addEventListener('keydown', handler);
-}
-
-function releaseFocus(root) {
-  if (!root?.__trapHandler) return;
-  root.removeEventListener('keydown', root.__trapHandler);
-  delete root.__trapHandler;
-}
-
-function beginDrag(event, el) {
-  if (event.button !== 0) return;
-  event.preventDefault();
-  const node = state.nodes.find((item) => item.el === el);
-  if (!node) return;
-  const rect = state.field.getBoundingClientRect();
-  const offsetX = event.clientX - rect.left;
-  const offsetY = event.clientY - rect.top;
-  node.fx = offsetX;
-  node.fy = offsetY;
-  node.isDragging = true;
-  el.setPointerCapture(event.pointerId);
-  el.classList.add('is-dragging');
-  state.dragging = { node, pointerId: event.pointerId };
-  if (state.simulation) state.simulation.alphaTarget(0.3).restart();
-  el.addEventListener('pointermove', dragMove);
-  el.addEventListener('pointerup', endDrag);
-  el.addEventListener('pointercancel', endDrag);
-}
-
-function dragMove(event) {
-  const drag = state.dragging;
-  if (!drag || drag.pointerId !== event.pointerId) return;
-  const rect = state.field.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  const { node } = drag;
-  const bounds = clampNode(node, x, y);
-  node.fx = bounds.x;
-  node.fy = bounds.y;
-  if (state.simulation) state.simulation.alpha(0.16);
-  updateNodeTransform(node);
-}
-
-function endDrag(event) {
-  const drag = state.dragging;
-  if (!drag || drag.pointerId !== event.pointerId) return;
-  const { node } = drag;
-  node.isDragging = false;
-  node.el.classList.remove('is-dragging');
-  node.x = node.fx;
-  node.y = node.fy;
-  persistNodePosition(node);
-  state.dragging = null;
-  event.currentTarget.removeEventListener('pointermove', dragMove);
-  event.currentTarget.removeEventListener('pointerup', endDrag);
-  event.currentTarget.removeEventListener('pointercancel', endDrag);
-  if (state.simulation) state.simulation.alphaTarget(0);
-}
-
-function handleModuleKeydown(event, el) {
-  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-  const node = state.nodes.find((item) => item.el === el);
-  if (!node) return;
-  event.preventDefault();
-  const step = event.shiftKey ? 16 : 4;
-  let x = node.fx ?? node.x ?? 0;
-  let y = node.fy ?? node.y ?? 0;
-  switch (event.key) {
-    case 'ArrowUp':
-      y -= step;
-      break;
-    case 'ArrowDown':
-      y += step;
-      break;
-    case 'ArrowLeft':
-      x -= step;
-      break;
-    case 'ArrowRight':
-      x += step;
-      break;
-    default:
-      break;
-  }
-  const bounds = clampNode(node, x, y);
-  node.fx = bounds.x;
-  node.fy = bounds.y;
-  node.x = bounds.x;
-  node.y = bounds.y;
-  persistNodePosition(node);
-  if (state.simulation) state.simulation.alpha(0.12).restart();
-  updateNodeTransform(node);
-}
-
-function clampNode(node, x, y) {
-  const width = node.width || node.el.offsetWidth;
-  const height = node.height || node.el.offsetHeight;
-  const minX = width / 2 + 16;
-  const maxX = state.fieldSize.width - width / 2 - 16;
-  const minY = height / 2 + 16;
-  const maxY = state.fieldSize.height - height / 2 - 16;
-  return {
-    x: clamp(x, minX, Math.max(minX, maxX)),
-    y: clamp(y, minY, Math.max(minY, maxY))
-  };
-}
-
-function persistNodePosition(node) {
-  const key = node.id;
-  if (!key) return;
-  state.positions.set(key, { x: node.x, y: node.y });
-}
-
-function updateNodeTransform(node) {
-  if (!node.el) return;
-  const width = node.width || node.el.offsetWidth;
-  const height = node.height || node.el.offsetHeight;
-  const x = (node.fx != null ? node.fx : node.x) - width / 2;
-  const y = (node.fy != null ? node.fy : node.y) - height / 2;
-  node.el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-}
-function initializeSimulation() {
-  if (state.simulation) state.simulation.stop();
-  state.nodes.forEach((node) => {
-    measureNode(node);
-    const stored = state.positions.get(node.id);
-    if (stored) {
-      node.x = stored.x;
-      node.y = stored.y;
-    }
-  });
-  const links = [];
-  const titleNodes = new Map();
-  state.nodes.forEach((node) => {
-    if (node.kind === 'title') titleNodes.set(node.work.id, node);
-  });
-  state.nodes.forEach((node) => {
-    if (node.kind !== 'title') {
-      const target = titleNodes.get(node.work.id);
-      if (target) {
-        links.push({ source: node, target, distance: Math.max(80, target.radius + node.radius) });
-      }
-    }
-  });
-  state.links = links;
-  const simulation = forceSimulation(state.nodes)
-    .force('collide', forceCollide().radius((d) => d.radius).iterations(2))
-    .force('charge', forceManyBody().strength(-8))
-    .force('link', forceLink(links).distance((d) => d.distance).strength(CLUSTER_FORCE))
-    .force('x', forceX((d) => d.targetX).strength(CLUSTER_FORCE))
-    .force('y', forceY((d) => d.targetY).strength(CLUSTER_FORCE))
-    .alphaDecay(state.prefersReducedMotion ? 0.08 : 0.05)
-    .on('tick', () => {
-      state.nodes.forEach((node) => {
-        if (node.isDragging) return;
-        const bounds = clampNode(node, node.x, node.y);
-        node.x = bounds.x;
-        node.y = bounds.y;
-        updateNodeTransform(node);
-      });
-    });
-  state.simulation = simulation;
-  setTimeout(() => simulation.alphaTarget(0), 600);
-}
-
-function resetLayout() {
-  state.positions.clear();
-  const seeds = computeSeeds(works.length);
-  works.forEach((work, index) => {
-    const center = seeds[index] || { x: state.fieldSize.width / 2, y: state.fieldSize.height / 2 };
-    state.clusterCenters.set(work.id, center);
-    state.nodes.forEach((node) => {
-      if (node.work.id !== work.id) return;
-      node.targetX = center.x + node.offsetX;
-      node.targetY = center.y + node.offsetY;
-      node.x = node.targetX;
-      node.y = node.targetY;
-      node.fx = null;
-      node.fy = null;
-      updateNodeTransform(node);
-    });
-  });
-  if (state.simulation) {
-    state.simulation.alpha(0.4).restart();
-    setTimeout(() => state.simulation.alphaTarget(0), 800);
-  }
-}
-
-function showHint() {
-  if (state.hintShown) return;
-  if (!state.modules.length) return;
-  const module = state.modules[0];
-  const badge = document.createElement('div');
-  badge.className = 'ts-hint';
-  badge.textContent = 'Drag modules to arrange';
-  state.field.appendChild(badge);
-  const fieldRect = state.field.getBoundingClientRect();
-  const rect = module.el.getBoundingClientRect();
-  const left = rect.left - fieldRect.left + rect.width / 2;
-  const top = rect.top - fieldRect.top - 32;
-  badge.style.transform = `translate3d(${left}px, ${top}px, 0)`;
-  requestAnimationFrame(() => badge.classList.add('is-visible'));
-  setTimeout(() => {
-    badge.classList.remove('is-visible');
-    setTimeout(() => badge.remove(), 240);
-  }, 3200);
-  state.hintShown = true;
-  try { sessionStorage.setItem(SESSION_HINT_KEY, '1'); } catch (_) {}
-}
-
-function renderWorks() {
-  const field = state.field;
-  if (!field) return;
-  field.innerHTML = '';
-  state.modules = [];
-  state.nodes = [];
-  state.nodesById.clear();
-  state.clusterCenters.clear();
-  const seeds = computeSeeds(works.length);
-  works.forEach((work, index) => {
-    const center = seeds[index] || { x: 180 + index * 40, y: 180 + index * 40 };
-    state.clusterCenters.set(work.id, center);
-    const titleModule = createModule(work, 'title');
-    field.appendChild(titleModule.el);
-    const titleNode = moduleToNode(titleModule, { center });
-    state.nodes.push(titleNode);
-    state.nodesById.set(titleNode.id, titleNode);
-    const chips = computeMetaChips(work);
-    chips.forEach((chip, chipIndex) => {
-      const metaModule = createModule(work, 'meta', { label: chip.label, key: chip.key || `meta-${chipIndex}` });
-      field.appendChild(metaModule.el);
-      const angle = (chipIndex / Math.max(1, chips.length)) * Math.PI * 2;
-      const offsetX = Math.cos(angle) * 96;
-      const offsetY = Math.sin(angle) * 72;
-      const node = moduleToNode(metaModule, { center, offsetX, offsetY });
-      state.nodes.push(node);
-      state.nodesById.set(node.id, node);
-    });
-    const actionModule = createModule(work, 'action');
-    field.appendChild(actionModule.el);
-    const actionNode = moduleToNode(actionModule, { center, offsetX: 110, offsetY: 40 });
-    state.nodes.push(actionNode);
-    state.nodesById.set(actionNode.id, actionNode);
-    const teaserModule = createModule(work, 'teaser');
-    field.appendChild(teaserModule.el);
-    const teaserNode = moduleToNode(teaserModule, { center, offsetX: -100, offsetY: 60 });
-    state.nodes.push(teaserNode);
-    state.nodesById.set(teaserNode.id, teaserNode);
-  });
-  initializeSimulation();
-  requestAnimationFrame(() => showHint());
-}
-
-function setupSiteBrand() {
+function applySiteInfo() {
   const site = PRAE.config?.site || {};
-  const nameParts = [site.fullName, [site.firstName, site.lastName].filter(Boolean).join(' ')].filter(Boolean);
-  const fallbackName = nameParts[0] || nameParts[1] || site.title || site.copyrightName || 'Praetorius';
-  const title = String(fallbackName || '').trim();
+  const titleParts = [site.fullName, [site.firstName, site.lastName].filter(Boolean).join(' ')].filter(Boolean);
+  const fallbackName = titleParts[0] || titleParts[1] || site.title || site.copyrightName || 'Praetorius';
   const subtitle = site.subtitle ? String(site.subtitle) : '';
+  const title = String(fallbackName || '').trim();
   document.querySelectorAll('[data-site-title]').forEach((el) => { el.textContent = title; });
   document.querySelectorAll('[data-site-subtitle]').forEach((el) => { el.textContent = subtitle; });
   const nav = document.getElementById('prae-nav');
@@ -1240,57 +543,385 @@ function setupSiteBrand() {
         a.href = link.href;
         a.textContent = link.label;
         a.className = 'ts-nav-link';
+        if (link.external) {
+          a.target = '_blank';
+          a.rel = 'noopener';
+        }
         nav.appendChild(a);
       });
     }
   }
-  const footerInfo = document.querySelector('[data-footer-info]');
-  if (footerInfo) {
+  const copyName = site.copyrightName || title;
+  if (state.footer.copy) {
     const year = new Date().getFullYear();
-    const artist = site.fullName || site.copyrightName || 'Artist';
-    const brand = site.brand || site.title || PRAE.config?.meta?.title || 'Praetorius';
-    footerInfo.textContent = `© ${year} ${artist} · ${brand} · `;
-    const link = document.createElement('a');
-    link.href = PRAE.config?.site?.praetoriusHome || 'https://praetorius.club';
-    link.textContent = 'Praetorius';
-    link.className = 'ts-footer-badge';
-    footerInfo.appendChild(link);
+    const pieces = [];
+    if (copyName) pieces.push(`© ${year} ${copyName}`); else pieces.push(`© ${year}`);
+    state.footer.copy.textContent = pieces.join(' · ');
   }
 }
 
-function initThemeToggle() {
-  const toggle = document.getElementById('wc-theme-toggle');
-  if (!toggle) return;
-  toggle.addEventListener('click', (event) => {
-    event.preventDefault();
-    praeCycleTheme();
+function buildPraeBadge() {
+  if (!state.footer.badge) return;
+  state.footer.badge.innerHTML = `
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.65 5.36 5.91.86-4.28 4.17 1.01 5.89L12 15.98l-5.29 2.8 1.01-5.89-4.28-4.17 5.91-.86z"/></svg>
+    <span>Powered by Praetorius</span>`;
+}
+
+function getStackModules(work) {
+  const modules = [];
+  const oneliner = work.oneliner || work.one || '';
+  const descriptionParts = [];
+  if (Array.isArray(work.openNote)) descriptionParts.push(work.openNote.join('\n\n'));
+  if (work.description) descriptionParts.push(String(work.description));
+  const description = descriptionParts.join('\n\n');
+  if (oneliner) modules.push({ kind: 'oneliner', text: String(oneliner) });
+  if (description && description.trim() && description.trim() !== oneliner.trim()) {
+    modules.push({ kind: 'description', text: description.trim() });
+  }
+  const detailBits = [];
+  if (work.year) detailBits.push(String(work.year));
+  if (work.duration) detailBits.push(String(work.duration));
+  if (work.medium) detailBits.push(String(work.medium));
+  if (Array.isArray(work.tags) && work.tags.length) {
+    const tags = work.tags.map((tag) => `#${String(tag).replace(/^#/, '')}`);
+    detailBits.push(tags.join(' '));
+  }
+  if (detailBits.length) {
+    modules.push({ kind: 'details', text: detailBits.join(' · ') });
+  }
+  if (!modules.length && work.slug) {
+    modules.push({ kind: 'details', text: `#${work.slug}` });
+  }
+  return modules;
+}
+
+function normalizeCues(work) {
+  const cues = [];
+  if (Array.isArray(work.cues)) {
+    work.cues.forEach((cue, index) => {
+      if (cue == null) return;
+      if (typeof cue === 'object') {
+        const seconds = cueTime(cue.t ?? cue.time ?? cue.at ?? cue.start ?? cue.seconds ?? cue.index);
+        const label = typeof cue.label === 'string' && cue.label.trim() ? cue.label.trim() : `@${formatTime(seconds)}`;
+        cues.push({ seconds, label: label.startsWith('@') ? label : `@${label}` });
+      } else {
+        const seconds = cueTime(cue);
+        cues.push({ seconds, label: `@${formatTime(seconds)}` });
+      }
+    });
+  }
+  if (!cues.length) {
+    const startAt = typeof work.start_at === 'number' ? work.start_at : null;
+    if (startAt != null && Number.isFinite(startAt)) cues.push({ seconds: startAt, label: `@${formatTime(startAt)}` });
+  }
+  const seen = new Set();
+  return cues.filter((cue) => {
+    const key = `${cue.seconds}-${cue.label}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return Number.isFinite(cue.seconds);
   });
-  toggle.addEventListener('keydown', (event) => {
+}
+
+function createItem(work, random) {
+  const article = document.createElement('article');
+  article.className = 'ts-item';
+  article.dataset.workId = String(work.id);
+  article.setAttribute('role', 'group');
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ts-item-title';
+  button.textContent = work.title || work.slug || 'Untitled';
+  button.setAttribute('data-role', 'title');
+  button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-controls', `ts-stack-${work.id}`);
+  button.addEventListener('click', () => toggleSelection(work.id));
+  button.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      praeCycleTheme();
+      toggleSelection(work.id);
     }
+  });
+
+  const stack = document.createElement('div');
+  stack.className = 'ts-item-stack';
+  stack.id = `ts-stack-${work.id}`;
+  stack.hidden = true;
+  const modules = getStackModules(work);
+  if (modules.length) {
+    modules.forEach((module, index) => {
+      const line = document.createElement('p');
+      line.className = `ts-stack-line ts-stack-line--${module.kind}`;
+      line.textContent = module.text;
+      line.style.setProperty('--ts-stack-index', String(index));
+      stack.appendChild(line);
+    });
+  } else {
+    const empty = document.createElement('p');
+    empty.className = 'ts-stack-line ts-stack-line--empty';
+    empty.textContent = 'No additional details available yet.';
+    stack.appendChild(empty);
+  }
+
+  article.append(button, stack);
+  article.addEventListener('pointerdown', (event) => beginDrag(event, article));
+  article.addEventListener('focusin', () => setActiveItem(work.id));
+  article.addEventListener('mouseenter', () => setActiveItem(work.id));
+
+  const rotationSeed = (random() - 0.5) * MAX_ROTATION * 2;
+  const jitterSeed = (random() - 0.5) * 0.06;
+  const effectiveRotation = state.reduceMotion ? 0 : rotationSeed;
+  const effectiveJitter = state.reduceMotion ? 0 : jitterSeed;
+  button.style.setProperty('--ts-tilt', `${effectiveRotation.toFixed(3)}deg`);
+  button.style.setProperty('--ts-letter-jitter', `${effectiveJitter.toFixed(3)}em`);
+
+  state.field.appendChild(article);
+  const item = {
+    work,
+    el: article,
+    button,
+    stack,
+    rotation: rotationSeed,
+    letterJitter: jitterSeed,
+    width: 0,
+    height: 0
+  };
+  measureItem(item);
+  return item;
+}
+
+function measureItem(item) {
+  const rect = item.button.getBoundingClientRect();
+  item.width = rect.width || 160;
+  item.height = rect.height || 48;
+}
+
+function renderWorks() {
+  if (!state.field) return;
+  state.items = [];
+  state.itemById.clear();
+  state.field.innerHTML = '';
+  const data = works.slice().sort((a, b) => {
+    const aKey = (a.title || a.slug || '').toLowerCase();
+    const bKey = (b.title || b.slug || '').toLowerCase();
+    return aKey.localeCompare(bKey);
+  });
+  if (!data.length) {
+    const empty = document.createElement('p');
+    empty.className = 'ts-empty';
+    empty.textContent = 'No works available yet.';
+    state.field.appendChild(empty);
+    return;
+  }
+  const seedBase = data.map((work) => work.slug || work.title || work.id).join('|');
+  const random = createSeededRandom(seedBase || 'typescatter');
+  data.forEach((work) => {
+    const item = createItem(work, random);
+    state.items.push(item);
+    state.itemById.set(Number(work.id), item);
   });
 }
 
-function handleResize() {
-  computeFieldSize();
-  if (state.simulation) {
-    state.simulation.alpha(0.2).restart();
-    setTimeout(() => state.simulation.alphaTarget(0), 500);
+function computeFieldBox() {
+  const rect = state.field?.getBoundingClientRect();
+  const width = rect?.width || window.innerWidth || 1024;
+  const height = rect?.height || window.innerHeight || 768;
+  return { width, height };
+}
+
+function jitteredGridLayout(items, size, random) {
+  const width = Math.max(1, size.width - SAFE_MARGIN * 2);
+  const height = Math.max(1, size.height - SAFE_MARGIN * 2);
+  const count = Math.max(1, items.length);
+  const aspect = width / height;
+  const rows = Math.max(1, Math.round(Math.sqrt(count / aspect)));
+  const cols = Math.max(1, Math.ceil(count / rows));
+  const cellWidth = width / cols;
+  const cellHeight = height / rows;
+  const jitterX = cellWidth * 0.35;
+  const jitterY = cellHeight * 0.35;
+  const positions = new Map();
+  items.forEach((item, index) => {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    const halfW = item.width / 2;
+    const halfH = item.height / 2;
+    const xBase = SAFE_MARGIN + (col + 0.5) * cellWidth;
+    const yBase = SAFE_MARGIN + (row + 0.5) * cellHeight;
+    const x = clamp(xBase + (random() - 0.5) * jitterX, SAFE_MARGIN + halfW, size.width - SAFE_MARGIN - halfW);
+    const y = clamp(yBase + (random() - 0.5) * jitterY, SAFE_MARGIN + halfH, size.height - SAFE_MARGIN - halfH);
+    positions.set(item.work.id, { x, y });
+  });
+  return positions;
+}
+
+function resolveCollisions(items, positions, size, random) {
+  const iterations = 8;
+  const width = size.width;
+  const height = size.height;
+  for (let iter = 0; iter < iterations; iter += 1) {
+    let adjusted = false;
+    for (let i = 0; i < items.length; i += 1) {
+      const a = items[i];
+      const posA = positions.get(a.work.id);
+      if (!posA) continue;
+      for (let j = i + 1; j < items.length; j += 1) {
+        const b = items[j];
+        const posB = positions.get(b.work.id);
+        if (!posB) continue;
+        const dx = posB.x - posA.x;
+        const dy = posB.y - posA.y;
+        const overlapX = (a.width + b.width) / 2 + COLLISION_PADDING - Math.abs(dx);
+        const overlapY = (a.height + b.height) / 2 + COLLISION_PADDING - Math.abs(dy);
+        if (overlapX > 0 && overlapY > 0) {
+          adjusted = true;
+          const angle = Math.atan2(dy || (random() - 0.5), dx || (random() - 0.5));
+          const push = Math.min(overlapX, overlapY);
+          const pushX = Math.cos(angle) * push * 0.6;
+          const pushY = Math.sin(angle) * push * 0.6;
+          posA.x = clamp(posA.x - pushX, SAFE_MARGIN + a.width / 2, width - SAFE_MARGIN - a.width / 2);
+          posA.y = clamp(posA.y - pushY, SAFE_MARGIN + a.height / 2, height - SAFE_MARGIN - a.height / 2);
+          posB.x = clamp(posB.x + pushX, SAFE_MARGIN + b.width / 2, width - SAFE_MARGIN - b.width / 2);
+          posB.y = clamp(posB.y + pushY, SAFE_MARGIN + b.height / 2, height - SAFE_MARGIN - b.height / 2);
+        }
+      }
+    }
+    if (!adjusted) break;
   }
 }
 
-function hydrateFromHash() {
-  const hash = location.hash.replace(/^#/, '');
-  if (!hash) return;
-  const params = new URLSearchParams(hash);
-  const workVal = params.get(HASH_WORK_KEY);
-  const workId = workVal != null ? Number(workVal) : null;
-  if (workId != null && !Number.isNaN(workId)) {
-    const module = state.modules.find((item) => Number(item.work.id) === Number(workId));
-    module?.el.focus({ preventScroll: true });
+function applyPositions(positions) {
+  positions.forEach((pos, id) => {
+    const item = state.itemById.get(Number(id));
+    if (!item) return;
+    const tx = pos.x - item.width / 2;
+    const ty = pos.y - item.height / 2;
+    item.el.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+  });
+}
+
+function layoutScatter(options = {}) {
+  if (!state.field || !state.items.length) return;
+  state.layoutQueued = false;
+  state.layoutToken += 1;
+  const token = state.layoutToken;
+  const size = computeFieldBox();
+  const seed = `${size.width.toFixed(0)}x${size.height.toFixed(0)}::${state.items.map((item) => item.work.slug || item.work.title || item.work.id).join('|')}`;
+  if (state.lastSeed !== seed || options.force) {
+    state.items.forEach((item) => measureItem(item));
+    const random = createSeededRandom(seed);
+    const positions = jitteredGridLayout(state.items, size, random);
+    resolveCollisions(state.items, positions, size, random);
+    if (token === state.layoutToken) {
+      state.positions = positions;
+      applyPositions(positions);
+    }
+    state.lastSeed = seed;
+  } else {
+    applyPositions(state.positions);
   }
+}
+
+function queueLayout(options = {}) {
+  if (state.layoutQueued) return;
+  state.layoutQueued = true;
+  requestAnimationFrame(() => layoutScatter(options));
+}
+
+function beginDrag(event, target) {
+  if (!(event instanceof PointerEvent)) return;
+  if (!target.classList.contains('ts-item')) return;
+  const workId = Number(target.dataset.workId);
+  if (Number.isNaN(workId)) return;
+  const item = state.itemById.get(workId);
+  if (!item) return;
+  target.setPointerCapture(event.pointerId);
+  target.classList.add('is-dragging');
+  const pos = state.positions.get(workId) || { x: 0, y: 0 };
+  state.dragging = {
+    id: workId,
+    offsetX: event.clientX - pos.x,
+    offsetY: event.clientY - pos.y
+  };
+  target.addEventListener('pointermove', onDragMove);
+  target.addEventListener('pointerup', onDragEnd, { once: true });
+  target.addEventListener('pointercancel', onDragEnd, { once: true });
+}
+
+function onDragMove(event) {
+  if (!state.dragging) return;
+  const workId = state.dragging.id;
+  const item = state.itemById.get(workId);
+  if (!item) return;
+  const size = computeFieldBox();
+  const x = clamp(event.clientX - state.dragging.offsetX, SAFE_MARGIN + item.width / 2, size.width - SAFE_MARGIN - item.width / 2);
+  const y = clamp(event.clientY - state.dragging.offsetY, SAFE_MARGIN + item.height / 2, size.height - SAFE_MARGIN - item.height / 2);
+  state.positions.set(workId, { x, y });
+  applyPositions(state.positions);
+}
+
+function onDragEnd(event) {
+  if (!state.dragging) return;
+  const workId = state.dragging.id;
+  const item = state.itemById.get(workId);
+  if (item) {
+    item.el.classList.remove('is-dragging');
+  }
+  state.dragging = null;
+  event.currentTarget?.removeEventListener('pointermove', onDragMove);
+}
+
+function toggleSelection(workId) {
+  if (state.activeWorkId === workId) {
+    clearSelection();
+  } else {
+    pauseAllExcept(workId);
+    setActiveItem(workId, { announce: true });
+  }
+}
+
+function setActiveItem(workId, options = {}) {
+  if (!state.itemById.has(Number(workId))) return;
+  closeCuePopover();
+  state.activeWorkId = workId;
+  state.items.forEach((item) => {
+    const isActive = item.work.id === workId;
+    item.el.classList.toggle('is-active', isActive);
+    item.button.setAttribute('aria-expanded', isActive ? 'true' : 'false');
+    if (isActive) {
+      item.stack.hidden = false;
+    } else {
+      item.stack.hidden = true;
+    }
+  });
+  updateFooterControls();
+  persistSelection(workId);
+  if (options.announce) announceSelection(workId);
+}
+
+function clearSelection(options = {}) {
+  state.activeWorkId = null;
+  state.items.forEach((item) => {
+    item.el.classList.remove('is-active');
+    item.button.setAttribute('aria-expanded', 'false');
+    item.stack.hidden = true;
+  });
+  closeCuePopover();
+  updateFooterControls();
+  persistSelection(null);
+  if (options.announce) announceSelection(null);
+}
+
+function announceSelection(workId) {
+  if (!state.ariaLive) return;
+  if (workId == null) {
+    state.ariaLive.textContent = 'Selection cleared.';
+    return;
+  }
+  const work = findWorkById(workId)?.data;
+  if (!work) return;
+  state.ariaLive.textContent = `${work.title || work.slug || 'Work'} selected.`;
 }
 
 function persistSelection(workId) {
@@ -1300,36 +931,274 @@ function persistSelection(workId) {
   history.replaceState(null, '', hash ? `#${hash}` : '#');
 }
 
-function onModuleFocus(event) {
-  const workId = Number(event.target?.dataset?.workId);
-  if (!Number.isNaN(workId)) persistSelection(workId);
+function hydrateFromHash() {
+  const hash = location.hash.replace(/^#/, '');
+  if (!hash) return;
+  const params = new URLSearchParams(hash);
+  const workVal = params.get(HASH_WORK_KEY);
+  const workId = workVal != null ? Number(workVal) : null;
+  if (workId != null && !Number.isNaN(workId)) {
+    if (state.itemById.has(workId)) {
+      setActiveItem(workId, { announce: false });
+      const item = state.itemById.get(workId);
+      item?.button.focus({ preventScroll: true });
+    }
+  }
 }
 
-ready(() => {
-  state.field = document.getElementById('ts-field');
-  state.resetBtn = document.getElementById('ts-reset');
-  ensureFooter();
-  setupSiteBrand();
-  initThemeToggle();
-  praeApplyTheme(praeCurrentTheme(), { persist: false });
-  computeFieldSize();
-  renderWorks();
-  hydrateFromHash();
-  ensureAudioTags();
-  state.resetBtn?.addEventListener('click', (event) => {
+function updateFooterControls() {
+  const work = state.activeWorkId != null ? findWorkById(state.activeWorkId)?.data : null;
+  const title = work?.title || work?.slug || '';
+  state.footerActiveTitle = title;
+  if (state.footer.title) {
+    state.footer.title.textContent = title || '';
+    state.footer.title.title = title || '';
+    state.footer.title.dataset.empty = title ? '0' : '1';
+  }
+  const pdfUrl = work ? normalizePdfUrl(work.pdfUrl || work.pdf) : '';
+  if (state.footer.pdfBtn) {
+    state.footer.pdfBtn.disabled = !pdfUrl;
+    state.footer.pdfBtn.setAttribute('aria-disabled', state.footer.pdfBtn.disabled ? 'true' : 'false');
+  }
+  const audioSrc = work ? normalizeSrc(getAudioSourceFor(work)) : '';
+  const audioEl = work ? document.getElementById('wc-a' + work.id) : null;
+  const isPlaying = !!audioEl && !audioEl.paused && !audioEl.ended;
+  if (state.footer.playBtn) {
+    state.footer.playBtn.disabled = !audioSrc;
+    state.footer.playBtn.setAttribute('aria-disabled', state.footer.playBtn.disabled ? 'true' : 'false');
+    state.footer.playBtn.textContent = isPlaying ? 'Pause Ⅱ' : 'Play ▷';
+    state.footer.playBtn.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
+  }
+  const cues = work ? normalizeCues(work) : [];
+  if (state.footer.cuesBtn) {
+    state.footer.cuesBtn.disabled = !cues.length;
+    state.footer.cuesBtn.setAttribute('aria-disabled', state.footer.cuesBtn.disabled ? 'true' : 'false');
+    state.footer.cuesBtn.setAttribute('aria-expanded', (!state.footer.cuesBtn.disabled && state.cuesOpen) ? 'true' : 'false');
+  }
+  if (state.footer.cueList) {
+    state.footer.cueList.innerHTML = '';
+    state.footer.cueList.setAttribute('hidden', '');
+    if (cues.length) {
+      cues.forEach((cue, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ts-cue-btn';
+        btn.textContent = cue.label || `@${formatTime(cue.seconds)}`;
+        btn.dataset.index = String(index);
+        btn.addEventListener('click', () => {
+          playAt(work.id, cue.seconds);
+          closeCuePopover();
+        });
+        state.footer.cueList.appendChild(btn);
+      });
+    } else {
+      const empty = document.createElement('span');
+      empty.className = 'ts-cue-empty';
+      empty.textContent = 'No cue points';
+      state.footer.cueList.appendChild(empty);
+    }
+  }
+  updateFooterPlaybackState();
+}
+
+function updateFooterPlaybackState() {
+  const work = state.activeWorkId != null ? findWorkById(state.activeWorkId)?.data : null;
+  const audio = work ? document.getElementById('wc-a' + work.id) : null;
+  const playing = !!audio && !audio.paused && !audio.ended;
+  if (state.footer.playBtn && !state.footer.playBtn.disabled) {
+    state.footer.playBtn.textContent = playing ? 'Pause Ⅱ' : 'Play ▷';
+    state.footer.playBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+  }
+  if (state.footer.live) {
+    if (!work) {
+      state.footer.live.textContent = 'Controls unavailable.';
+    } else if (!normalizeSrc(getAudioSourceFor(work))) {
+      state.footer.live.textContent = `${work.title || work.slug || 'Work'} selected. Audio unavailable.`;
+    } else if (playing) {
+      state.footer.live.textContent = `${work.title || work.slug || 'Work'} playing.`;
+    } else {
+      state.footer.live.textContent = `${work.title || work.slug || 'Work'} ready.`;
+    }
+  }
+}
+
+function toggleCuePopover() {
+  if (state.footer.cuesBtn?.disabled) return;
+  if (!state.footer.cueList) return;
+  state.cuesOpen = !state.cuesOpen;
+  if (state.cuesOpen) {
+    state.footer.cueList.removeAttribute('hidden');
+  } else {
+    state.footer.cueList.setAttribute('hidden', '');
+  }
+  if (state.footer.cuesBtn) {
+    state.footer.cuesBtn.setAttribute('aria-expanded', state.cuesOpen ? 'true' : 'false');
+  }
+}
+
+function closeCuePopover() {
+  state.cuesOpen = false;
+  if (state.footer.cueList) state.footer.cueList.setAttribute('hidden', '');
+  if (state.footer.cuesBtn) state.footer.cuesBtn.setAttribute('aria-expanded', 'false');
+}
+
+function handleFooterClicks() {
+  if (state.footer.pdfBtn && !state.footer.pdfBtn.dataset.bound) {
+    state.footer.pdfBtn.dataset.bound = '1';
+    state.footer.pdfBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (state.activeWorkId == null) return;
+      const work = findWorkById(state.activeWorkId)?.data;
+      if (!work) return;
+      const url = normalizePdfUrl(work.pdfUrl || work.pdf);
+      if (!url) return;
+      window.dispatchEvent(new CustomEvent('wc:pdf-open', { detail: { slug: work.slug } }));
+      openPdfFor(work.id);
+    });
+  }
+  if (state.footer.playBtn && !state.footer.playBtn.dataset.bound) {
+    state.footer.playBtn.dataset.bound = '1';
+    state.footer.playBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (state.activeWorkId == null) return;
+      pauseAllExcept(state.activeWorkId);
+      const toggled = togglePlayFor(state.activeWorkId);
+      if (!toggled) {
+        if (state.footer.live) state.footer.live.textContent = 'Audio unavailable for this work.';
+      }
+    });
+  }
+  if (state.footer.cuesBtn && !state.footer.cuesBtn.dataset.bound) {
+    state.footer.cuesBtn.dataset.bound = '1';
+    state.footer.cuesBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (state.activeWorkId == null) return;
+      if (state.footer.cuesBtn.disabled) return;
+      toggleCuePopover();
+    });
+  }
+}
+
+function handleDocumentClick(event) {
+  if (state.cuesOpen) {
+    const controls = state.footer.root;
+    if (controls && !controls.contains(event.target)) {
+      closeCuePopover();
+    }
+  }
+  const footerRoot = state.footer.root;
+  if (state.field && !state.field.contains(event.target) && (!footerRoot || !footerRoot.contains(event.target))) {
+    clearSelection({ announce: true });
+  }
+}
+
+function handleKeydown(event) {
+  if (event.key === 'Escape') {
+    closeCuePopover();
+    clearSelection({ announce: true });
+  }
+}
+
+function handleResize() {
+  queueLayout({ force: true });
+}
+
+function showHint() {
+  if (state.hintShown || !state.hint) return;
+  state.hint.removeAttribute('hidden');
+  state.hintShown = true;
+  try { sessionStorage.setItem(SESSION_HINT_KEY, '1'); } catch (_) {}
+}
+
+function initHint() {
+  const hint = document.querySelector('[data-hint]');
+  if (!hint) return;
+  state.hint = hint;
+  const dismiss = hint.querySelector('[data-hint-dismiss]');
+  if (dismiss) {
+    dismiss.addEventListener('click', (event) => {
+      event.preventDefault();
+      hint.setAttribute('hidden', '');
+    });
+  }
+  if (!state.hintShown) {
+    setTimeout(() => showHint(), 800);
+  }
+}
+
+function initThemeToggle() {
+  const toggle = document.getElementById('wc-theme-toggle');
+  if (!toggle) return;
+  toggle.addEventListener('click', (event) => {
     event.preventDefault();
-    resetLayout();
+    praeCycleTheme();
+    queueLayout({ force: true });
   });
-  window.addEventListener('resize', handleResize);
-  const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
-  media?.addEventListener('change', (event) => {
-    state.prefersReducedMotion = !!event.matches;
-    if (state.simulation) {
-      state.simulation.alpha(0.2).restart();
-      setTimeout(() => state.simulation.alphaTarget(0), 400);
+  toggle.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      praeCycleTheme();
+      queueLayout({ force: true });
     }
   });
-});
+}
+
+function setupFooter() {
+  const root = document.getElementById('ts-footer');
+  if (!root) return;
+  state.footer.root = root;
+  state.footer.copy = root.querySelector('[data-footer-copy]');
+  state.footer.badge = root.querySelector('[data-footer-badge]');
+  state.footer.title = root.querySelector('[data-footer-title]');
+  state.footer.pdfBtn = root.querySelector('[data-role="pdf"]');
+  state.footer.playBtn = root.querySelector('[data-role="play"]');
+  state.footer.cuesBtn = root.querySelector('[data-role="cues"]');
+  state.footer.cueList = root.querySelector('[data-cue-list]');
+  state.footer.live = root.querySelector('[data-footer-live]');
+  buildPraeBadge();
+  handleFooterClicks();
+}
+
+function init() {
+  document.documentElement.dataset.skin = 'typescatter';
+  state.reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  state.field = document.getElementById('ts-field');
+  state.ariaLive = document.querySelector('[data-live]');
+  setupFooter();
+  applySiteInfo();
+  renderWorks();
+  state.field?.addEventListener('click', (event) => {
+    if (event.target === state.field) {
+      clearSelection({ announce: true });
+    }
+  });
+  ensureAudioTags();
+  queueLayout({ force: true });
+  hydrateFromHash();
+  initHint();
+  initThemeToggle();
+  praeApplyTheme(praeCurrentTheme(), { persist: false });
+  window.addEventListener('resize', () => {
+    clearTimeout(state.resizeHandle);
+    state.resizeHandle = setTimeout(handleResize, 120);
+  });
+  document.addEventListener('keydown', handleKeydown);
+  document.addEventListener('click', handleDocumentClick);
+  const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  media?.addEventListener('change', (event) => {
+    state.reduceMotion = !!event.matches;
+    state.items.forEach((item) => {
+      const tilt = state.reduceMotion ? 0 : item.rotation;
+      const jitter = state.reduceMotion ? 0 : item.letterJitter;
+      item.button.style.setProperty('--ts-tilt', `${tilt.toFixed(3)}deg`);
+      item.button.style.setProperty('--ts-letter-jitter', `${jitter.toFixed(3)}em`);
+    });
+    queueLayout({ force: true });
+  });
+  updateFooterControls();
+}
+
+ready(init);
 
 window.addEventListener('hashchange', hydrateFromHash);
 window.addEventListener('message', (event) => {
@@ -1343,3 +1212,15 @@ window.addEventListener('message', (event) => {
     }
   }
 });
+
+window.addEventListener('wc:pdf-goto', (event) => {
+  const detail = event?.detail || {};
+  ensurePdfDom();
+  if (!state.pdf.viewerReady || (detail.slug && detail.slug !== state.pdf.currentSlug)) {
+    state.pdf.pendingGoto = detail;
+    return;
+  }
+  if (detail.pdfPage) gotoPdfPage(detail.pdfPage);
+});
+
+export { praeApplyTheme, praeCurrentTheme, praeCycleTheme };
