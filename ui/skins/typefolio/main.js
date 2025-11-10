@@ -2,20 +2,20 @@ const PRAE_THEME_STORAGE_KEY = 'wc.theme';
 const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
 
 function praeNormalizeTheme(value) {
-  return value === 'light' ? 'light' : 'dark';
+  return value === 'dark' ? 'dark' : 'light';
 }
 
 function praeReadStoredTheme() {
   try {
     let saved = localStorage.getItem(PRAE_THEME_STORAGE_KEY);
-    if (!saved) return 'dark';
+    if (!saved) return 'light';
     if (saved.trim().charAt(0) === '{') {
       const parsed = JSON.parse(saved);
       return praeNormalizeTheme(parsed?.mode);
     }
     return praeNormalizeTheme(saved);
   } catch (_) {
-    return 'dark';
+    return 'light';
   }
 }
 
@@ -1027,7 +1027,7 @@ function bindHashChange() {
 
 ready(() => {
   document.documentElement.dataset.skin = 'typefolio';
-  window.praeApplyTheme?.(window.praeCurrentTheme?.() ?? 'dark', { persist: false });
+  window.praeApplyTheme?.(window.praeCurrentTheme?.() ?? 'light', { persist: false });
   bindThemeToggle();
   if (typeof PRAE.ensureAudioTags === 'function') {
     try { PRAE.ensureAudioTags(); } catch (_) {}
