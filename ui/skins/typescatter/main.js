@@ -1,3 +1,12 @@
+import {
+  forceSimulation,
+  forceCollide,
+  forceLink,
+  forceManyBody,
+  forceX,
+  forceY
+} from 'https://cdn.skypack.dev/d3-force@3?min';
+
 const PRAE_THEME_STORAGE_KEY = 'wc.theme';
 const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
 
@@ -142,34 +151,41 @@ const pfMap = (() => {
   return map;
 })();
 
-const SCALE_STEPS = [0.85, 0.92, 1, 1.08, 1.18];
-const MEASURE_MIN = 48;
-const MEASURE_MAX = 88;
-const MEASURE_STEP = 4;
 const HASH_WORK_KEY = 'work';
-const HASH_MODE_KEY = 'mode';
+const SESSION_HINT_KEY = 'ts-hint-shown';
+const MODULE_PADDING = 12;
+const CLUSTER_FORCE = 0.08;
 
 const state = {
   field: null,
-  helpLink: null,
-  helpOverlay: null,
-  layoutMode: 'loose',
-  scaleIndex: 2,
-  measure: 66,
-  blocks: [],
-  blockMap: new Map(),
+  footer: null,
+  footerNowPlaying: null,
+  footerInfo: null,
+  resetBtn: null,
   worksById: new Map(),
-  selectedIndex: -1,
-  cuesVisibleFor: null,
-  drag: null,
-  updatingHash: false,
-  prefersReducedMotion: typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  activeWorkId: null,
+  modules: [],
+  nodes: [],
+  nodesById: new Map(),
+  clusterCenters: new Map(),
+  positions: new Map(),
+  links: [],
+  simulation: null,
+  dragging: null,
   fieldSize: { width: 0, height: 0 },
-  helpArea: { width: 0, height: 0 },
-  zCounter: 20,
+  isHoverCapable: typeof window.matchMedia === 'function' ? window.matchMedia('(hover: hover) and (pointer: fine)').matches : false,
+  prefersReducedMotion: typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  description: { popover: null, sheet: null, currentWork: null, interactive: false },
   pdf: { pane: null, frame: null, title: null, close: null, backdrop: null, viewerReady: false, pendingGoto: null, currentSlug: null, restoreFocus: null, followAudio: null, followHandler: null, followSlug: null, lastPrinted: null },
-  hudState: { last: { id: works[0]?.id ?? null, at: 0 } }
+  timers: new Map(),
+  hintShown: false
 };
+
+try {
+  state.hintShown = sessionStorage.getItem(SESSION_HINT_KEY) === '1';
+} catch (_) {
+  state.hintShown = false;
+}
 
 function findWorkById(id) {
   if (id && typeof id === 'object') {
@@ -187,6 +203,10 @@ function findWorkById(id) {
   return record;
 }
 
+function getAudioSourceFor(work) {
+  return work?.audioUrl || work?.audio || '';
+}
+
 function ensureAudioFor(work) {
   if (!work) return null;
   let el = document.getElementById('wc-a' + work.id);
@@ -202,157 +222,28 @@ function ensureAudioFor(work) {
   return el;
 }
 
-function ensureHudRoot() {
-  let root = document.getElementById('wc-hud');
-  if (!root) {
-    root = document.createElement('div');
-    root.id = 'wc-hud';
-    root.className = 'wc-hud';
-    document.body.prepend(root);
-  } else {
-    root.id = 'wc-hud';
-    root.classList.add('wc-hud');
-  }
-  root.setAttribute('data-component', 'prae-hud');
-  return root;
+function ensureAudioSrc(audio, work) {
+  const src = normalizeSrc(getAudioSourceFor(work));
+  if (!src) return false;
+  if (!audio.src || audio.src !== src) audio.src = src;
+  return true;
 }
 
-let hudRefs = null;
-
-function ensureHudDom() {
-  const root = ensureHudRoot();
-  if (!root) return null;
-  if (root.dataset.tsHud === '1' && hudRefs) return hudRefs;
-  root.innerHTML = `
-    <div class="hud-left">
-      <div class="hud-title" data-part="title"></div>
-      <div class="hud-sub" data-part="subtitle"></div>
-    </div>
-    <div class="hud-meter" data-part="meter"><span></span></div>
-    <div class="hud-actions">
-      <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play">Play</button>
-    </div>`;
-  const title = root.querySelector('[data-part="title"]');
-  const sub = root.querySelector('[data-part="subtitle"]');
-  const meter = root.querySelector('[data-part="meter"]');
-  const fill = meter?.querySelector('span') || null;
-  const btn = root.querySelector('[data-hud="toggle"]');
-  hudRefs = { root, title, sub, meter, fill, btn };
-  root.dataset.tsHud = '1';
-  return hudRefs;
-}
-
-function hudSetTitle(text) {
-  const refs = ensureHudDom();
-  if (refs?.title) refs.title.textContent = String(text ?? '');
-}
-
-function hudSetSubtitle(text) {
-  const refs = ensureHudDom();
-  if (refs?.sub) refs.sub.textContent = String(text ?? '');
-}
-
-function hudSetPlaying(on) {
-  const refs = ensureHudDom();
-  if (refs?.btn) {
-    refs.btn.textContent = on ? 'Pause' : 'Play';
-    refs.btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-  }
-}
-
-function hudSetProgress(ratio) {
-  const refs = ensureHudDom();
-  if (refs?.fill) {
-    const clampedRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
-    refs.fill.style.width = `${clampedRatio * 100}%`;
-  }
-}
-
-function hudEnsure() {
-  const refs = ensureHudDom();
-  return refs?.root || ensureHudRoot();
-}
-
-function hudGetRoot() {
-  ensureHudDom();
-  return hudRefs?.root || ensureHudRoot();
-}
-
-function hudUpdate(id, audio) {
-  const record = findWorkById(id);
-  const work = record?.data;
-  const name = work?.title || work?.slug || 'Work';
-  const duration = audio && Number.isFinite(audio.duration) ? formatTime(audio.duration | 0) : '--:--';
-  const current = audio && Number.isFinite(audio.currentTime) ? formatTime(audio.currentTime | 0) : '0:00';
-  const ratio = audio && audio.duration ? Math.max(0, Math.min(1, (audio.currentTime || 0) / Math.max(1, audio.duration))) : 0;
-  hudSetTitle(`Now playing — ${name}`);
-  hudSetSubtitle(`${current} / ${duration}`);
-  hudSetProgress(ratio);
-  hudSetPlaying(!!(audio && !audio.paused));
-}
-
-function bindAudioToHud(id, audio) {
-  if (!audio || audio.dataset.tsHud === '1') return;
-  const update = () => hudUpdate(id, audio);
-  audio.addEventListener('timeupdate', update, { passive: true });
-  audio.addEventListener('ratechange', update, { passive: true });
-  audio.addEventListener('volumechange', update, { passive: true });
-  audio.addEventListener('loadedmetadata', update, { once: true, passive: true });
-  audio.addEventListener('pause', update, { passive: true });
-  audio.addEventListener('ended', update, { passive: true });
-  audio.dataset.tsHud = '1';
-}
-
-function detachPageFollow() {
-  if (state.pdf.followAudio && state.pdf.followHandler) {
-    state.pdf.followAudio.removeEventListener('timeupdate', state.pdf.followHandler);
-    state.pdf.followAudio.removeEventListener('seeking', state.pdf.followHandler);
-  }
-  state.pdf.followAudio = null;
-  state.pdf.followHandler = null;
-  state.pdf.followSlug = null;
-  state.pdf.lastPrinted = null;
-}
-
-function printedPageForTime(cfg, tSec) {
-  const time = (tSec || 0) + (cfg.mediaOffsetSec || 0);
-  let current = cfg.pageMap?.[0]?.page ?? 1;
-  for (const row of cfg.pageMap || []) {
-    const at = typeof row.at === 'number' ? row.at : cueTime(row.at);
-    if (time >= at) current = row.page; else break;
-  }
-  return current;
-}
-
-function computePdfPage(slug, tSec) {
-  const cfg = pfMap?.[slug];
-  if (!cfg) return 1;
-  const printed = printedPageForTime(cfg, tSec || 0);
-  return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
-}
-
-function attachPageFollow(slug, audio) {
-  detachPageFollow();
-  if (!slug || !audio) return;
-  const cfg = pfMap?.[slug];
-  if (!cfg) return;
-  const handler = () => {
-    const printed = printedPageForTime(cfg, audio.currentTime || 0);
-    if (printed !== state.pdf.lastPrinted) {
-      state.pdf.lastPrinted = printed;
-      const pdfPage = computePdfPage(slug, audio.currentTime || 0);
-      window.dispatchEvent(new CustomEvent('wc:pdf-goto', {
-        detail: { slug, printedPage: printed, pdfPage }
-      }));
+function markPlaying(workId, playing) {
+  state.modules.forEach((module) => {
+    if (module.work.id !== workId) return;
+    module.el.classList.toggle('is-playing', !!playing);
+    if (playing) {
+      module.el.classList.add('is-active');
+    } else if (state.activeWorkId !== workId) {
+      module.el.classList.remove('is-active');
     }
-  };
-  state.pdf.followAudio = audio;
-  state.pdf.followHandler = handler;
-  state.pdf.followSlug = slug;
-  state.pdf.lastPrinted = null;
-  audio.addEventListener('timeupdate', handler, { passive: true });
-  audio.addEventListener('seeking', handler, { passive: true });
-  handler();
+    if (module.kind === 'action') {
+      const btn = module.el.querySelector('[data-role="play-toggle"]');
+      if (btn) btn.textContent = playing ? 'Pause' : 'Play';
+    }
+  });
+  if (!playing) stopTimer(workId);
 }
 
 function ensurePdfDom() {
@@ -371,7 +262,7 @@ function ensurePdfDom() {
     pane.innerHTML = `
       <header class="ts-pdfbar">
         <p class="ts-pdf-title" aria-live="polite"></p>
-        <a href="#" class="ts-pdf-close" role="button">close</a>
+        <button type="button" class="ts-pdf-close" aria-label="Close score">close</button>
       </header>
       <iframe class="ts-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>`;
     document.body.append(backdrop, pane);
@@ -398,6 +289,22 @@ function ensurePdfDom() {
   return state.pdf;
 }
 
+function hidePdfPane() {
+  const { pane, backdrop, restoreFocus } = state.pdf;
+  if (pane) {
+    pane.setAttribute('hidden', '');
+    pane.setAttribute('aria-hidden', 'true');
+  }
+  backdrop?.setAttribute('hidden', '');
+  document.body.classList.remove('ts-pdf-open');
+  document.body.classList.remove('ts-reader-open');
+  detachPageFollow();
+  if (restoreFocus) {
+    restoreFocus.focus?.();
+    state.pdf.restoreFocus = null;
+  }
+}
+
 function gotoPdfPage(pageNum) {
   const { frame } = state.pdf;
   if (!frame || !frame.src) return;
@@ -417,6 +324,58 @@ function gotoPdfPage(pageNum) {
   } catch (err) {
     console.warn('Failed to navigate PDF', err);
   }
+}
+
+function printedPageForTime(cfg, tSec) {
+  const time = (tSec || 0) + (cfg.mediaOffsetSec || 0);
+  let current = cfg.pageMap?.[0]?.page ?? 1;
+  for (const row of cfg.pageMap || []) {
+    const at = typeof row.at === 'number' ? row.at : cueTime(row.at);
+    if (time >= at) current = row.page; else break;
+  }
+  return current;
+}
+
+function computePdfPage(slug, tSec) {
+  const cfg = pfMap?.[slug];
+  if (!cfg) return 1;
+  const printed = printedPageForTime(cfg, tSec || 0);
+  return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
+}
+
+function detachPageFollow() {
+  if (state.pdf.followAudio && state.pdf.followHandler) {
+    state.pdf.followAudio.removeEventListener('timeupdate', state.pdf.followHandler);
+    state.pdf.followAudio.removeEventListener('seeking', state.pdf.followHandler);
+  }
+  state.pdf.followAudio = null;
+  state.pdf.followHandler = null;
+  state.pdf.followSlug = null;
+  state.pdf.lastPrinted = null;
+}
+
+function attachPageFollow(slug, audio) {
+  detachPageFollow();
+  if (!slug || !audio) return;
+  const cfg = pfMap?.[slug];
+  if (!cfg) return;
+  const handler = () => {
+    const printed = printedPageForTime(cfg, audio.currentTime || 0);
+    if (printed !== state.pdf.lastPrinted) {
+      state.pdf.lastPrinted = printed;
+      const pdfPage = computePdfPage(slug, audio.currentTime || 0);
+      window.dispatchEvent(new CustomEvent('wc:pdf-goto', {
+        detail: { slug, printedPage: printed, pdfPage }
+      }));
+    }
+  };
+  state.pdf.followAudio = audio;
+  state.pdf.followHandler = handler;
+  state.pdf.followSlug = slug;
+  state.pdf.lastPrinted = null;
+  audio.addEventListener('timeupdate', handler, { passive: true });
+  audio.addEventListener('seeking', handler, { passive: true });
+  handler();
 }
 
 function openPdfFor(id) {
@@ -439,67 +398,16 @@ function openPdfFor(id) {
   backdrop?.removeAttribute('hidden');
   document.body.classList.add('ts-pdf-open');
   document.body.classList.add('ts-reader-open');
-  if (title) title.textContent = String(work.title || 'Score');
-  frame.src = 'about:blank';
-  state.pdf.viewerReady = false;
-  requestAnimationFrame(() => {
-    frame.src = viewerUrl;
-    state.pdf.pendingGoto = null;
-  });
-  if (work.slug) {
+  if (title) title.textContent = `${work.title || work.slug || 'Work'} — score`;
+  frame.src = viewerUrl;
+  frame.addEventListener('load', () => { state.pdf.viewerReady = true; }, { once: true });
+  if (state.pdf.currentSlug && state.pdf.followSlug !== state.pdf.currentSlug) {
     const audio = document.getElementById('wc-a' + work.id);
-    if (audio) attachPageFollow(work.slug, audio);
+    if (audio) attachPageFollow(state.pdf.currentSlug, audio);
   }
 }
 
-function hidePdfPane() {
-  const { pane, frame, backdrop } = ensurePdfDom();
-  pane?.setAttribute('aria-hidden', 'true');
-  pane?.setAttribute('hidden', '');
-  backdrop?.setAttribute('hidden', '');
-  document.body.classList.remove('ts-pdf-open');
-  document.body.classList.remove('ts-reader-open');
-  if (frame) frame.src = 'about:blank';
-  state.pdf.viewerReady = false;
-  state.pdf.pendingGoto = null;
-  state.pdf.currentSlug = null;
-  detachPageFollow();
-  const restore = state.pdf.restoreFocus;
-  state.pdf.restoreFocus = null;
-  if (restore && typeof restore.focus === 'function') {
-    requestAnimationFrame(() => restore.focus());
-  }
-}
-
-window.addEventListener('wc:pdf-goto', (event) => {
-  const detail = event?.detail || {};
-  ensurePdfDom();
-  if (!state.pdf.viewerReady || (detail.slug && detail.slug !== state.pdf.currentSlug)) {
-    state.pdf.pendingGoto = detail;
-    return;
-  }
-  if (detail.pdfPage) gotoPdfPage(detail.pdfPage);
-});
-
-function getAudioSourceFor(work) {
-  return work?.audioUrl || work?.audio || '';
-}
-
-function ensureAudioTags() {
-  if (typeof PRAE.ensureAudioTags === 'function') {
-    try { PRAE.ensureAudioTags(); } catch (_) {}
-  }
-}
-
-function markPlaying(id, on) {
-  const block = state.blockMap.get(Number(id));
-  if (block?.el) {
-    block.el.dataset.playing = on ? '1' : '0';
-  }
-  hudSetPlaying(on);
-}
-
-function playAt(id, t = 0) {
+function playAt(id, atSeconds) {
   const record = findWorkById(id);
   const work = record?.data;
   if (!work) return;
@@ -507,27 +415,12 @@ function playAt(id, t = 0) {
   if (!src) return;
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
   if (!audio) return;
-  state.hudState.last = { id: work.id, at: t || 0 };
-  if (!audio.src) {
-    audio.src = src;
-    audio.load();
-  }
-  const seekAndPlay = () => {
-    try { audio.currentTime = Math.max(0, Number(t) || 0); } catch (_) {}
-    const playPromise = audio.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(() => {});
-    }
-    markPlaying(work.id, true);
-    bindAudioToHud(work.id, audio);
-    requestAnimationFrame(() => hudUpdate(work.id, audio));
-    if (work.slug) attachPageFollow(work.slug, audio);
-  };
-  if (audio.readyState >= 1) {
-    seekAndPlay();
-  } else {
-    audio.addEventListener('loadedmetadata', () => seekAndPlay(), { once: true });
-  }
+  ensureAudioSrc(audio, work);
+  audio.currentTime = Math.max(0, atSeconds || 0);
+  audio.play().catch(() => {});
+  markPlaying(work.id, true);
+  bindAudioEvents(work.id, audio);
+  attachPageFollow(work.slug, audio);
 }
 
 function togglePlayFor(id) {
@@ -538,593 +431,792 @@ function togglePlayFor(id) {
   if (!src) return false;
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
   if (!audio) return false;
-  bindAudioToHud(work.id, audio);
+  ensureAudioSrc(audio, work);
   if (audio.paused || audio.ended) {
-    playAt(work.id, 0);
+    audio.play().catch(() => {});
+    markPlaying(work.id, true);
+    bindAudioEvents(work.id, audio);
+    attachPageFollow(work.slug, audio);
     return true;
   }
   audio.pause();
   markPlaying(work.id, false);
-  hudUpdate(work.id, audio);
+  updateNowPlaying(null);
   return true;
 }
 
-const hudApi = {
-  ensure: hudEnsure,
-  setSubtitle: hudSetSubtitle,
-  setPlaying: hudSetPlaying,
-  setProgress: hudSetProgress,
-  getRoot: hudGetRoot,
-  setTitle: hudSetTitle
-};
-
-PRAE.hud = Object.assign({}, PRAE.hud || {}, hudApi);
-PRAE.hud.ensure();
-
-async function copyToClipboard(text) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch (_) {}
-  const temp = document.createElement('textarea');
-  temp.value = text;
-  temp.setAttribute('readonly', '');
-  temp.style.position = 'absolute';
-  temp.style.left = '-9999px';
-  document.body.appendChild(temp);
-  temp.select();
-  let ok = false;
-  try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
-  document.body.removeChild(temp);
-  return ok;
-}
-
-function parseHash() {
-  const hash = location.hash.replace(/^#/, '');
-  if (!hash) return { workId: null, mode: null };
-  const params = new URLSearchParams(hash);
-  const workVal = params.get(HASH_WORK_KEY);
-  const modeVal = params.get(HASH_MODE_KEY);
-  const workId = workVal != null ? Number(workVal) : null;
-  const mode = modeVal === 'neat' ? 'neat' : (modeVal === 'loose' ? 'loose' : null);
-  return { workId: Number.isNaN(workId) ? null : workId, mode };
-}
-
-function updateHash() {
-  if (state.updatingHash) return;
-  const params = new URLSearchParams();
-  const block = state.blocks[state.selectedIndex];
-  if (block?.work?.id != null) params.set(HASH_WORK_KEY, String(block.work.id));
-  if (state.layoutMode) params.set(HASH_MODE_KEY, state.layoutMode);
-  const next = params.toString();
-  const hash = next ? `#${next}` : '#';
-  state.updatingHash = true;
-  history.replaceState(null, '', hash);
-  setTimeout(() => { state.updatingHash = false; }, 80);
-}
-
-function hydrateFromHash() {
-  if (state.updatingHash) return;
-  const { workId, mode } = parseHash();
-  if (mode && mode !== state.layoutMode) {
-    state.layoutMode = mode;
-    applyLayout();
-  }
-  if (workId != null) {
-    const index = state.blocks.findIndex((block) => Number(block.work.id) === Number(workId));
-    if (index >= 0) selectBlock(index, { focus: false, updateHash: false });
+function stopTimer(workId) {
+  const info = state.timers.get(workId);
+  if (info) {
+    cancelAnimationFrame(info.raf);
+    state.timers.delete(workId);
   }
 }
 
-function applyTypeSettings() {
-  const scale = SCALE_STEPS[clamp(state.scaleIndex, 0, SCALE_STEPS.length - 1)] || 1;
-  document.documentElement.style.setProperty('--ts-scale', scale.toFixed(3));
-  document.documentElement.style.setProperty('--measure', `${state.measure}ch`);
+function scheduleTimer(workId) {
+  const record = findWorkById(workId);
+  const audio = document.getElementById('wc-a' + workId) || record?.audio;
+  if (!audio) return;
+  stopTimer(workId);
+  const tick = () => {
+    updateTimer(workId, audio);
+    const info = state.timers.get(workId);
+    if (info) info.raf = requestAnimationFrame(tick);
+  };
+  state.timers.set(workId, { raf: requestAnimationFrame(tick), audio });
 }
 
-function parseNumericVar(name, fallback) {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
-  const parsed = parseFloat(value);
-  if (Number.isFinite(parsed)) return parsed;
-  return fallback;
+function updateTimer(workId, audio) {
+  const module = state.modules.find((item) => item.work.id === workId && item.kind === 'action');
+  const timerEl = module?.el.querySelector('[data-role="timer"]');
+  if (timerEl) timerEl.textContent = formatTime(audio?.currentTime || 0);
 }
 
-function computeHelpArea() {
-  const link = state.helpLink;
-  if (!link) {
-    state.helpArea = { width: 0, height: 0 };
+function bindAudioEvents(id, audio) {
+  if (!audio) return;
+  if (audio.dataset.tsBound === '1') return;
+  audio.dataset.tsBound = '1';
+  audio.addEventListener('play', () => {
+    markPlaying(id, true);
+    scheduleTimer(id);
+    updateNowPlaying({ id, audio });
+  });
+  audio.addEventListener('pause', () => {
+    markPlaying(id, false);
+    updateNowPlaying(audio.paused ? null : { id, audio });
+  });
+  audio.addEventListener('ended', () => {
+    markPlaying(id, false);
+    updateNowPlaying(null);
+  });
+  audio.addEventListener('timeupdate', () => {
+    scheduleTimer(id);
+    if (!audio.paused) updateNowPlaying({ id, audio });
+  });
+  audio.addEventListener('loadedmetadata', () => {
+    scheduleTimer(id);
+    if (!audio.paused) updateNowPlaying({ id, audio });
+  });
+}
+
+function updateNowPlaying(payload) {
+  const now = state.footerNowPlaying;
+  const footer = state.footer;
+  if (!footer || !now) return;
+  if (!payload) {
+    footer.classList.remove('has-now-playing');
+    now.innerHTML = '';
+    now.removeAttribute('data-work');
     return;
   }
-  state.helpArea = {
-    width: link.offsetWidth + 32,
-    height: link.offsetHeight + 32
-  };
+  const record = findWorkById(payload.id);
+  const work = record?.data;
+  if (!work) return;
+  const total = payload.audio?.duration ? formatTime(payload.audio.duration) : '--:--';
+  const current = payload.audio?.currentTime ? formatTime(payload.audio.currentTime) : '0:00';
+  now.innerHTML = `<span aria-hidden="true" class="ts-now-icon">⏸</span>Now playing: ${work.title || work.slug || 'Work'} — ${current} / ${total}`;
+  now.dataset.work = String(work.id);
+  footer.classList.add('has-now-playing');
 }
 
-function clampBlockPosition(block, x, y) {
-  const fieldWidth = state.fieldSize.width || state.field?.clientWidth || window.innerWidth;
-  const fieldHeight = state.fieldSize.height || state.field?.clientHeight || window.innerHeight;
-  const margin = 24;
-  const width = block.width || block.el.offsetWidth;
-  const height = block.height || block.el.offsetHeight;
-  const minX = margin;
-  const maxX = Math.max(minX, fieldWidth - width - margin);
-  const minY = margin;
-  const maxY = Math.max(minY, fieldHeight - height - margin);
-  let clampedX = clamp(x, minX, maxX);
-  let clampedY = clamp(y, minY, maxY);
-  if (state.helpLink) {
-    const safeTop = fieldHeight - state.helpArea.height;
-    const limitY = Math.max(minY, safeTop - height);
-    if (clampedY > limitY) clampedY = limitY;
-    if (clampedY + height > safeTop) {
-      const minSafeX = Math.max(minX, state.helpArea.width);
-      if (clampedX < minSafeX) clampedX = Math.min(maxX, minSafeX);
-    }
-  }
-  return { x: clampedX, y: clampedY };
-}
-
-function updateBlockTransform(block) {
-  const mode = state.layoutMode;
-  const scatter = mode === 'loose' ? (block.scatter || { x: 0, y: 0, r: 0 }) : { x: 0, y: 0, r: 0 };
-  const baseX = block.baseX ?? 0;
-  const baseY = block.baseY ?? 0;
-  const dragX = block.dragX || 0;
-  const dragY = block.dragY || 0;
-  const rawX = baseX + dragX + scatter.x;
-  const rawY = baseY + dragY + scatter.y;
-  const { x, y } = clampBlockPosition(block, rawX, rawY);
-  block.positionX = x;
-  block.positionY = y;
-  const rotation = mode === 'loose' ? scatter.r : 0;
-  block.el.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${rotation}deg)`;
-}
-
-function applyLayout() {
-  const field = state.field;
-  if (!field) return;
-  computeHelpArea();
-  const header = document.querySelector('.ts-header');
-  const headerHeight = header?.offsetHeight || 0;
-  const rect = field.getBoundingClientRect();
-  const fieldWidth = rect.width || window.innerWidth || 1024;
-  const marginTop = 40;
-  const gapY = 72;
-  const blocks = state.blocks;
-  const jitterX = state.prefersReducedMotion ? 0 : parseNumericVar('--jitter-x', 120);
-  const jitterY = state.prefersReducedMotion ? 0 : parseNumericVar('--jitter-y', 80);
-  const rotateMax = state.prefersReducedMotion ? 0 : parseNumericVar('--rotate-max', 5);
-  blocks.forEach((block) => {
-    block.el.style.transform = 'translate3d(0, 0, 0)';
-    block.width = block.el.offsetWidth;
-    block.height = block.el.offsetHeight;
-  });
-  const avgWidth = blocks.reduce((acc, block) => acc + (block.width || 320), 0) / (blocks.length || 1);
-  const targetWidth = clamp(avgWidth, 280, 480);
-  const columns = clamp(Math.floor(fieldWidth / (targetWidth + 60)) || 1, 1, 4);
-  const columnWidth = fieldWidth / columns;
-  const columnHeights = new Array(columns).fill(marginTop);
-  blocks.forEach((block, index) => {
-    const columnIndex = columnHeights.indexOf(Math.min(...columnHeights));
-    const xBase = (columnWidth * columnIndex) + Math.max(24, (columnWidth - block.width) / 2);
-    const yBase = columnHeights[columnIndex];
-    columnHeights[columnIndex] += block.height + gapY;
-    block.baseX = xBase;
-    block.baseY = yBase;
-    if (!block.scatter || state.prefersReducedMotion) {
-      const seed = `${block.work.id || index}-${block.work.slug || index}`;
-      const rand = createSeededRandom(seed);
-      block.scatter = {
-        x: state.prefersReducedMotion ? 0 : (rand() - 0.5) * 2 * jitterX,
-        y: state.prefersReducedMotion ? 0 : (rand() - 0.5) * 2 * jitterY,
-        r: state.prefersReducedMotion ? 0 : (rand() - 0.5) * 2 * rotateMax
-      };
-    }
-    updateBlockTransform(block);
-  });
-  const contentHeight = Math.max(...columnHeights, marginTop + 320) + state.helpArea.height;
-  const minHeight = Math.max(window.innerHeight - headerHeight, contentHeight);
-  field.style.height = `${Math.ceil(minHeight)}px`;
-  state.fieldSize = { width: fieldWidth, height: minHeight };
-  blocks.forEach((block, idx) => {
-    block.el.style.zIndex = String(20 + idx);
-  });
-  if (state.cuesVisibleFor) {
-    const target = state.blockMap.get(Number(state.cuesVisibleFor));
-    if (target?.cuesEl && target.cuesVisible) target.cuesEl.hidden = false;
+function ensureAudioTags() {
+  if (typeof PRAE.ensureAudioTags === 'function') {
+    try { PRAE.ensureAudioTags(); } catch (_) {}
   }
 }
 
-function beginDrag(block, event) {
-  if (event.button !== 0) return;
-  event.preventDefault();
-  block.el.setPointerCapture(event.pointerId);
-  block.el.classList.add('is-dragging');
-  block.el.style.zIndex = String(state.zCounter += 1);
-  state.drag = {
-    block,
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    originX: block.dragX || 0,
-    originY: block.dragY || 0
-  };
+function ensureFooter() {
+  if (state.footer) return;
+  const footer = document.querySelector('.ts-footer');
+  if (!footer) return;
+  state.footer = footer;
+  state.footerNowPlaying = footer.querySelector('[data-now-playing]');
+  state.footerInfo = footer.querySelector('[data-footer-info]');
+  if (state.footerNowPlaying) state.footerNowPlaying.setAttribute('aria-live', 'polite');
+}
+function computeMetaChips(work) {
+  const chips = [];
+  if (work.year) chips.push({ label: String(work.year), key: 'year' });
+  if (work.medium) chips.push({ label: String(work.medium), key: 'medium' });
+  if (work.duration) chips.push({ label: String(work.duration), key: 'duration' });
+  if (Array.isArray(work.tags)) {
+    work.tags.forEach((tag, idx) => {
+      chips.push({ label: String(tag), key: `tag-${idx}` });
+    });
+  }
+  if (!chips.length && work.slug) {
+    chips.push({ label: `#${work.slug}`, key: 'slug' });
+  }
+  return chips;
 }
 
-function moveDrag(event) {
-  const drag = state.drag;
-  if (!drag || drag.pointerId !== event.pointerId) return;
-  const dx = event.clientX - drag.startX;
-  const dy = event.clientY - drag.startY;
-  drag.block.dragX = drag.originX + dx;
-  drag.block.dragY = drag.originY + dy;
-  updateBlockTransform(drag.block);
+function getWorkDescription(work) {
+  const body = Array.isArray(work.openNote) ? work.openNote.join('\n\n') : String(work.one || '');
+  return body.trim();
 }
 
-function endDrag(event) {
-  const drag = state.drag;
-  if (!drag || (event && drag.pointerId !== event.pointerId)) return;
-  drag.block.el.classList.remove('is-dragging');
-  drag.block.el.releasePointerCapture?.(drag.pointerId);
-  state.drag = null;
+function createModule(work, kind, options = {}) {
+  const el = document.createElement('div');
+  el.className = `ts-module ts-module--${kind}`;
+  el.dataset.workId = work.id != null ? String(work.id) : '';
+  el.dataset.moduleKind = kind;
+  el.tabIndex = 0;
+  el.setAttribute('role', 'group');
+  el.setAttribute('aria-label', `${work.title || work.slug || 'Work'} — ${kind}`);
+  el.setAttribute('aria-keyshortcuts', 'ArrowKeys,Shift+Arrow');
+  const handle = document.createElement('span');
+  handle.className = 'ts-module-handle';
+  handle.setAttribute('aria-hidden', 'true');
+  handle.textContent = '⋮⋮';
+  el.appendChild(handle);
+  if (kind === 'title') {
+    const title = document.createElement('h2');
+    title.className = 'ts-title';
+    title.textContent = work.title || work.slug || 'Untitled';
+    title.setAttribute('data-role', 'title-text');
+    el.appendChild(title);
+    const teaser = document.createElement('p');
+    teaser.className = 'ts-teaser';
+    teaser.textContent = getWorkDescription(work);
+    teaser.setAttribute('aria-hidden', 'true');
+    el.appendChild(teaser);
+    el.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      event.preventDefault();
+      toggleDescription(work, el, { interactive: !state.isHoverCapable });
+    });
+    el.addEventListener('focus', () => toggleDescription(work, el, { interactive: true }));
+    if (state.isHoverCapable) {
+      el.addEventListener('mouseenter', () => toggleDescription(work, el, { hover: true }));
+      el.addEventListener('mouseleave', () => hideDescriptionIfHover(work));
+    }
+  } else if (kind === 'teaser') {
+    const teaser = document.createElement('p');
+    teaser.className = 'ts-teaser';
+    teaser.textContent = getWorkDescription(work);
+    el.appendChild(teaser);
+  } else if (kind === 'meta') {
+    const chip = document.createElement('span');
+    chip.className = 'ts-chip';
+    chip.textContent = options.label || '';
+    el.appendChild(chip);
+  } else if (kind === 'action') {
+    el.setAttribute('role', 'toolbar');
+    const buttons = buildActionButtons(work);
+    buttons.forEach((btn) => el.appendChild(btn));
+    const timer = document.createElement('span');
+    timer.className = 'ts-action-timer';
+    timer.dataset.role = 'timer';
+    timer.textContent = '0:00';
+    el.appendChild(timer);
+  }
+  el.addEventListener('pointerdown', (event) => beginDrag(event, el));
+  el.addEventListener('keydown', (event) => handleModuleKeydown(event, el));
+  el.addEventListener('focus', () => setActiveWork(work.id));
+  el.addEventListener('focusin', () => setActiveWork(work.id));
+  el.addEventListener('focusout', (event) => {
+    if (!el.contains(event.relatedTarget)) clearActiveWork(work.id);
+  });
+  if (state.isHoverCapable) {
+    el.addEventListener('mouseenter', () => setActiveWork(work.id));
+    el.addEventListener('mouseleave', (event) => {
+      if (!el.contains(event.relatedTarget)) clearActiveWork(work.id);
+    });
+  }
+  const module = { work, el, kind, id: `${work.id}-${options.key || kind}-${state.modules.length}` };
+  el.dataset.moduleId = module.id;
+  state.modules.push(module);
+  el.addEventListener('focus', onModuleFocus);
+  return module;
 }
 
-function showFeedback(block, text) {
-  if (!block.feedbackEl) return;
-  block.feedbackEl.textContent = text;
-  block.feedbackEl.classList.add('is-visible');
-  clearTimeout(block.feedbackTimer);
-  block.feedbackTimer = setTimeout(() => {
-    block.feedbackEl.classList.remove('is-visible');
+function buildActionButtons(work) {
+  const buttons = [];
+  const audioSrc = normalizeSrc(getAudioSourceFor(work));
+  if (audioSrc) {
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'ts-btn';
+    play.textContent = 'Play';
+    play.dataset.role = 'play-toggle';
+    play.setAttribute('aria-label', `Play or pause ${work.title}`);
+    play.addEventListener('click', (event) => {
+      event.preventDefault();
+      const toggled = togglePlayFor(work.id);
+      if (!toggled) showFeedback('Audio unavailable');
+    });
+    buttons.push(play);
+    const cue = Array.isArray(work.cues) ? work.cues[0] : null;
+    const startAt = cue ? cueTime(cue.at) : (typeof work.start_at === 'number' ? work.start_at : null);
+    if (startAt != null && Number.isFinite(startAt)) {
+      const playAtBtn = document.createElement('button');
+      playAtBtn.type = 'button';
+      playAtBtn.className = 'ts-btn';
+      playAtBtn.textContent = 'Play @';
+      playAtBtn.setAttribute('aria-label', `Play ${work.title} at cue`);
+      playAtBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        playAt(work.id, startAt);
+      });
+      buttons.push(playAtBtn);
+    }
+  }
+  const scoreUrl = normalizePdfUrl(work.pdfUrl || work.pdf);
+  if (scoreUrl) {
+    const scoreBtn = document.createElement('button');
+    scoreBtn.type = 'button';
+    scoreBtn.className = 'ts-btn';
+    scoreBtn.textContent = 'Score';
+    scoreBtn.setAttribute('aria-label', `Open score for ${work.title}`);
+    scoreBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      openPdfFor(work.id);
+    });
+    buttons.push(scoreBtn);
+    const pdfBtn = document.createElement('button');
+    pdfBtn.type = 'button';
+    pdfBtn.className = 'ts-btn';
+    pdfBtn.textContent = 'PDF';
+    pdfBtn.setAttribute('aria-label', `Open PDF for ${work.title}`);
+    pdfBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      window.dispatchEvent(new CustomEvent('wc:pdf-open', { detail: { slug: work.slug } }));
+      openPdfFor(work.id);
+    });
+    buttons.push(pdfBtn);
+  }
+  const openBtn = document.createElement('button');
+  openBtn.type = 'button';
+  openBtn.className = 'ts-btn';
+  openBtn.textContent = 'Open';
+  openBtn.setAttribute('aria-label', `Open detail page for ${work.title}`);
+  openBtn.addEventListener('click', () => openWorkPage(work));
+  buttons.push(openBtn);
+  return buttons;
+}
+
+function openWorkPage(work) {
+  const slug = work?.slug;
+  if (!slug) return;
+  const base = PRAE.config?.site?.workRoot || '/works/';
+  const url = typeof PRAE.routes?.work === 'function' ? PRAE.routes.work(work) : `${base}${slug}`;
+  try {
+    window.location.href = url;
+  } catch (_) {
+    window.open(url, '_blank', 'noopener');
+  }
+}
+
+function showFeedback(text) {
+  if (!text) return;
+  const toast = document.createElement('div');
+  toast.className = 'ts-toast';
+  toast.textContent = text;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('is-visible'));
+  setTimeout(() => {
+    toast.classList.remove('is-visible');
+    setTimeout(() => toast.remove(), 280);
   }, 1600);
 }
 
-function hideAllCues() {
-  state.blocks.forEach((block) => {
-    if (block.cuesEl) {
-      block.cuesEl.hidden = true;
-      block.cuesVisible = false;
+function moduleToNode(module, options = {}) {
+  const center = options.center || { x: 0, y: 0 };
+  const offsetX = options.offsetX ?? 0;
+  const offsetY = options.offsetY ?? 0;
+  const node = {
+    id: module.id,
+    work: module.work,
+    kind: module.kind,
+    el: module.el,
+    x: options.x ?? center.x + offsetX,
+    y: options.y ?? center.y + offsetY,
+    targetX: center.x + offsetX,
+    targetY: center.y + offsetY,
+    offsetX,
+    offsetY,
+    fx: null,
+    fy: null,
+    isDragging: false
+  };
+  measureNode(node);
+  return node;
+}
+
+function measureNode(node) {
+  node.width = node.el.offsetWidth;
+  node.height = node.el.offsetHeight;
+  node.radius = Math.max(node.width, node.height) / 2 + MODULE_PADDING;
+}
+
+function computeFieldSize() {
+  const rect = state.field?.getBoundingClientRect();
+  const width = rect?.width || window.innerWidth || 1024;
+  const height = rect?.height || window.innerHeight || 768;
+  state.fieldSize = { width, height };
+}
+
+function computeSeeds(count) {
+  computeFieldSize();
+  const width = state.fieldSize.width;
+  const height = state.fieldSize.height;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+  const rows = Math.max(1, Math.ceil(count / cols));
+  const cellWidth = width / cols;
+  const cellHeight = height / rows;
+  const seeds = [];
+  let row = 0;
+  let col = 0;
+  for (let i = 0; i < count; i += 1) {
+    const x = (col + 0.5) * cellWidth;
+    const y = (row + 0.5) * cellHeight;
+    const jitterX = Math.min(cellWidth / 3, 40);
+    const jitterY = Math.min(cellHeight / 3, 40);
+    const rand = createSeededRandom(`seed-${i}`);
+    seeds.push({
+      x: x + (rand() - 0.5) * jitterX,
+      y: y + (rand() - 0.5) * jitterY
+    });
+    col += 1;
+    if (col >= cols) {
+      col = 0;
+      row += 1;
+    }
+  }
+  return seeds;
+}
+
+function setActiveWork(workId) {
+  if (state.activeWorkId === workId) return;
+  state.activeWorkId = workId;
+  state.modules.forEach((module) => {
+    if (module.work.id === workId) {
+      module.el.classList.add('is-active');
+    } else if (!module.el.classList.contains('is-playing')) {
+      module.el.classList.remove('is-active');
     }
   });
-  state.cuesVisibleFor = null;
+  persistSelection(workId);
 }
 
-function toggleCuesForSelected() {
-  const block = state.blocks[state.selectedIndex];
-  if (!block) return;
-  if (!block.cuesEl || !block.cuesEl.childElementCount) {
-    showFeedback(block, 'no timecodes');
-    return;
-  }
-  const key = block.work.id != null ? block.work.id : `idx-${block.index}`;
-  const shouldShow = state.cuesVisibleFor !== key;
-  hideAllCues();
-  if (shouldShow) {
-    block.cuesEl.hidden = false;
-    block.cuesVisible = true;
-    state.cuesVisibleFor = key;
-  }
-}
-
-function selectBlock(index, opts = {}) {
-  const { focus = true, updateHash: doUpdate = true } = opts;
-  if (index < 0 || index >= state.blocks.length) {
-    if (state.selectedIndex !== -1) {
-      const prev = state.blocks[state.selectedIndex];
-      prev?.el.classList.remove('is-selected');
+function clearActiveWork(workId) {
+  if (state.activeWorkId !== workId) return;
+  const stillHover = state.modules.some((module) => module.work.id === workId && module.el.matches(':hover, :focus-within'));
+  if (stillHover) return;
+  state.activeWorkId = null;
+  state.modules.forEach((module) => {
+    if (module.work.id === workId && !module.el.classList.contains('is-playing')) {
+      module.el.classList.remove('is-active');
     }
-    hideAllCues();
-    state.selectedIndex = -1;
-    if (doUpdate) updateHash();
-    return;
-  }
-  if (state.selectedIndex !== -1 && state.selectedIndex !== index) {
-    const prev = state.blocks[state.selectedIndex];
-    prev?.el.classList.remove('is-selected');
-    if (prev && state.cuesVisibleFor === prev.work.id) {
-      hideAllCues();
-    }
-  }
-  const block = state.blocks[index];
-  state.selectedIndex = index;
-  block.el.classList.add('is-selected');
-  if (focus) block.el.focus({ preventScroll: true });
-  if (doUpdate) updateHash();
-}
-
-function selectNext(delta) {
-  if (!state.blocks.length) return;
-  const next = state.selectedIndex < 0 ? 0 : clamp(state.selectedIndex + delta, 0, state.blocks.length - 1);
-  selectBlock(next, { focus: true, updateHash: true });
-}
-
-function toggleLayoutMode() {
-  state.layoutMode = state.layoutMode === 'loose' ? 'neat' : 'loose';
-  applyLayout();
-  updateHash();
-}
-
-function resetDragPositions() {
-  state.blocks.forEach((block) => {
-    block.dragX = 0;
-    block.dragY = 0;
-    updateBlockTransform(block);
   });
 }
 
-function adjustScale(delta) {
-  state.scaleIndex = clamp(state.scaleIndex + delta, 0, SCALE_STEPS.length - 1);
-  applyTypeSettings();
-  applyLayout();
-}
-
-function adjustMeasure(delta) {
-  state.measure = clamp(state.measure + delta, MEASURE_MIN, MEASURE_MAX);
-  applyTypeSettings();
-  applyLayout();
-}
-
-function copyDeepLink(block) {
-  if (!block?.work?.id) return;
-  const params = new URLSearchParams();
-  params.set(HASH_WORK_KEY, String(block.work.id));
-  params.set(HASH_MODE_KEY, state.layoutMode);
-  const url = new URL(location.href);
-  url.hash = params.toString();
-  copyToClipboard(url.toString()).then((ok) => {
-    showFeedback(block, ok ? 'link copied' : url.toString());
-  }).catch(() => {
-    showFeedback(block, url.toString());
-  });
-}
-
-function attemptPlay(block) {
-  if (!block?.work) return;
-  const hasAudio = !!normalizeSrc(getAudioSourceFor(block.work));
-  if (!hasAudio) {
-    showFeedback(block, 'no audio');
+function toggleDescription(work, anchor, opts = {}) {
+  if (!work) return;
+  if (!state.isHoverCapable) {
+    showSheet(work);
     return;
   }
-  const played = togglePlayFor(block.work.id);
-  if (!played) {
-    showFeedback(block, 'audio unavailable');
-  }
-}
-
-function attemptOpenPdf(block) {
-  if (!block?.work) return;
-  const hasPdf = !!normalizePdfUrl(block.work.pdfUrl || block.work.pdf);
-  if (!hasPdf) {
-    showFeedback(block, 'no score');
+  if (opts.hover) {
+    openPopover(work, anchor, { interactive: false });
     return;
   }
-  openPdfFor(block.work.id);
-}
-
-function handleKeydown(event) {
-  const activeTag = document.activeElement?.tagName;
-  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) return;
-  if ((event.key === 'd' || event.key === 'D') && (event.altKey || event.metaKey)) {
-    event.preventDefault();
-    praeCycleTheme();
+  const interactive = opts.interactive !== false;
+  if (state.description.currentWork === work.id && state.description.interactive === interactive) {
+    hideDescription();
     return;
   }
-  switch (event.key) {
-    case 'ArrowRight':
-    case 'ArrowDown':
+  openPopover(work, anchor, { interactive });
+}
+
+function hideDescriptionIfHover(work) {
+  if (state.description.interactive) return;
+  if (state.description.currentWork !== work.id) return;
+  hideDescription();
+}
+function ensurePopover() {
+  if (state.description.popover) return state.description.popover;
+  const pop = document.createElement('div');
+  pop.className = 'ts-popover';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-modal', 'false');
+  pop.setAttribute('hidden', '');
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'ts-popover-close ts-btn';
+  close.textContent = 'Close';
+  const body = document.createElement('div');
+  body.className = 'ts-popover-body';
+  pop.append(close, body);
+  document.body.appendChild(pop);
+  close.addEventListener('click', hideDescription);
+  pop.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
       event.preventDefault();
-      selectNext(1);
+      hideDescription();
+    }
+  });
+  state.description.popover = { root: pop, body, close };
+  return state.description.popover;
+}
+
+function ensureSheet() {
+  if (state.description.sheet) return state.description.sheet;
+  const sheet = document.createElement('div');
+  sheet.className = 'ts-sheet';
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-modal', 'true');
+  sheet.setAttribute('tabindex', '-1');
+  sheet.setAttribute('hidden', '');
+  sheet.innerHTML = `
+    <div class="ts-sheet-content">
+      <header class="ts-sheet-header">
+        <h3 data-role="title"></h3>
+        <button type="button" data-role="close" class="ts-btn" aria-label="Close description">Close</button>
+      </header>
+      <div class="ts-sheet-body"></div>
+    </div>`;
+  document.body.appendChild(sheet);
+  const close = sheet.querySelector('[data-role="close"]');
+  close?.addEventListener('click', hideSheet);
+  sheet.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      hideSheet();
+    }
+  });
+  state.description.sheet = {
+    root: sheet,
+    title: sheet.querySelector('[data-role="title"]'),
+    body: sheet.querySelector('.ts-sheet-body')
+  };
+  return state.description.sheet;
+}
+
+function openPopover(work, anchor, { interactive }) {
+  const pop = ensurePopover();
+  if (!pop?.root || !anchor) return;
+  const description = getWorkDescription(work);
+  pop.body.textContent = description;
+  pop.root.removeAttribute('hidden');
+  pop.root.dataset.workId = String(work.id);
+  pop.root.dataset.interactive = interactive ? '1' : '0';
+  state.description.currentWork = work.id;
+  state.description.interactive = interactive;
+  const rect = anchor.getBoundingClientRect();
+  const popRect = pop.root.getBoundingClientRect();
+  const top = Math.max(16, rect.bottom + 12 + window.scrollY);
+  const left = clamp(rect.left + rect.width / 2 - popRect.width / 2, 16, window.innerWidth - popRect.width - 16);
+  pop.root.style.left = `${left}px`;
+  pop.root.style.top = `${top}px`;
+  if (interactive) {
+    trapFocus(pop.root);
+    pop.close?.focus({ preventScroll: true });
+  } else {
+    releaseFocus(pop.root);
+  }
+}
+
+function hideDescription() {
+  const pop = state.description.popover;
+  if (pop?.root) {
+    pop.root.setAttribute('hidden', '');
+    releaseFocus(pop.root);
+  }
+  hideSheet();
+  state.description.currentWork = null;
+  state.description.interactive = false;
+}
+
+function showSheet(work) {
+  const sheet = ensureSheet();
+  if (!sheet?.root) return;
+  const description = getWorkDescription(work);
+  sheet.title.textContent = work.title || work.slug || 'Work';
+  sheet.body.textContent = description;
+  sheet.root.removeAttribute('hidden');
+  sheet.root.classList.add('is-open');
+  sheet.root.focus({ preventScroll: true });
+  trapFocus(sheet.root);
+  state.description.currentWork = work.id;
+  state.description.interactive = true;
+}
+
+function hideSheet() {
+  const sheet = state.description.sheet;
+  if (!sheet?.root) return;
+  sheet.root.setAttribute('hidden', '');
+  sheet.root.classList.remove('is-open');
+  releaseFocus(sheet.root);
+}
+
+function trapFocus(root) {
+  if (!root) return;
+  const focusable = root.querySelectorAll('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])');
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const handler = (event) => {
+    if (event.key !== 'Tab') return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  root.__trapHandler = handler;
+  root.addEventListener('keydown', handler);
+}
+
+function releaseFocus(root) {
+  if (!root?.__trapHandler) return;
+  root.removeEventListener('keydown', root.__trapHandler);
+  delete root.__trapHandler;
+}
+
+function beginDrag(event, el) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const node = state.nodes.find((item) => item.el === el);
+  if (!node) return;
+  const rect = state.field.getBoundingClientRect();
+  const offsetX = event.clientX - rect.left;
+  const offsetY = event.clientY - rect.top;
+  node.fx = offsetX;
+  node.fy = offsetY;
+  node.isDragging = true;
+  el.setPointerCapture(event.pointerId);
+  el.classList.add('is-dragging');
+  state.dragging = { node, pointerId: event.pointerId };
+  if (state.simulation) state.simulation.alphaTarget(0.3).restart();
+  el.addEventListener('pointermove', dragMove);
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+}
+
+function dragMove(event) {
+  const drag = state.dragging;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const rect = state.field.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const { node } = drag;
+  const bounds = clampNode(node, x, y);
+  node.fx = bounds.x;
+  node.fy = bounds.y;
+  if (state.simulation) state.simulation.alpha(0.16);
+  updateNodeTransform(node);
+}
+
+function endDrag(event) {
+  const drag = state.dragging;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const { node } = drag;
+  node.isDragging = false;
+  node.el.classList.remove('is-dragging');
+  node.x = node.fx;
+  node.y = node.fy;
+  persistNodePosition(node);
+  state.dragging = null;
+  event.currentTarget.removeEventListener('pointermove', dragMove);
+  event.currentTarget.removeEventListener('pointerup', endDrag);
+  event.currentTarget.removeEventListener('pointercancel', endDrag);
+  if (state.simulation) state.simulation.alphaTarget(0);
+}
+
+function handleModuleKeydown(event, el) {
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  const node = state.nodes.find((item) => item.el === el);
+  if (!node) return;
+  event.preventDefault();
+  const step = event.shiftKey ? 16 : 4;
+  let x = node.fx ?? node.x ?? 0;
+  let y = node.fy ?? node.y ?? 0;
+  switch (event.key) {
+    case 'ArrowUp':
+      y -= step;
+      break;
+    case 'ArrowDown':
+      y += step;
       break;
     case 'ArrowLeft':
-    case 'ArrowUp':
-      event.preventDefault();
-      selectNext(-1);
+      x -= step;
       break;
-    case ' ': // Space
-      if (state.selectedIndex >= 0) {
-        event.preventDefault();
-        attemptPlay(state.blocks[state.selectedIndex]);
-      }
-      break;
-    case 'S':
-    case 's':
-      if (state.selectedIndex >= 0) {
-        event.preventDefault();
-        attemptOpenPdf(state.blocks[state.selectedIndex]);
-      }
-      break;
-    case 'C':
-    case 'c':
-      if (state.selectedIndex >= 0) {
-        event.preventDefault();
-        copyDeepLink(state.blocks[state.selectedIndex]);
-      }
-      break;
-    case '@':
-      event.preventDefault();
-      toggleCuesForSelected();
-      break;
-    case 'L':
-    case 'l':
-      event.preventDefault();
-      toggleLayoutMode();
-      break;
-    case 'R':
-    case 'r':
-      event.preventDefault();
-      resetDragPositions();
-      break;
-    case '[':
-      event.preventDefault();
-      adjustScale(-1);
-      break;
-    case ']':
-      event.preventDefault();
-      adjustScale(1);
-      break;
-    case ',':
-      event.preventDefault();
-      adjustMeasure(-MEASURE_STEP);
-      break;
-    case '.':
-      event.preventDefault();
-      adjustMeasure(MEASURE_STEP);
-      break;
-    case '?':
-      event.preventDefault();
-      toggleHelpOverlay();
-      break;
-    case 'Escape':
-      if (!hideHelpOverlayIfVisible()) {
-        hidePdfPane();
-      }
+    case 'ArrowRight':
+      x += step;
       break;
     default:
       break;
   }
+  const bounds = clampNode(node, x, y);
+  node.fx = bounds.x;
+  node.fy = bounds.y;
+  node.x = bounds.x;
+  node.y = bounds.y;
+  persistNodePosition(node);
+  if (state.simulation) state.simulation.alpha(0.12).restart();
+  updateNodeTransform(node);
 }
 
-function toggleHelpOverlay(force) {
-  const overlay = state.helpOverlay;
-  if (!overlay) return;
-  const show = force != null ? force : overlay.hasAttribute('hidden');
-  if (show) {
-    overlay.removeAttribute('hidden');
-    overlay.setAttribute('aria-hidden', 'false');
-  } else {
-    overlay.setAttribute('hidden', '');
-    overlay.setAttribute('aria-hidden', 'true');
-  }
-}
-
-function hideHelpOverlayIfVisible() {
-  const overlay = state.helpOverlay;
-  if (overlay && !overlay.hasAttribute('hidden')) {
-    toggleHelpOverlay(false);
-    return true;
-  }
-  return false;
-}
-
-function buildBlock(work, index) {
-  const el = document.createElement('article');
-  el.className = 'ts-block';
-  el.dataset.workId = work.id != null ? String(work.id) : '';
-  el.dataset.slug = work.slug || '';
-  el.setAttribute('tabindex', '0');
-  el.setAttribute('role', 'group');
-
-  const title = document.createElement('h2');
-  title.className = 'ts-block-title';
-  title.textContent = work.title || work.slug || `Work ${index + 1}`;
-
-  const slug = document.createElement('p');
-  slug.className = 'ts-block-slug';
-  slug.textContent = (work.slug || '').toUpperCase();
-
-  const one = document.createElement('p');
-  one.className = 'ts-block-one';
-  one.textContent = work.one || '';
-
-  el.append(title, slug, one);
-
-  const block = {
-    el,
-    work,
-    index,
-    cuesEl: null,
-    feedbackEl: null,
-    feedbackTimer: null,
-    dragX: 0,
-    dragY: 0,
-    scatter: null,
-    cuesVisible: false
+function clampNode(node, x, y) {
+  const width = node.width || node.el.offsetWidth;
+  const height = node.height || node.el.offsetHeight;
+  const minX = width / 2 + 16;
+  const maxX = state.fieldSize.width - width / 2 - 16;
+  const minY = height / 2 + 16;
+  const maxY = state.fieldSize.height - height / 2 - 16;
+  return {
+    x: clamp(x, minX, Math.max(minX, maxX)),
+    y: clamp(y, minY, Math.max(minY, maxY))
   };
+}
 
-  const cuesEl = document.createElement('div');
-  cuesEl.className = 'ts-block-cues';
-  cuesEl.setAttribute('hidden', '');
-  const cues = Array.isArray(work.cues) ? work.cues : [];
-  cues.forEach((cue) => {
-    const raw = typeof cue === 'object' ? (cue.label || cue.at || cue.time || cue.t) : cue;
-    const seconds = typeof cue === 'object' ? cueTime(cue.at ?? cue.time ?? cue.t ?? cue.label) : cueTime(cue);
-    if (!raw && !seconds) return;
-    const label = raw ? String(raw) : formatTime(seconds);
-    const text = label.startsWith('@') ? label : `@${label}`;
-    const link = document.createElement('a');
-    link.href = '#';
-    link.className = 'ts-block-cue';
-    link.textContent = text;
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      if (work.id != null) {
-        if (normalizeSrc(getAudioSourceFor(work))) {
-          playAt(work.id, seconds || 0);
-        } else {
-          showFeedback(block, 'no audio');
-        }
-      }
-    });
-    cuesEl.appendChild(link);
-  });
-  if (cuesEl.childElementCount) {
-    el.appendChild(cuesEl);
-    block.cuesEl = cuesEl;
-  }
+function persistNodePosition(node) {
+  const key = node.id;
+  if (!key) return;
+  state.positions.set(key, { x: node.x, y: node.y });
+}
 
-  const feedback = document.createElement('p');
-  feedback.className = 'ts-feedback';
-  el.appendChild(feedback);
-  block.feedbackEl = feedback;
-
-  el.addEventListener('pointerdown', (event) => beginDrag(block, event));
-  el.addEventListener('pointermove', moveDrag);
-  el.addEventListener('pointerup', endDrag);
-  el.addEventListener('pointercancel', endDrag);
-  el.addEventListener('click', () => {
-    const idx = state.blocks.indexOf(block);
-    selectBlock(idx, { focus: true, updateHash: true });
-  });
-  el.addEventListener('dblclick', (event) => {
-    event.preventDefault();
-    selectBlock(state.blocks.indexOf(block), { focus: true, updateHash: true });
-    attemptPlay(block);
-  });
-  el.addEventListener('focus', () => {
-    const idx = state.blocks.indexOf(block);
-    if (idx >= 0 && state.selectedIndex !== idx) {
-      selectBlock(idx, { focus: false, updateHash: true });
+function updateNodeTransform(node) {
+  if (!node.el) return;
+  const width = node.width || node.el.offsetWidth;
+  const height = node.height || node.el.offsetHeight;
+  const x = (node.fx != null ? node.fx : node.x) - width / 2;
+  const y = (node.fy != null ? node.fy : node.y) - height / 2;
+  node.el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+}
+function initializeSimulation() {
+  if (state.simulation) state.simulation.stop();
+  state.nodes.forEach((node) => {
+    measureNode(node);
+    const stored = state.positions.get(node.id);
+    if (stored) {
+      node.x = stored.x;
+      node.y = stored.y;
     }
   });
+  const links = [];
+  const titleNodes = new Map();
+  state.nodes.forEach((node) => {
+    if (node.kind === 'title') titleNodes.set(node.work.id, node);
+  });
+  state.nodes.forEach((node) => {
+    if (node.kind !== 'title') {
+      const target = titleNodes.get(node.work.id);
+      if (target) {
+        links.push({ source: node, target, distance: Math.max(80, target.radius + node.radius) });
+      }
+    }
+  });
+  state.links = links;
+  const simulation = forceSimulation(state.nodes)
+    .force('collide', forceCollide().radius((d) => d.radius).iterations(2))
+    .force('charge', forceManyBody().strength(-8))
+    .force('link', forceLink(links).distance((d) => d.distance).strength(CLUSTER_FORCE))
+    .force('x', forceX((d) => d.targetX).strength(CLUSTER_FORCE))
+    .force('y', forceY((d) => d.targetY).strength(CLUSTER_FORCE))
+    .alphaDecay(state.prefersReducedMotion ? 0.08 : 0.05)
+    .on('tick', () => {
+      state.nodes.forEach((node) => {
+        if (node.isDragging) return;
+        const bounds = clampNode(node, node.x, node.y);
+        node.x = bounds.x;
+        node.y = bounds.y;
+        updateNodeTransform(node);
+      });
+    });
+  state.simulation = simulation;
+  setTimeout(() => simulation.alphaTarget(0), 600);
+}
 
-  return block;
+function resetLayout() {
+  state.positions.clear();
+  const seeds = computeSeeds(works.length);
+  works.forEach((work, index) => {
+    const center = seeds[index] || { x: state.fieldSize.width / 2, y: state.fieldSize.height / 2 };
+    state.clusterCenters.set(work.id, center);
+    state.nodes.forEach((node) => {
+      if (node.work.id !== work.id) return;
+      node.targetX = center.x + node.offsetX;
+      node.targetY = center.y + node.offsetY;
+      node.x = node.targetX;
+      node.y = node.targetY;
+      node.fx = null;
+      node.fy = null;
+      updateNodeTransform(node);
+    });
+  });
+  if (state.simulation) {
+    state.simulation.alpha(0.4).restart();
+    setTimeout(() => state.simulation.alphaTarget(0), 800);
+  }
+}
+
+function showHint() {
+  if (state.hintShown) return;
+  if (!state.modules.length) return;
+  const module = state.modules[0];
+  const badge = document.createElement('div');
+  badge.className = 'ts-hint';
+  badge.textContent = 'Drag modules to arrange';
+  state.field.appendChild(badge);
+  const fieldRect = state.field.getBoundingClientRect();
+  const rect = module.el.getBoundingClientRect();
+  const left = rect.left - fieldRect.left + rect.width / 2;
+  const top = rect.top - fieldRect.top - 32;
+  badge.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+  requestAnimationFrame(() => badge.classList.add('is-visible'));
+  setTimeout(() => {
+    badge.classList.remove('is-visible');
+    setTimeout(() => badge.remove(), 240);
+  }, 3200);
+  state.hintShown = true;
+  try { sessionStorage.setItem(SESSION_HINT_KEY, '1'); } catch (_) {}
 }
 
 function renderWorks() {
   const field = state.field;
   if (!field) return;
   field.innerHTML = '';
-  state.blocks = [];
-  state.blockMap.clear();
-  if (!works.length) {
-    const empty = document.createElement('p');
-    empty.className = 'ts-field-empty';
-    empty.textContent = 'No works yet.';
-    field.appendChild(empty);
-    return;
-  }
-  const fragment = document.createDocumentFragment();
+  state.modules = [];
+  state.nodes = [];
+  state.nodesById.clear();
+  state.clusterCenters.clear();
+  const seeds = computeSeeds(works.length);
   works.forEach((work, index) => {
-    const block = buildBlock(work, index);
-    state.blocks.push(block);
-    if (work.id != null) state.blockMap.set(Number(work.id), block);
-    fragment.appendChild(block.el);
+    const center = seeds[index] || { x: 180 + index * 40, y: 180 + index * 40 };
+    state.clusterCenters.set(work.id, center);
+    const titleModule = createModule(work, 'title');
+    field.appendChild(titleModule.el);
+    const titleNode = moduleToNode(titleModule, { center });
+    state.nodes.push(titleNode);
+    state.nodesById.set(titleNode.id, titleNode);
+    const chips = computeMetaChips(work);
+    chips.forEach((chip, chipIndex) => {
+      const metaModule = createModule(work, 'meta', { label: chip.label, key: chip.key || `meta-${chipIndex}` });
+      field.appendChild(metaModule.el);
+      const angle = (chipIndex / Math.max(1, chips.length)) * Math.PI * 2;
+      const offsetX = Math.cos(angle) * 96;
+      const offsetY = Math.sin(angle) * 72;
+      const node = moduleToNode(metaModule, { center, offsetX, offsetY });
+      state.nodes.push(node);
+      state.nodesById.set(node.id, node);
+    });
+    const actionModule = createModule(work, 'action');
+    field.appendChild(actionModule.el);
+    const actionNode = moduleToNode(actionModule, { center, offsetX: 110, offsetY: 40 });
+    state.nodes.push(actionNode);
+    state.nodesById.set(actionNode.id, actionNode);
+    const teaserModule = createModule(work, 'teaser');
+    field.appendChild(teaserModule.el);
+    const teaserNode = moduleToNode(teaserModule, { center, offsetX: -100, offsetY: 60 });
+    state.nodes.push(teaserNode);
+    state.nodesById.set(teaserNode.id, teaserNode);
   });
-  field.appendChild(fragment);
-  requestAnimationFrame(() => applyLayout());
+  initializeSimulation();
+  requestAnimationFrame(() => showHint());
 }
 
 function setupSiteBrand() {
@@ -1147,9 +1239,22 @@ function setupSiteBrand() {
         const a = document.createElement('a');
         a.href = link.href;
         a.textContent = link.label;
+        a.className = 'ts-nav-link';
         nav.appendChild(a);
       });
     }
+  }
+  const footerInfo = document.querySelector('[data-footer-info]');
+  if (footerInfo) {
+    const year = new Date().getFullYear();
+    const artist = site.fullName || site.copyrightName || 'Artist';
+    const brand = site.brand || site.title || PRAE.config?.meta?.title || 'Praetorius';
+    footerInfo.textContent = `© ${year} ${artist} · ${brand} · `;
+    const link = document.createElement('a');
+    link.href = PRAE.config?.site?.praetoriusHome || 'https://praetorius.club';
+    link.textContent = 'Praetorius';
+    link.className = 'ts-footer-badge';
+    footerInfo.appendChild(link);
   }
 }
 
@@ -1168,56 +1273,65 @@ function initThemeToggle() {
   });
 }
 
-function bindHelp() {
-  if (state.helpLink) {
-    state.helpLink.addEventListener('click', (event) => {
-      event.preventDefault();
-      toggleHelpOverlay();
-    });
-  }
-}
-
 function handleResize() {
-  applyLayout();
+  computeFieldSize();
+  if (state.simulation) {
+    state.simulation.alpha(0.2).restart();
+    setTimeout(() => state.simulation.alphaTarget(0), 500);
+  }
 }
 
-function hydrateInitialSettings() {
-  const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
-  if (media && typeof media.addEventListener === 'function') {
-    media.addEventListener('change', (event) => {
-      state.prefersReducedMotion = !!event.matches;
-      state.blocks.forEach((block) => {
-        if (event.matches) {
-          block.scatter = { x: 0, y: 0, r: 0 };
-        } else {
-          block.scatter = null;
-        }
-      });
-      applyLayout();
-    });
+function hydrateFromHash() {
+  const hash = location.hash.replace(/^#/, '');
+  if (!hash) return;
+  const params = new URLSearchParams(hash);
+  const workVal = params.get(HASH_WORK_KEY);
+  const workId = workVal != null ? Number(workVal) : null;
+  if (workId != null && !Number.isNaN(workId)) {
+    const module = state.modules.find((item) => Number(item.work.id) === Number(workId));
+    module?.el.focus({ preventScroll: true });
   }
-  const computedMeasure = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--measure'));
-  if (Number.isFinite(computedMeasure)) state.measure = computedMeasure;
-  applyTypeSettings();
+}
+
+function persistSelection(workId) {
+  const params = new URLSearchParams();
+  if (workId != null) params.set(HASH_WORK_KEY, String(workId));
+  const hash = params.toString();
+  history.replaceState(null, '', hash ? `#${hash}` : '#');
+}
+
+function onModuleFocus(event) {
+  const workId = Number(event.target?.dataset?.workId);
+  if (!Number.isNaN(workId)) persistSelection(workId);
 }
 
 ready(() => {
   state.field = document.getElementById('ts-field');
-  state.helpLink = document.getElementById('ts-help-toggle');
-  state.helpOverlay = document.getElementById('ts-help-overlay');
+  state.resetBtn = document.getElementById('ts-reset');
+  ensureFooter();
   setupSiteBrand();
   initThemeToggle();
-  bindHelp();
-  hydrateInitialSettings();
   praeApplyTheme(praeCurrentTheme(), { persist: false });
+  computeFieldSize();
   renderWorks();
   hydrateFromHash();
   ensureAudioTags();
+  state.resetBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    resetLayout();
+  });
   window.addEventListener('resize', handleResize);
-  document.addEventListener('keydown', handleKeydown);
-  window.addEventListener('hashchange', hydrateFromHash);
+  const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  media?.addEventListener('change', (event) => {
+    state.prefersReducedMotion = !!event.matches;
+    if (state.simulation) {
+      state.simulation.alpha(0.2).restart();
+      setTimeout(() => state.simulation.alphaTarget(0), 400);
+    }
+  });
 });
 
+window.addEventListener('hashchange', hydrateFromHash);
 window.addEventListener('message', (event) => {
   if (!event?.data || typeof event.data !== 'object') return;
   if (event.data.type === 'wc:pdf-ready') {
