@@ -397,7 +397,7 @@ function builtinSkinList() {
     'cards-tabs': 'portfolio dashboard (cards + tabs from works list)',
     'kiosk': 'touch-first tiles for demos/galleries (oversized controls)',
     'console': 'console view used for debugging + starter scaffolds',
-    'typefolio': 'typography-first layout (experimental)'
+    'typefolio': 'web-book reader (two-page spread, Caslon-style typography)'
   };
   return Object.entries(BUILTIN_SKINS).map(([key, meta]) => {
     const aliases = (meta.aliases && meta.aliases.length)
@@ -1598,6 +1598,7 @@ Supported skins:
   • docs-reader (alias: docs) — spacious docs UI (left nav, right outline, copy-on-code).
   • cards-tabs (alias: dashboard) — portfolio dashboard (cards + tabs from your works list).
   • kiosk (alias: presentation) — touch-first tiles for demos/galleries (oversized controls).
+  • typefolio (alias: typography) — web-book reader: light header/footer, two-page spread, Caslon-style typography; portfolio actions intact.
 Theme: light/dark via the built-in #wc-theme-toggle. No WAAPI.
 
 Examples:
@@ -1609,6 +1610,11 @@ Examples:
   $ prae generate --skin docs-reader
   $ prae generate --skin cards-tabs
   $ prae generate --skin kiosk
+  $ prae generate --skin typefolio
+
+  # Deep link the second spread of work ID 7:
+  # (0-based pageIndex if you used p)
+  …/#work=7&p=1
 
   # Tip: deep-link a work or tab in supported skins by URL hash
   # (actual hash keys depend on the skin; see README)

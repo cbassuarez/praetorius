@@ -8,36 +8,31 @@
 </head>
 <body class="prae-theme-light" data-theme="light">
   <header class="tf-header" role="banner">
-    <div class="tf-header-left">
+    <div class="tf-header-inner">
       <div class="tf-brand">
-        <span class="tf-title" data-site-title>Praetorius</span>
-        <span class="tf-subtitle" data-site-subtitle>Portfolio</span>
+        <span class="tf-site-title" data-site-title>Praetorius</span>
+        <span class="tf-site-subtitle" data-site-subtitle>Works</span>
       </div>
-      <nav id="prae-nav" class="tf-nav" aria-label="Site"></nav>
-    </div>
-    <div class="tf-header-right">
-      <button id="wc-theme-toggle" class="tf-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme" title="Toggle theme"></button>
+      <div class="tf-header-meta">
+        <span class="tf-current-work" data-current-work>Selected work</span>
+        <nav id="prae-nav" class="tf-nav" aria-label="Site"></nav>
+      </div>
+      <div class="tf-header-actions">
+        <button id="wc-theme-toggle" class="tf-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme" title="Toggle theme">Theme</button>
+        <button type="button" class="tf-toc-toggle" data-action="toc" aria-expanded="false">Table of Contents</button>
+      </div>
     </div>
   </header>
 
-  <div id="works-console" class="tf-shell" role="main">
-    <div class="tf-layout" aria-live="polite">
-      <aside id="tf-index" class="tf-index" aria-label="Works index"></aside>
-      <main id="tf-reader" class="tf-reader" aria-label="Reader" data-state="empty"></main>
-    </div>
-    <section id="tf-controls" class="tf-controls" aria-label="Type controls"></section>
-  </div>
+  <aside id="tf-toc" class="tf-toc" aria-label="Table of Contents" hidden></aside>
 
-  <div class="tf-backdrop" data-pdf-backdrop hidden></div>
-  <aside class="tf-pdfpane vb-pdfpane" aria-label="Score PDF" aria-hidden="true" role="dialog" aria-modal="true" hidden>
-    <header class="tf-pdfbar">
-      <div class="tf-pdf-title vb-pdf-title" aria-live="polite"></div>
-      <button type="button" class="tf-pdf-close vb-pdf-close" aria-label="Close PDF">✕</button>
-    </header>
-    <iframe class="tf-pdf-frame vb-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
-  </aside>
+  <section id="tf-controls" class="tf-controls" aria-label="Reader controls"></section>
 
-  <footer id="prae-footer" class="tf-footer" role="contentinfo"></footer>
+  <main id="tf-reader" class="tf-reader" aria-label="Book reader" data-pages="0" data-index="0"></main>
+
+  <section id="tf-actions" class="tf-actions" aria-label="Work actions"></section>
+
+  <footer id="tf-footer" class="tf-footer" role="contentinfo"></footer>
 
   <script type="module" src="./main.js" defer></script>
 </body>
