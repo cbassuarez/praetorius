@@ -1,3 +1,5 @@
+// HUD logic + Vite Breeze skin glue.
+// Edit HUD logic in: ui/skins/vite-breeze/main.js → emitted to dist/app.js
 // -------- Theme preboot (aligns with console) ----------
 (function bootTheme(){
   function setThemeClasses(eff){
@@ -75,13 +77,23 @@
   const PRAE  = (window.PRAE = window.PRAE || {});
   // --- HUD bootstrap: create immediately so it always exists
 const HUD_ID = 'wc-hud';
-let hudBox = document.getElementById(HUD_ID);
-if (!hudBox) {
-  hudBox = document.createElement('div');
-  hudBox.id = HUD_ID;
-  hudBox.className = 'wc-hud';
-  document.body.prepend(hudBox);           // visible even before shell binds
+let hudBox = null;
+function ensureHudRoot(){
+  let root = document.getElementById(HUD_ID);
+  if (!root) {
+    root = document.createElement('div');
+    root.id = HUD_ID;
+    root.className = 'wc-hud';
+    document.body.prepend(root);           // visible even before shell binds
+  } else {
+    root.id = HUD_ID;
+    root.classList.add('wc-hud');
+  }
+  root.setAttribute('data-component', 'prae-hud');
+  hudBox = root;
+  return root;
 }
+ensureHudRoot();
 
   const works = Array.isArray(PRAE.works) ? PRAE.works : [];
   const site  = (PRAE.config && PRAE.config.site) || {};
@@ -96,6 +108,54 @@ if (!hudBox) {
   // DOM refs are bound inside mount() so they exist when used
   let host, headerNav, footer, shell, pdfPane, pdfTitle, pdfClose, pdfFrame;
   let hudRefs = null;
+  /* HUD_SOURCE:app.js */
+  function ensureHudDom(){
+    const root = ensureHudRoot();
+    if (!root) return null;
+    if (root.dataset.hudBound === '1' && hudRefs) return hudRefs;
+    root.innerHTML = `
+      <div class="hud-left">
+        <div class="hud-title" data-part="title"></div>
+        <div class="hud-sub" data-part="subtitle"></div>
+      </div>
+      <div class="hud-meter" data-part="meter"><span></span></div>
+      <div class="hud-actions">
+        <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" data-icon="play"></button>
+      </div>`;
+    const title = root.querySelector('[data-part="title"]');
+    const sub   = root.querySelector('[data-part="subtitle"]');
+    const meter = root.querySelector('[data-part="meter"]');
+    const fill  = meter?.querySelector('span') || null;
+    const btn   = root.querySelector('[data-part="toggle"]');
+    hudRefs = { title, sub, fill, btn, meter, root };
+    root.dataset.hudBound = '1';
+    return hudRefs;
+  }
+  function hudSetSubtitle(text){ const r = ensureHudDom(); if (r?.sub) r.sub.textContent = String(text ?? ''); }
+  function hudSetPlaying(on){
+    const r = ensureHudDom();
+    if (!r?.btn) return;
+    r.btn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+    r.btn.dataset.icon = on ? 'pause' : 'play';
+  }
+  function hudSetProgress(ratio){
+    const r = ensureHudDom();
+    if (!r?.fill) return;
+    const pct = Math.max(0, Math.min(1, Number(ratio) || 0));
+    r.fill.style.width = `${pct * 100}%`;
+  }
+  function hudEnsure(){ const refs = ensureHudDom(); return refs?.root || ensureHudRoot(); }
+  function hudGetRoot(){ ensureHudRoot(); return hudBox; }
+  const hudApi = {
+    ensure: hudEnsure,
+    setSubtitle: hudSetSubtitle,
+    setPlaying: hudSetPlaying,
+    setProgress: hudSetProgress,
+    getRoot: hudGetRoot
+  };
+  PRAE.hud = Object.assign({}, PRAE.hud || {}, hudApi);
+  PRAE.hud.ensure();
+  hudBox = PRAE.hud.getRoot();
   const hudState = { last: { id:null, at:0 } };
   function bindDom(){
     host      = document.querySelector('#works-console');
@@ -160,7 +220,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   host.innerHTML = '';
   // Create HUD as a SIBLING before #works-console so list renders never remove it
   // HUD already exists from early bootstrap; just ensure internals + styles
-ensureHudDom();
+  PRAE.hud.ensure();
 
   works.forEach(w => {
     const cues = Array.isArray(w.cues) ? w.cues : [];
@@ -196,7 +256,7 @@ ensureHudDom();
 
   // ---------------- Interactions ----------------
   // HUD toggle
-  hudBox.addEventListener('click', (e)=>{
+  if (hudBox) hudBox.addEventListener('click', (e)=>{
     const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
     const now = getActiveAudioInfo();
     if (now.audio && !now.audio.paused){
@@ -503,39 +563,17 @@ pdfViewerReady = false;
     return { id:null, audio:null };
   }
 
-  function ensureHudDom(){
-    if (!hudBox) return null;
-    if (hudRefs) return hudRefs;
-    hudBox.innerHTML = `
-      <div class="hud-left">
-        <div class="hud-title"></div>
-        <div class="hud-sub"></div>
-      </div>
-      <div class="hud-meter"><span></span></div>
-      <div class="hud-actions">
-        <button class="hud-btn" type="button" data-hud="toggle" aria-label="Play" data-icon="play"></button>
-      </div>`;
-    const title = hudBox.querySelector('.hud-title');
-    const sub   = hudBox.querySelector('.hud-sub');
-    const fill  = hudBox.querySelector('.hud-meter > span');
-    const btn   = hudBox.querySelector('.hud-btn');
-    hudRefs = { title, sub, fill, btn };
-    return hudRefs;
-  }
-
   function hudUpdate(id, a){
     const r = ensureHudDom(); if (!r) return;
     const w   = findWorkById(id)?.data;
     const name= w ? w.title : '—';
     const dur = (a && Number.isFinite(a.duration)) ? formatTime(a.duration|0) : '--:--';
     const cur = (a && Number.isFinite(a.currentTime)) ? formatTime(a.currentTime|0) : '0:00';
-    const pct = (a && a.duration) ? Math.max(0, Math.min(100, (a.currentTime/a.duration)*100)) : 0;
+    const ratio = (a && a.duration) ? Math.max(0, Math.min(1, (a.currentTime||0) / Math.max(1, a.duration))) : 0;
     r.title.textContent = `Now playing — ${name}`;
-    r.sub.textContent   = `${cur} / ${dur} · vol:${Math.round(((a ? a.volume : 1)*100))} · speed:${(a ? a.playbackRate : 1).toFixed(2)}x`;
-    r.fill.style.width  = `${pct}%`;
-    const playing = (a && !a.paused);
-    r.btn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    r.btn.dataset.icon = playing ? 'pause' : 'play';
+    hudSetSubtitle(`${cur} / ${dur} · vol:${Math.round(((a ? a.volume : 1)*100))} · speed:${(a ? a.playbackRate : 1).toFixed(2)}x`);
+    hudSetProgress(ratio);
+    hudSetPlaying(!!(a && !a.paused));
   }
 
   function bindAudio(id){

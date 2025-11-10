@@ -1,3 +1,5 @@
+/* HUD styles live here. Edit HUD styles in: ui/skins/vite-breeze/style.css → emitted to dist/app.css */
+/* HUD_SOURCE:app.css */
 :root{
   --bg:#0e0f12; --panel:#14141b; --text:#f3f4f6; --muted:#a9afbb;
   --radius:12px; --gap:14px; --shadow:0 18px 50px rgba(0,0,0,.45);
@@ -152,96 +154,50 @@ a:hover{opacity:1}
 .vb-shell > .vb-pdfpane      { grid-column: 2; }
 
 /* HUD */
-#wc-hud{
-  display:flex; align-items:center; gap:10px; padding:8px 10px;
-  border:1px solid var(--line); border-radius:var(--radius);
-  background:var(--glass); -webkit-backdrop-filter:saturate(120%) blur(10px); backdrop-filter:saturate(120%) blur(10px);
-  margin-bottom:12px;
-}
-#wc-hud .meter{ flex:1; height:4px; background:var(--line); border-radius:999px; overflow:hidden }
-#wc-hud .meter > span{ display:block; height:100%; width:0 }
-#wc-hud .soft{ color:var(--muted) }
-#wc-hud .hud-actions .hud-btn{
-  padding:6px 10px; border-radius:8px; border:1px solid var(--chip-bd);
-  background:var(--chip-bg); color:var(--text); cursor:pointer;
-}
-#wc-hud .hud-actions .hud-btn:hover{ background:var(--chip-bg-h) }
-/* --- Fix: keep wc-hud visible and aligned --- */
-#works-console .wc-hud {
-  display: flex !important;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--glass, rgba(255,255,255,.04));
-  -webkit-backdrop-filter: saturate(120%) blur(10px);
-  backdrop-filter: saturate(120%) blur(10px);
-  margin-top: auto;
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-}
-#works-console .wc-hud .meter {
-  flex: 1;
-  height: 4px;
-  background: var(--line);
-  border-radius: 999px;
-  overflow: hidden;
-}
-#works-console .wc-hud .meter > span {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: var(--accent, #fff);
-  transition: width .2s linear;
-}
-#works-console .wc-hud:empty { display: none !important; }
-
-
-/* --- HUD visibility + grid placement fix --- */
-#wc-hud .meter{flex:1;height:4px;background:var(--line);border-radius:999px;overflow:hidden}
-#wc-hud .meter>span{display:block;height:100%;width:0;background:var(--accent,#fff);transition:width .2s linear}
-/* Put HUD and list in column 1; PDF pane in column 2 */
-.vb-shell > #wc-hud,
-.vb-shell > #works-console { grid-column: 1; }
-.vb-shell > .vb-pdfpane    { grid-column: 2; }
-
-/* HUD base styling */
-#wc-hud{
-  display:flex; align-items:center; gap:10px; padding:8px 10px;
-  border:1px solid var(--line); border-radius:var(--radius);
+#wc-hud[data-component="prae-hud"]{
+  outline:1px solid transparent; /* HUD_SOURCE:app.css */
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 10px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
   background:var(--glass);
-  -webkit-backdrop-filter:saturate(120%) blur(10px); backdrop-filter:saturate(120%) blur(10px);
+  -webkit-backdrop-filter:saturate(120%) blur(10px);
+  backdrop-filter:saturate(120%) blur(10px);
   margin:0 0 12px;
 }
-#wc-hud .meter{ flex:1; height:4px; background:var(--line); border-radius:999px; overflow:hidden }
-#wc-hud .meter > span{ display:block; height:100%; width:0; background:var(--accent) }
-#wc-hud .soft{ color:var(--muted) }
-#wc-hud .hud-actions .hud-btn{
-  padding:6px 10px; border-radius:8px; border:1px solid var(--chip-bd);
-  background:var(--chip-bg); color:var(--text); cursor:pointer;
+#wc-hud[data-component="prae-hud"] .hud-meter,
+#wc-hud[data-component="prae-hud"] [data-part="meter"]{
+  flex:1;
+  height:4px;
+  background:var(--line);
+  border-radius:999px;
+  overflow:hidden;
 }
-#wc-hud .hud-actions .hud-btn:hover{ background:var(--chip-bg-h) }
-
-
-/* --- HUD visibility + meter fix (Prae HUD Fixer) --- */
-/* Canonical HUD (static, above works list) */
-.vb-shell > #wc-hud { grid-column: 1; }
-
-#wc-hud{
-  position: static;
-  inset: auto;
-  left: auto; right: auto; top: auto; bottom: auto;
-  transform: none;
-  width: auto;
-  margin: 0 0 12px;
-  z-index: 10;
-
-  display:flex; align-items:center; gap:10px; padding:8px 10px;
-  border:1px solid var(--line); border-radius:var(--radius);
-  background:var(--glass);
-  -webkit-backdrop-filter:saturate(120%) blur(10px); backdrop-filter:saturate(120%) blur(10px);
+#wc-hud[data-component="prae-hud"] .hud-meter > span,
+#wc-hud[data-component="prae-hud"] [data-part="meter"] > span{
+  display:block;
+  height:100%;
+  width:0;
+  background:var(--accent,#fff);
+  transition:width .2s linear;
 }
-#wc-hud .meter{ flex:1; height:4px; background:var(--line); border-radius:999px; overflow:hidden }
-#wc-hud .meter > span{ display:block; height:100%; width:0; background:var(--accent,#fff); transition: width .2s linear }
+#wc-hud[data-component="prae-hud"] .hud-sub,
+#wc-hud[data-component="prae-hud"] [data-part="subtitle"]{
+  color:var(--muted);
+}
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn,
+#wc-hud[data-component="prae-hud"] [data-part="toggle"]{
+  padding:6px 10px;
+  border-radius:8px;
+  border:1px solid var(--chip-bd);
+  background:var(--chip-bg);
+  color:var(--text);
+  cursor:pointer;
+}
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn:hover,
+#wc-hud[data-component="prae-hud"] [data-part="toggle"]:hover{
+  background:var(--chip-bg-h);
+}
+#wc-hud[data-component="prae-hud"]:empty{ display:none !important; }
