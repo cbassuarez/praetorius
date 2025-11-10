@@ -1,3 +1,5 @@
+// HUD logic + Vite Breeze skin glue.
+// Edit HUD logic in: ui/skins/vite-breeze/main.js → emitted to dist/app.js
 // -------- Theme preboot (aligns with console) ----------
 (function bootTheme(){
   function setThemeClasses(eff){
@@ -74,14 +76,30 @@
 
   const PRAE  = (window.PRAE = window.PRAE || {});
   // --- HUD bootstrap: create immediately so it always exists
-const HUD_ID = 'wc-hud';
-let hudBox = document.getElementById(HUD_ID);
-if (!hudBox) {
-  hudBox = document.createElement('div');
-  hudBox.id = HUD_ID;
-  hudBox.className = 'wc-hud';
-  document.body.prepend(hudBox);           // visible even before shell binds
+const HUD_IDS = ['wc-hud', 'vb-hud'];
+const HUD_ICONS = {
+  play:  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7-11-7z" fill="currentColor"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>'
+};
+let hudBox = null;
+function ensureHudRoot(){
+  let root = null;
+  for (const id of HUD_IDS) {
+    const found = document.getElementById(id);
+    if (found) { root = found; break; }
+  }
+  if (!root) {
+    root = document.createElement('div');
+    root.id = HUD_IDS[0];
+    document.body.prepend(root);           // visible even before shell binds
+  }
+  root.classList.add('wc-hud');
+  root.setAttribute('data-component', 'prae-hud');
+  if (!root.hasAttribute('aria-hidden')) root.setAttribute('aria-hidden', 'true');
+  hudBox = root;
+  return root;
 }
+ensureHudRoot();
 
   const works = Array.isArray(PRAE.works) ? PRAE.works : [];
   const site  = (PRAE.config && PRAE.config.site) || {};
@@ -96,7 +114,80 @@ if (!hudBox) {
   // DOM refs are bound inside mount() so they exist when used
   let host, headerNav, footer, shell, pdfPane, pdfTitle, pdfClose, pdfFrame;
   let hudRefs = null;
-  const hudState = { last: { id:null, at:0 } };
+  /* HUD_SOURCE:app.js */
+  function ensureHudDom(){
+    const root = ensureHudRoot();
+    if (!root) return null;
+    if (root.dataset.hudBound === '1' && hudRefs) return hudRefs;
+    root.innerHTML = `
+      <div class="hud-left">
+        <div class="hud-title" data-part="title"></div>
+        <div class="hud-sub" data-part="subtitle"></div>
+      </div>
+      <div class="hud-meter" data-part="meter"><span></span></div>
+      <div class="hud-actions">
+        <button class="hud-btn" id="hud-toggle" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" aria-pressed="false">${HUD_ICONS.play}</button>
+      </div>`;
+    const title = root.querySelector('[data-part="title"]');
+    const sub   = root.querySelector('[data-part="subtitle"]');
+    const meter = root.querySelector('[data-part="meter"]');
+    const fill  = meter?.querySelector('span') || null;
+    const btn   = root.querySelector('[data-part="toggle"]');
+    hudRefs = { title, sub, fill, btn, meter, root };
+    root.dataset.hudBound = '1';
+    root.classList.remove('is-active');
+    root.setAttribute('aria-hidden', 'true');
+    if (btn) {
+      btn.dataset.state = 'paused';
+    }
+    return hudRefs;
+  }
+  function updateHudButtonState(playing, opts){
+    const options = opts || {};
+    const refs = ensureHudDom();
+    if (!refs?.btn) return;
+    const btn = refs.btn;
+    const root = refs.root;
+    const isPlaying = !!playing;
+    const icon = HUD_ICONS[isPlaying ? 'pause' : 'play'];
+    if (btn.innerHTML !== icon) btn.innerHTML = icon;
+    btn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+    btn.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
+    btn.dataset.state = isPlaying ? 'playing' : 'paused';
+    if (options.flash && isPlaying) {
+      btn.classList.remove('hud-btn-flash');
+      // Force reflow so the flash class retriggers the CSS animation.
+      void btn.offsetWidth;
+      btn.classList.add('hud-btn-flash');
+    }
+    if (!isPlaying) btn.classList.remove('hud-btn-flash');
+    if (options.applyRoot && root) {
+      root.classList.toggle('is-active', isPlaying);
+      root.setAttribute('aria-hidden', isPlaying ? 'false' : 'true');
+    }
+  }
+  function hudSetSubtitle(text){ const r = ensureHudDom(); if (r?.sub) r.sub.textContent = String(text ?? ''); }
+  function hudSetPlaying(on){
+    updateHudButtonState(on);
+  }
+  function hudSetProgress(ratio){
+    const r = ensureHudDom();
+    if (!r?.fill) return;
+    const pct = Math.max(0, Math.min(1, Number(ratio) || 0));
+    r.fill.style.width = `${pct * 100}%`;
+  }
+  function hudEnsure(){ const refs = ensureHudDom(); return refs?.root || ensureHudRoot(); }
+  function hudGetRoot(){ ensureHudRoot(); return hudBox; }
+  const hudApi = {
+    ensure: hudEnsure,
+    setSubtitle: hudSetSubtitle,
+    setPlaying: hudSetPlaying,
+    setProgress: hudSetProgress,
+    getRoot: hudGetRoot
+  };
+  PRAE.hud = Object.assign({}, PRAE.hud || {}, hudApi);
+  PRAE.hud.ensure();
+  hudBox = PRAE.hud.getRoot();
   function bindDom(){
     host      = document.querySelector('#works-console');
     headerNav = document.getElementById('prae-nav');
@@ -160,7 +251,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   host.innerHTML = '';
   // Create HUD as a SIBLING before #works-console so list renders never remove it
   // HUD already exists from early bootstrap; just ensure internals + styles
-ensureHudDom();
+  PRAE.hud.ensure();
 
   works.forEach(w => {
     const cues = Array.isArray(w.cues) ? w.cues : [];
@@ -195,19 +286,6 @@ ensureHudDom();
   });
 
   // ---------------- Interactions ----------------
-  // HUD toggle
-  hudBox.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
-    const now = getActiveAudioInfo();
-    if (now.audio && !now.audio.paused){
-      hudState.last = { id: now.id, at: now.audio.currentTime||0 };
-      now.audio.pause();
-      hudUpdate(now.id, now.audio);
-      return;
-    }
-    const id = hudState.last.id || (works[0] && works[0].id); if (!id) return;
-    playAt(id, hudState.last.at||0);
-  });
   host.addEventListener('click', (e)=>{
     const btn = e.target.closest('button, a');
     if (!btn) return;
@@ -495,47 +573,17 @@ pdfViewerReady = false;
     onTick();
   }
     // ---- HUD helpers ----
-  function getActiveAudioInfo(){
-    for (const w of works){
-      const a = document.getElementById('wc-a'+w.id);
-      if (a && !a.paused && !a.ended) return { id:w.id, audio:a };
-    }
-    return { id:null, audio:null };
-  }
-
-  function ensureHudDom(){
-    if (!hudBox) return null;
-    if (hudRefs) return hudRefs;
-    hudBox.innerHTML = `
-      <div class="hud-left">
-        <div class="hud-title"></div>
-        <div class="hud-sub"></div>
-      </div>
-      <div class="hud-meter"><span></span></div>
-      <div class="hud-actions">
-        <button class="hud-btn" type="button" data-hud="toggle" aria-label="Play" data-icon="play"></button>
-      </div>`;
-    const title = hudBox.querySelector('.hud-title');
-    const sub   = hudBox.querySelector('.hud-sub');
-    const fill  = hudBox.querySelector('.hud-meter > span');
-    const btn   = hudBox.querySelector('.hud-btn');
-    hudRefs = { title, sub, fill, btn };
-    return hudRefs;
-  }
-
   function hudUpdate(id, a){
     const r = ensureHudDom(); if (!r) return;
     const w   = findWorkById(id)?.data;
     const name= w ? w.title : '—';
     const dur = (a && Number.isFinite(a.duration)) ? formatTime(a.duration|0) : '--:--';
     const cur = (a && Number.isFinite(a.currentTime)) ? formatTime(a.currentTime|0) : '0:00';
-    const pct = (a && a.duration) ? Math.max(0, Math.min(100, (a.currentTime/a.duration)*100)) : 0;
+    const ratio = (a && a.duration) ? Math.max(0, Math.min(1, (a.currentTime||0) / Math.max(1, a.duration))) : 0;
     r.title.textContent = `Now playing — ${name}`;
-    r.sub.textContent   = `${cur} / ${dur} · vol:${Math.round(((a ? a.volume : 1)*100))} · speed:${(a ? a.playbackRate : 1).toFixed(2)}x`;
-    r.fill.style.width  = `${pct}%`;
-    const playing = (a && !a.paused);
-    r.btn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    r.btn.dataset.icon = playing ? 'pause' : 'play';
+    hudSetSubtitle(`${cur} / ${dur} · vol:${Math.round(((a ? a.volume : 1)*100))} · speed:${(a ? a.playbackRate : 1).toFixed(2)}x`);
+    hudSetProgress(ratio);
+    hudSetPlaying(!!(a && !a.paused));
   }
 
   function bindAudio(id){
@@ -567,7 +615,102 @@ pdfViewerReady = false;
     document.head.appendChild(s);
   }
 
-  
+  function setupHudPlaybackController(){
+    if (setupHudPlaybackController._ran) return;
+    setupHudPlaybackController._ran = true;
+    const wired = new WeakSet();
+    const players = new Set();
+
+    const refs = ensureHudDom();
+    if (!refs?.btn || !refs.root) return;
+    const toggleBtn = refs.btn;
+
+    if (!toggleBtn.id) toggleBtn.id = 'hud-toggle';
+
+    function prunePlayers(){
+      for (const el of Array.from(players)) {
+        if (!el || !el.isConnected) players.delete(el);
+      }
+    }
+
+    function isPlaying(el){
+      try {
+        return !!(el && !el.paused && !el.ended);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function anyPlaying(){
+      prunePlayers();
+      for (const el of players) {
+        if (isPlaying(el)) return true;
+      }
+      return false;
+    }
+
+    function refreshState(options){
+      const playing = anyPlaying();
+      updateHudButtonState(playing, { applyRoot:true, flash: options?.flash });
+    }
+
+    function wire(el){
+      if (!el || wired.has(el)) return;
+      wired.add(el);
+      players.add(el);
+      const update = ()=> refreshState();
+      const updateWithFlash = ()=> refreshState({ flash:true });
+      const events = ['playing','pause','ended','abort','emptied','suspend','stalled','waiting','seeked'];
+      events.forEach(ev => el.addEventListener(ev, update, { passive:true }));
+      el.addEventListener('play', updateWithFlash, { passive:true });
+      el.addEventListener('timeupdate', update, { passive:true });
+      el.addEventListener('volumechange', update, { passive:true });
+      el.addEventListener('ratechange', update, { passive:true });
+    }
+
+    function scan(){
+      document.querySelectorAll('audio, video').forEach(node => {
+        wire(node);
+        players.add(node);
+      });
+      refreshState();
+    }
+
+    toggleBtn.addEventListener('click', (event)=>{
+      event.preventDefault();
+      prunePlayers();
+      const ordered = Array.from(players).filter(el => el && el.isConnected);
+      const target = ordered.find(el => !el.muted && !el.defaultMuted) || ordered[0];
+      if (!target) return;
+      if (isPlaying(target)) {
+        target.pause();
+      } else {
+        try {
+          const p = target.play();
+          if (p && typeof p.catch === 'function') p.catch(()=>{});
+        } catch (_) {}
+      }
+    });
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', scan, { once:true });
+    } else {
+      scan();
+    }
+
+    const observer = new MutationObserver((records)=>{
+      for (const rec of records) {
+        if (rec.addedNodes.length || rec.removedNodes.length) {
+          scan();
+          break;
+        }
+      }
+    });
+    observer.observe(document.documentElement, { childList:true, subtree:true });
+  }
+  ready(setupHudPlaybackController);
+
+
   function flash(el, text){
     try{
       const n = document.createElement('span');
