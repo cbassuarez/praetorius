@@ -247,3 +247,60 @@ a:hover{opacity:1}
 #wc-hud .soft{color:var(--muted)}
 #wc-hud .hud-actions .hud-btn{padding:6px 10px;border-radius:8px;border:1px solid var(--chip-bd);background:var(--chip-bg);color:var(--text);cursor:pointer}
 #wc-hud .hud-actions .hud-btn:hover{background:var(--chip-bg-h)}
+
+//* Style the existing backend HUD as vite-breeze glass deck */
+#wc-hud {
+  position: sticky;
+  bottom: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  padding: 12px clamp(14px, 2.4vw, 24px);
+  background: var(--glass);
+  border-top: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) 0 0;
+  -webkit-backdrop-filter: saturate(120%) blur(12px);
+  backdrop-filter: saturate(120%) blur(12px);
+  box-shadow: inset 0 1px rgba(255,255,255,.05), 0 -8px 32px rgba(0,0,0,.45);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#wc-hud .tag {
+  font-weight: 600;
+  font-size: 15px;
+}
+#wc-hud .hud-time,
+#wc-hud .soft {
+  font-size: 13px;
+  color: var(--muted);
+  opacity: .85;
+}
+#wc-hud .meter {
+  flex: 1;
+  height: 5px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  min-width: 120px;
+}
+#wc-hud .meter > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width .25s linear;
+}
+#wc-hud .hud-actions .hud-btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--chip-bd);
+  background: var(--chip-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+#wc-hud .hud-actions .hud-btn:hover {
+  background: var(--chip-bg-h);
+  transform: translateY(-1px);
+}
+
