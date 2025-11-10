@@ -543,3 +543,137 @@ a:hover{opacity:1}
   #wc-hud .hud-actions { order: 2; margin-left: auto; }
   #wc-hud .tag { flex: 1 1 100%; }
 }
+/* --- Praetorius Glass Deck v3 (modern layout, no JS change) --- */
+#wc-hud {
+  all: unset;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "left meter right";
+  align-items: center;
+  gap: clamp(14px, 3vw, 24px);
+  padding: 18px clamp(24px, 5vw, 42px);
+  background: var(--glass-hi);
+  border-top: 1px solid rgba(255,255,255,.18);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: 0 -8px 32px rgba(0,0,0,.6);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  transition: transform .25s ease, box-shadow .3s ease, background .3s ease;
+}
+#wc-hud:hover { transform: translateY(-4px); }
+
+/* Left cluster (song + time info) */
+#wc-hud .tag,
+#wc-hud .hud-time,
+#wc-hud .hud-vol,
+#wc-hud .hud-speed {
+  display: inline-block;
+  margin-right: 12px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+#wc-hud .tag {
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+#wc-hud .hud-time {
+  color: var(--accent);
+  font-weight: 500;
+}
+#wc-hud .soft {
+  color: var(--muted);
+  opacity: .85;
+}
+#wc-hud .hud-vol::before { content: "• "; opacity: .4; }
+#wc-hud .hud-speed::before { content: "• "; opacity: .4; }
+
+/* Middle meter */
+#wc-hud .meter {
+  grid-area: meter;
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+  position: relative;
+}
+#wc-hud .meter > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent, #fff);
+  box-shadow: 0 0 12px rgba(255,255,255,.6);
+  transition: width .3s ease-out;
+}
+
+/* Right: action button only */
+#wc-hud .hud-actions {
+  grid-area: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+#wc-hud .hud-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.2);
+  background: radial-gradient(circle at 30% 30%,
+    rgba(255,255,255,.22),
+    rgba(255,255,255,.06));
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.4),
+    0 4px 12px rgba(0,0,0,.45);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .25s ease, background .25s ease;
+}
+#wc-hud .hud-btn:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.5),
+    0 8px 20px rgba(0,0,0,.6);
+}
+#wc-hud .hud-btn:active { transform: translateY(1px) scale(.95); }
+
+/* Replace PLAY/PAUSE text with icons only */
+#wc-hud .hud-btn {
+  font-size: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 40%;
+}
+#wc-hud .hud-btn:before {
+  content: "";
+  display: block;
+  width: 14px; height: 14px;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  background: var(--text);
+  opacity: .9;
+  transition: opacity .2s ease;
+}
+/* SVG-like masks */
+#wc-hud .hud-btn:before {
+  mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' fill='white' viewBox='0 0 16 16'><polygon points='3,2 13,8 3,14'/></svg>");
+}
+#wc-hud .hud-btn.paused:before {
+  mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' fill='white' viewBox='0 0 16 16'><rect x='3' y='2' width='3' height='12'/><rect x='10' y='2' width='3' height='12'/></svg>");
+}
+#wc-hud .hud-btn:hover:before { opacity: 1; }
+
+/* Responsive */
+@media (max-width: 640px) {
+  #wc-hud { grid-template-columns: 1fr auto; grid-template-areas: "left right" "meter meter"; row-gap: 10px; padding: 14px 18px; }
+  #wc-hud .meter { order: 3; width: 100%; }
+  #wc-hud .hud-actions { order: 2; margin-left: auto; }
+}
