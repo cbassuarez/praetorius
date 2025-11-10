@@ -20,6 +20,30 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+@keyframes praeDitherDrift {
+  0% {
+    background-position: 0% 0%, 100% 100%, 42% 58%;
+  }
+  50% {
+    background-position: 18% -14%, 82% 122%, 48% 52%;
+  }
+  100% {
+    background-position: 0% 0%, 100% 100%, 42% 58%;
+  }
+}
+
+@keyframes praeDitherTile {
+  0% {
+    background-position: 0% 0%, 100% 100%;
+  }
+  50% {
+    background-position: 14% -12%, 84% 118%;
+  }
+  100% {
+    background-position: 0% 0%, 100% 100%;
+  }
+}
+
 ::selection {
   background: color-mix(in srgb, var(--prae-color-accent) 22%, transparent);
   color: var(--prae-color-ink-strong);
@@ -117,9 +141,16 @@ a:focus-visible {
   --prae-glass-sheen-angle: 130deg;
   --prae-glass-sheen-intensity: 0.45;
   --prae-glass-sheen-opacity: 0.5;
-  --prae-glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
-  --prae-glass-noise-strength: 0.18;
-  --prae-glass-noise-strength-hover: 0.4;
+  --prae-glass-noise: linear-gradient(135deg,
+      color-mix(in srgb, var(--prae-color-glint) 42%, transparent) 0 1px,
+      transparent 1px 5px),
+    linear-gradient(-135deg,
+      color-mix(in srgb, var(--prae-color-border) 38%, transparent) 0 1px,
+      transparent 1px 6px);
+  --prae-glass-noise-size: 18px 18px, 24px 24px;
+  --prae-glass-noise-strength: 0.16;
+  --prae-glass-noise-strength-hover: 0.38;
+  --prae-glass-noise-speed: 11s;
   --prae-shadow-ambient: 0 38px 80px -40px rgba(46, 76, 132, 0.26);
   --prae-shadow-key: 0 24px 56px -32px rgba(46, 76, 132, 0.3);
   --prae-shadow-lifted: 0 16px 30px -22px rgba(46, 76, 132, 0.32);
@@ -152,8 +183,10 @@ body.prae-theme-light {
   --prae-glass-fill-2: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(214, 230, 255, 0.52) 100%);
   --prae-glass-fallback: rgba(255, 255, 255, 0.92);
   --prae-glass-sheen-opacity: 0.5;
-  --prae-glass-noise-strength: 0.18;
-  --prae-glass-noise-strength-hover: 0.4;
+  --prae-glass-noise-size: 18px 18px, 24px 24px;
+  --prae-glass-noise-strength: 0.16;
+  --prae-glass-noise-strength-hover: 0.38;
+  --prae-glass-noise-speed: 11s;
   --prae-shadow-ambient: 0 38px 80px -40px rgba(46, 76, 132, 0.26);
   --prae-shadow-key: 0 24px 56px -32px rgba(46, 76, 132, 0.3);
   --prae-shadow-lifted: 0 16px 30px -22px rgba(46, 76, 132, 0.32);
@@ -184,8 +217,10 @@ body.prae-theme-dark {
   --prae-glass-fill-2: linear-gradient(180deg, rgba(40, 58, 95, 0.26) 0%, rgba(10, 16, 27, 0.84) 100%);
   --prae-glass-fallback: rgba(14, 19, 30, 0.9);
   --prae-glass-sheen-opacity: 0.38;
+  --prae-glass-noise-size: 16px 16px, 22px 22px;
   --prae-glass-noise-strength: 0.22;
-  --prae-glass-noise-strength-hover: 0.48;
+  --prae-glass-noise-strength-hover: 0.45;
+  --prae-glass-noise-speed: 13s;
   --prae-shadow-ambient: 0 50px 110px -56px rgba(3, 8, 20, 0.78);
   --prae-shadow-key: 0 36px 72px -48px rgba(10, 18, 32, 0.68);
   --prae-shadow-lifted: 0 18px 40px -24px rgba(12, 20, 36, 0.62);
@@ -206,6 +241,14 @@ body.prae-theme-dark {
     animation-iteration-count: 1 !important;
     transition-duration: 0ms !important;
     background-attachment: scroll;
+  }
+  .vb-header::after,
+  #wc-hud[data-component="prae-hud"]::after {
+    animation: none !important;
+  }
+  #works-console .wc-frame::after,
+  #works-console .wc-input::after {
+    animation: none !important;
   }
 }
 
@@ -266,23 +309,35 @@ main.vb-shell,
 .vb-header::after {
   content: "";
   position: absolute;
-  inset: -40% -30% auto;
+  inset: -36% -26% auto;
   height: 140%;
   pointer-events: none;
-  background: conic-gradient(from var(--prae-glass-sheen-angle),
-      rgba(255, 255, 255, var(--prae-glass-sheen-intensity)) 0deg,
-      rgba(255, 255, 255, 0) 120deg,
-      rgba(255, 255, 255, var(--prae-glass-sheen-intensity)) 240deg,
-      rgba(255, 255, 255, 0) 360deg);
+  background-image:
+    var(--prae-glass-noise),
+    linear-gradient(120deg,
+      rgba(255, 255, 255, 0.28) 0%,
+      rgba(255, 255, 255, 0.07) 55%,
+      rgba(255, 255, 255, 0.34) 100%);
+  background-size:
+    var(--prae-glass-noise-size),
+    240% 240%;
+  background-position:
+    0% 0%,
+    100% 100%,
+    42% 58%;
+  background-repeat: repeat, no-repeat;
+  background-blend-mode: soft-light, screen;
   mix-blend-mode: screen;
-  opacity: 0;
+  opacity: var(--prae-glass-noise-strength);
   transform: translate3d(-15%, -10%, 0);
+  animation: praeDitherDrift var(--prae-glass-noise-speed) linear infinite;
   transition: opacity var(--prae-motion-duration-md) var(--prae-motion-ease-fluid),
               transform var(--prae-motion-duration-lg) var(--prae-motion-ease-glide);
 }
 
-.vb-header:hover::after {
-  opacity: var(--prae-glass-sheen-opacity);
+.vb-header:hover::after,
+.vb-header:focus-within::after {
+  opacity: var(--prae-glass-noise-strength-hover);
   transform: translate3d(-5%, -2%, 0);
 }
 
@@ -299,7 +354,12 @@ main.vb-shell,
   }
 }
 
-.vb-brand { min-width: 0; display: grid; gap: 0.25rem; }
+.vb-brand {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+  padding-inline: clamp(0.75rem, 0.55rem + 0.9vw, 1.6rem);
+}
 .vb-title {
   font-family: var(--prae-font-heading);
   font-size: var(--prae-font-size-xl);
@@ -450,9 +510,14 @@ main.vb-shell,
       rgba(255, 255, 255, 0.24) 0%,
       rgba(255, 255, 255, 0.06) 55%,
       rgba(255, 255, 255, 0.32) 100%);
-  background-size: 220px 220px, 200% 200%;
+  background-size:
+    var(--prae-glass-noise-size),
+    220% 220%;
   background-repeat: repeat, no-repeat;
-  background-position: center center, 42% 58%;
+  background-position:
+    0% 0%,
+    100% 100%,
+    42% 58%;
   background-blend-mode: soft-light, screen;
   mix-blend-mode: screen;
   opacity: var(--prae-glass-noise-strength);
@@ -460,6 +525,7 @@ main.vb-shell,
               background-position var(--prae-motion-duration-lg) var(--prae-motion-ease-glide),
               transform var(--prae-motion-duration-lg) var(--prae-motion-ease-glide);
   transform: translate3d(0, 0, 0);
+  animation: praeDitherDrift var(--prae-glass-noise-speed) linear infinite;
 }
 
 .work:hover {
@@ -470,15 +536,23 @@ main.vb-shell,
 
 .work:hover::after {
   opacity: var(--prae-glass-noise-strength-hover);
-  background-position: center center, 55% 45%;
+  background-position:
+    12% -8%,
+    86% 118%,
+    55% 45%;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .work::after {
     transition: opacity var(--prae-motion-duration-md) var(--prae-motion-ease-fluid);
+    animation: none;
   }
   .work:hover::after {
-    background-position: center center, 60% 40%;
+    background-position:
+      0% 0%,
+      100% 100%,
+      52% 48%;
+    animation-play-state: paused;
   }
 }
 .work.playing { border-color: color-mix(in srgb, var(--prae-color-success) 45%, var(--prae-color-border)); }
@@ -793,20 +867,34 @@ main.vb-shell,
 #wc-hud[data-component="prae-hud"]::after {
   content: "";
   position: absolute;
-  inset: -40% -20% auto;
-  height: 160%;
+  inset: -42% -24% auto;
+  height: 170%;
   pointer-events: none;
-  background: conic-gradient(from var(--prae-glass-sheen-angle),
-      rgba(255, 255, 255, var(--prae-glass-sheen-intensity)) 0deg,
-      rgba(255, 255, 255, 0) 150deg,
-      rgba(255, 255, 255, var(--prae-glass-sheen-intensity)) 280deg,
-      rgba(255, 255, 255, 0) 360deg);
+  background-image:
+    var(--prae-glass-noise),
+    linear-gradient(118deg,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0.05) 55%,
+      rgba(255, 255, 255, 0.3) 100%);
+  background-size:
+    var(--prae-glass-noise-size),
+    240% 240%;
+  background-position:
+    0% 0%,
+    100% 100%,
+    42% 58%;
+  background-repeat: repeat, no-repeat;
+  background-blend-mode: soft-light, screen;
   mix-blend-mode: screen;
-  opacity: 0;
+  opacity: var(--prae-glass-noise-strength);
+  animation: praeDitherDrift var(--prae-glass-noise-speed) linear infinite;
   transition: opacity var(--prae-motion-duration-md) var(--prae-motion-ease-fluid);
 }
 
-#wc-hud[data-component="prae-hud"]:hover::after { opacity: var(--prae-glass-sheen-opacity); }
+#wc-hud[data-component="prae-hud"]:hover::after,
+#wc-hud[data-component="prae-hud"]:focus-within::after {
+  opacity: var(--prae-glass-noise-strength-hover);
+}
 
 #wc-hud[data-component="prae-hud"] .hud-meter,
 #wc-hud[data-component="prae-hud"] [data-part="meter"] {
@@ -937,9 +1025,11 @@ main.vb-shell,
   border-radius: inherit;
   pointer-events: none;
   background-image: var(--prae-glass-noise);
-  background-size: 200px 200px;
+  background-size: var(--prae-glass-noise-size);
+  background-position: 0% 0%, 100% 100%;
   mix-blend-mode: soft-light;
   opacity: calc(var(--prae-glass-noise-strength) * 0.6);
+  animation: praeDitherTile calc(var(--prae-glass-noise-speed) * 1.2) linear infinite;
 }
 
 #works-console .wc-output {
@@ -962,9 +1052,11 @@ main.vb-shell,
   inset: 0;
   pointer-events: none;
   background-image: var(--prae-glass-noise);
-  background-size: 200px 200px;
+  background-size: var(--prae-glass-noise-size);
+  background-position: 0% 0%, 100% 100%;
   mix-blend-mode: soft-light;
   opacity: calc(var(--prae-glass-noise-strength) * 0.55);
+  animation: praeDitherTile calc(var(--prae-glass-noise-speed) * 1.35) linear infinite;
 }
 
 #works-console .btn {
