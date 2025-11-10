@@ -383,6 +383,52 @@ body[data-theme="light"] .docs-header {
   margin: 0;
 }
 
+.docs-hero-highlights {
+  margin-top: var(--gap-lg);
+  padding: var(--gap-md);
+  border-radius: var(--radius-md);
+  background: rgba(90, 125, 255, 0.12);
+  border: 1px solid rgba(90, 125, 255, 0.18);
+  display: grid;
+  gap: var(--gap-sm);
+}
+
+.docs-hero-highlights h2 {
+  margin: 0;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.docs-hero-highlights ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--gap-sm);
+}
+
+.docs-hero-highlights li {
+  margin: 0;
+  padding: var(--gap-sm);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.docs-hero-highlights li strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+
+.docs-hero-highlights li p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .docs-section h2,
 .docs-section h3 {
   position: relative;

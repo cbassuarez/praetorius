@@ -1,4 +1,4 @@
-const NAV_DATA = [
+const DEFAULT_NAV_DATA = [
   {
     id: 'start',
     label: 'Getting started',
@@ -18,12 +18,27 @@ const NAV_DATA = [
 ];
 
 const NAV_STATE_KEY = 'docs-reader.nav.state';
-const SEARCH_INDEX = NAV_DATA.flatMap(group => group.items.map(item => ({
-  title: item.label,
-  url: item.href,
-  snippet: item.snippet,
-  group: group.label
-})));
+function readDocsData() {
+  const script = document.getElementById('prae-docs-data');
+  if (!script) return {};
+  try {
+    const text = script.textContent || '';
+    return text ? JSON.parse(text) : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+const DOCS_DATA = readDocsData();
+const NAV_DATA = Array.isArray(DOCS_DATA.nav) && DOCS_DATA.nav.length ? DOCS_DATA.nav : DEFAULT_NAV_DATA;
+const SEARCH_INDEX = Array.isArray(DOCS_DATA.search) && DOCS_DATA.search.length
+  ? DOCS_DATA.search
+  : DEFAULT_NAV_DATA.flatMap(group => group.items.map(item => ({
+      title: item.label,
+      url: item.href,
+      snippet: item.snippet,
+      group: group.label
+    })));
 
 function ready(fn) {
   if (document.readyState === 'loading') {
@@ -174,6 +189,84 @@ function copyToClipboard(text) {
     document.body.removeChild(textarea);
     return Promise.resolve(ok);
   }
+}
+
+function applySiteChrome(site) {
+  const title = site?.title || 'Praetorius Docs';
+  const subtitle = site?.subtitle || '';
+  document.title = subtitle ? `${title} — ${subtitle}` : title;
+  document.querySelectorAll('[data-site-title]').forEach((el) => { el.textContent = title; });
+  document.querySelectorAll('[data-site-subtitle]').forEach((el) => { el.textContent = subtitle; });
+  if (site?.accent) {
+    document.documentElement.style.setProperty('--prae-color-accent', site.accent);
+  }
+}
+
+function buildHeroElement(hero) {
+  if (!hero || (!hero.title && !hero.lede && !hero.kicker)) return null;
+  const header = document.createElement('header');
+  header.className = 'docs-hero';
+
+  if (hero.kicker) {
+    const kicker = document.createElement('p');
+    kicker.className = 'docs-kicker';
+    kicker.textContent = hero.kicker;
+    header.appendChild(kicker);
+  }
+
+  const title = document.createElement('h1');
+  title.textContent = hero.title || 'Documentation';
+  header.appendChild(title);
+
+  if (hero.lede) {
+    const lede = document.createElement('p');
+    lede.className = 'docs-lede';
+    lede.textContent = hero.lede;
+    header.appendChild(lede);
+  }
+
+  if (Array.isArray(hero.works) && hero.works.length) {
+    const highlights = document.createElement('div');
+    highlights.className = 'docs-hero-highlights';
+    const heading = document.createElement('h2');
+    heading.textContent = 'Featured works';
+    highlights.appendChild(heading);
+    const list = document.createElement('ul');
+    hero.works.forEach((work) => {
+      const li = document.createElement('li');
+      li.id = `works-${slugify(work.id || work.title || '')}`;
+      const label = document.createElement('strong');
+      label.textContent = work.title || 'Untitled';
+      li.appendChild(label);
+      if (work.summary) {
+        const p = document.createElement('p');
+        p.textContent = work.summary;
+        li.appendChild(p);
+      }
+      list.appendChild(li);
+    });
+    highlights.appendChild(list);
+    header.appendChild(highlights);
+  }
+
+  return header;
+}
+
+function renderDocsContent(article, data) {
+  if (!article) return;
+  article.innerHTML = '';
+  const hero = buildHeroElement(data.hero);
+  if (hero) article.appendChild(hero);
+  const sections = Array.isArray(data.sections) ? data.sections : [];
+  sections.forEach((section) => {
+    const sec = document.createElement('section');
+    sec.className = 'docs-section';
+    const id = section?.id || slugify(section?.title || 'section');
+    sec.id = id;
+    sec.setAttribute('data-source', section?.type || 'markdown');
+    sec.innerHTML = section?.html || '';
+    article.appendChild(sec);
+  });
 }
 
 function buildNav(nav, state, onActivate) {
@@ -570,6 +663,13 @@ function attachCopyShortcut(root) {
 ready(() => {
   const { apply, current, cycle } = ensureThemeHelpers();
   apply(current(), { persist: false });
+
+  applySiteChrome(DOCS_DATA.site || {});
+  const article = document.querySelector('.docs-article');
+  const hasDynamicContent = Array.isArray(DOCS_DATA.sections) && DOCS_DATA.sections.length > 0;
+  if (hasDynamicContent) {
+    renderDocsContent(article, DOCS_DATA);
+  }
 
   const themeBtn = document.getElementById('wc-theme-toggle');
   if (themeBtn && themeBtn.childElementCount === 0) {
