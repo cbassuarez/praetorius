@@ -90,40 +90,40 @@ a:focus-visible {
   --prae-z-toast: 160;
   --prae-z-palette: 180;
 
-  /* defaults updated per theme below */
-  --prae-color-bg: #0b0c10;
-  --prae-color-panel: rgba(15, 19, 28, 0.84);
-  --prae-color-surface-1: rgba(19, 24, 36, 0.82);
-  --prae-color-surface-2: rgba(32, 40, 60, 0.74);
-  --prae-color-surface-3: rgba(48, 60, 88, 0.7);
-  --prae-color-ink: #f3f4f8;
-  --prae-color-ink-strong: #ffffff;
-  --prae-color-muted: rgba(193, 202, 224, 0.72);
-  --prae-color-muted-strong: rgba(215, 222, 240, 0.92);
-  --prae-color-accent: #78c4ff;
-  --prae-color-success: #5be7b5;
-  --prae-color-warn: #f7c777;
-  --prae-color-danger: #ff7a8a;
-  --prae-color-border: rgba(140, 174, 255, 0.28);
-  --prae-color-border-subtle: rgba(140, 174, 255, 0.18);
-  --prae-color-border-highlight: rgba(255, 255, 255, 0.28);
-  --prae-color-glint: rgba(255, 255, 255, 0.4);
-  --prae-glass-fill-1: linear-gradient(165deg, rgba(40, 58, 95, 0.34) 0%, rgba(18, 22, 34, 0.68) 100%);
-  --prae-glass-fill-2: linear-gradient(180deg, rgba(46, 68, 112, 0.26) 0%, rgba(17, 22, 31, 0.78) 100%);
-  --prae-glass-fallback: rgba(18, 22, 34, 0.88);
+  /* defaults align with light theme; dark overrides appear below */
+  --prae-color-bg: radial-gradient(140% 130% at 20% 0%, rgba(188, 212, 255, 0.55) 0%, rgba(244, 248, 255, 0.92) 45%, rgba(247, 249, 253, 0.98) 100%), #f4f7fc;
+  --prae-color-panel: rgba(255, 255, 255, 0.82);
+  --prae-color-surface-1: rgba(255, 255, 255, 0.78);
+  --prae-color-surface-2: rgba(240, 246, 255, 0.7);
+  --prae-color-surface-3: rgba(226, 238, 255, 0.64);
+  --prae-color-ink: #0d1524;
+  --prae-color-ink-strong: #000a18;
+  --prae-color-muted: rgba(60, 75, 99, 0.75);
+  --prae-color-muted-strong: rgba(30, 43, 68, 0.85);
+  --prae-color-accent: #2f9fe3;
+  --prae-color-success: #2fac7a;
+  --prae-color-warn: #d29b33;
+  --prae-color-danger: #d95b6c;
+  --prae-color-border: rgba(70, 116, 195, 0.26);
+  --prae-color-border-subtle: rgba(70, 116, 195, 0.18);
+  --prae-color-border-highlight: rgba(255, 255, 255, 0.7);
+  --prae-color-glint: rgba(255, 255, 255, 0.52);
+  --prae-glass-fill-1: linear-gradient(165deg, rgba(255, 255, 255, 0.82) 0%, rgba(216, 232, 255, 0.62) 100%);
+  --prae-glass-fill-2: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(214, 230, 255, 0.52) 100%);
+  --prae-glass-fallback: rgba(255, 255, 255, 0.92);
   --prae-glass-blur-sm: 10px;
   --prae-glass-blur-md: 18px;
   --prae-glass-blur-lg: 28px;
   --prae-glass-sheen-angle: 130deg;
   --prae-glass-sheen-intensity: 0.45;
-  --prae-glass-sheen-opacity: 0.42;
+  --prae-glass-sheen-opacity: 0.5;
   --prae-glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
-  --prae-glass-noise-strength: 0.22;
-  --prae-glass-noise-strength-hover: 0.48;
-  --prae-shadow-ambient: 0 48px 96px -52px rgba(4, 9, 20, 0.78);
-  --prae-shadow-key: 0 30px 70px -46px rgba(6, 14, 28, 0.68);
-  --prae-shadow-lifted: 0 16px 38px -24px rgba(12, 20, 36, 0.6);
-  --prae-focus-ring: 0 0 0 2px color-mix(in srgb, var(--prae-color-accent) 70%, transparent);
+  --prae-glass-noise-strength: 0.18;
+  --prae-glass-noise-strength-hover: 0.4;
+  --prae-shadow-ambient: 0 38px 80px -40px rgba(46, 76, 132, 0.26);
+  --prae-shadow-key: 0 24px 56px -32px rgba(46, 76, 132, 0.3);
+  --prae-shadow-lifted: 0 16px 30px -22px rgba(46, 76, 132, 0.32);
+  --prae-focus-ring: 0 0 0 2px color-mix(in srgb, var(--prae-color-accent) 60%, transparent);
   --prae-grid-gap: clamp(1.15rem, 1vw + 0.9rem, 1.85rem);
   --vb-pdf-width: 0px;
 }
@@ -184,9 +184,12 @@ body.prae-theme-dark {
   --prae-glass-fill-2: linear-gradient(180deg, rgba(40, 58, 95, 0.26) 0%, rgba(10, 16, 27, 0.84) 100%);
   --prae-glass-fallback: rgba(14, 19, 30, 0.9);
   --prae-glass-sheen-opacity: 0.38;
+  --prae-glass-noise-strength: 0.22;
+  --prae-glass-noise-strength-hover: 0.48;
   --prae-shadow-ambient: 0 50px 110px -56px rgba(3, 8, 20, 0.78);
   --prae-shadow-key: 0 36px 72px -48px rgba(10, 18, 32, 0.68);
   --prae-shadow-lifted: 0 18px 40px -24px rgba(12, 20, 36, 0.62);
+  --prae-focus-ring: 0 0 0 2px color-mix(in srgb, var(--prae-color-accent) 70%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -305,6 +308,12 @@ main.vb-shell,
   margin: 0;
   color: var(--prae-color-ink-strong);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.vb-title span {
+  display: inline-block;
+  padding-inline: clamp(0.5rem, 0.4rem + 0.6vw, 0.85rem);
+  border-radius: calc(var(--prae-radius-sm) * 0.75);
 }
 
 .vb-sub {
@@ -437,14 +446,13 @@ main.vb-shell,
   pointer-events: none;
   background-image:
     var(--prae-glass-noise),
-    conic-gradient(from calc(var(--prae-glass-sheen-angle) - 20deg),
-      rgba(255, 255, 255, var(--prae-glass-sheen-intensity)) 0deg,
-      rgba(255, 255, 255, 0) 140deg,
-      rgba(255, 255, 255, var(--prae-glass-sheen-intensity)) 260deg,
-      rgba(255, 255, 255, 0) 360deg);
+    linear-gradient(120deg,
+      rgba(255, 255, 255, 0.24) 0%,
+      rgba(255, 255, 255, 0.06) 55%,
+      rgba(255, 255, 255, 0.32) 100%);
   background-size: 220px 220px, 200% 200%;
   background-repeat: repeat, no-repeat;
-  background-position: center center, 60% 40%;
+  background-position: center center, 42% 58%;
   background-blend-mode: soft-light, screen;
   mix-blend-mode: screen;
   opacity: var(--prae-glass-noise-strength);
@@ -462,7 +470,7 @@ main.vb-shell,
 
 .work:hover::after {
   opacity: var(--prae-glass-noise-strength-hover);
-  background-position: center center, 45% 55%;
+  background-position: center center, 55% 45%;
 }
 
 @media (prefers-reduced-motion: reduce) {
