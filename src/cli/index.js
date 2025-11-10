@@ -852,6 +852,16 @@ async function lazyYaml() {
     process.exit(1);
   }
 }
+async function lazyMarked() {
+  try {
+    const mod = await import('marked');
+    return mod;
+  } catch (e) {
+    console.log(pc.red('Missing dependency "marked".'));
+    console.log(pc.gray('Install it with: ') + pc.cyan('npm i marked'));
+    process.exit(1);
+  }
+}
 async function lazyEsbuild() {
   try {
     // Use runtime esbuild so we can minify without bundling.
@@ -1276,6 +1286,262 @@ function scaffoldDocsSkeleton(docsDir) {
     created.push(assetsDir);
   }
   return created;
+}
+
+function extractFrontMatter(src, YAML) {
+  if (!src || typeof src !== 'string') return { body: src, data: {} };
+  const trimmed = src.trimStart();
+  if (!trimmed.startsWith('---')) return { body: src, data: {} };
+  const lines = src.split(/\r?\n/);
+  if (lines[0].trim() !== '---') return { body: src, data: {} };
+  let end = -1;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === '---') { end = i; break; }
+  }
+  if (end === -1) return { body: src, data: {} };
+  const yamlText = lines.slice(1, end).join('\n');
+  const body = lines.slice(end + 1).join('\n');
+  let data = {};
+  try {
+    data = YAML.parse(yamlText) || {};
+  } catch (_) {
+    data = {};
+  }
+  return { body, data };
+}
+
+function htmlToPlainText(html) {
+  if (!html) return '';
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function serializeForScript(data) {
+  return JSON.stringify(data).replace(/</g, '\\u003c');
+}
+
+function readReadmeSection(projectRoot, slug) {
+  const readmePath = path.join(projectRoot, 'README.md');
+  if (!fs.existsSync(readmePath)) return { title: '', body: '' };
+  const contents = readFileSafe(readmePath);
+  const lines = contents.split(/\r?\n/);
+  let collecting = false;
+  let title = '';
+  const buf = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^#{1}\s+/.test(line) && !collecting) {
+      continue; // skip README title
+    }
+    if (/^##\s+/.test(line)) {
+      const currentSlug = slugify(line.replace(/^##\s+/, '').trim());
+      if (collecting) break;
+      if (currentSlug === slug) {
+        collecting = true;
+        title = line.replace(/^##\s+/, '').trim();
+        continue;
+      }
+    }
+    if (collecting) {
+      buf.push(line);
+    }
+  }
+  return { title, body: buf.join('\n') };
+}
+
+function renderWorksList(works, { linkMode = 'auto' } = {}) {
+  if (!works.length) {
+    return '<p>No works found yet. Run <code>prae add</code> to add repertoire.</p>';
+  }
+  const items = works.map((work) => {
+    const slug = slugify(work.slug || work.title || 'work');
+    const href = linkMode === 'external' && work.href
+      ? work.href
+      : `#works-${slug}`;
+    const label = work.title || work.slug || 'Untitled';
+    const summary = work.one || '';
+    const anchor = linkMode === 'external' && work.href
+      ? `<a href="${work.href}" target="_blank" rel="noopener">${label}</a>`
+      : `<a href="${href}">${label}</a>`;
+    return `<li><h3>${anchor}</h3>${summary ? `<p>${summary}</p>` : ''}</li>`;
+  }).join('');
+  return `<div class="docs-works-list"><ul>${items}</ul></div>`;
+}
+
+async function buildDocsPayload({ config, projectRoot, worksDb }) {
+  const sectionsConfig = Array.isArray(config.ia) ? config.ia.slice() : [];
+  sectionsConfig.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const docsRoot = ensureDocsRoot(config.paths?.root || 'docs/');
+  const docsDir = path.resolve(projectRoot, docsRoot);
+  const works = Array.isArray(worksDb?.works) ? worksDb.works : [];
+  const YAML = await lazyYaml();
+  const markedLib = await lazyMarked();
+  const nav = [];
+  const searchIndex = [];
+  const sections = [];
+  const warnings = [];
+  let homepageSlug = (config.paths?.homepage || '').replace(/\\/g, '/');
+  let homepagePage = null;
+
+  const ensureHref = (slug) => `#${slug}`;
+
+  const renderMarkdownSection = (markdown) => {
+    const renderer = new markedLib.Renderer();
+    const headings = [];
+    renderer.heading = (text, level, raw) => {
+      const safe = slugify(String(raw || text));
+      headings.push({ id: safe, level });
+      return `<h${level} id="${safe}">${text}</h${level}>`;
+    };
+    const parser = new markedLib.Marked({
+      renderer,
+      gfm: true,
+      breaks: false,
+      smartypants: true,
+      mangle: false,
+      headerIds: false
+    });
+    const html = parser.parse(markdown || '');
+    return { html, headings };
+  };
+
+  for (const section of sectionsConfig) {
+    if (!section || section.hidden) continue;
+    const group = {
+      id: section.id || slugify(section.title || 'section'),
+      label: section.title || 'Section',
+      items: []
+    };
+    const pages = Array.isArray(section.pages) ? section.pages.slice() : [];
+    for (const page of pages) {
+      if (!page || page.hidden) continue;
+      const slug = page.slug || slugify(page.title || page.source || 'page');
+      const source = (page.source || '').replace(/\\/g, '/');
+      let title = page.title || slug;
+      let summary = page.summary || '';
+      let html = '';
+      let type = 'markdown';
+
+      if (source.startsWith('works::')) {
+        type = 'works';
+        title = page.title || 'Works';
+        summary = summary || 'Auto-generated works listing.';
+        html = renderWorksList(works, { linkMode: config.works?.linkMode || 'auto' });
+      } else if (source.startsWith('README.md#')) {
+        const readmeSlug = source.split('#')[1];
+        const { title: readmeTitle, body } = readReadmeSection(projectRoot, readmeSlug);
+        if (!body) {
+          warnings.push(`README section "${source}" not found.`);
+          html = '<p>README section not found.</p>';
+        } else {
+          const fm = extractFrontMatter(body, YAML);
+          if (fm.data?.title) title = fm.data.title;
+          if (!summary) summary = fm.data?.summary || markdownFirstParagraph(fm.body);
+          const rendered = renderMarkdownSection(fm.body);
+          html = rendered.html;
+        }
+        if (!page.title && readmeTitle) title = readmeTitle;
+      } else {
+        let absPath = source;
+        if (!absPath) absPath = '';
+        if (!absPath.startsWith('/') && !absPath.startsWith(docsRoot)) {
+          absPath = path.join(docsRoot, absPath);
+        }
+        const resolved = path.resolve(projectRoot, absPath || '');
+        if (!fs.existsSync(resolved)) {
+          warnings.push(`Docs source not found: ${source || '(blank)'}`);
+          html = '<p>Content missing — source file not found.</p>';
+        } else {
+          const raw = readFileSafe(resolved);
+          const fm = extractFrontMatter(raw, YAML);
+          const headingTitle = markdownFirstHeading(fm.body);
+          if (fm.data?.title) title = fm.data.title;
+          else if (!page.title && headingTitle) title = headingTitle;
+          if (!summary) summary = fm.data?.summary || markdownFirstParagraph(fm.body);
+          const rendered = renderMarkdownSection(fm.body);
+          html = rendered.html;
+        }
+      }
+
+      const snippetText = (summary || htmlToPlainText(html)).trim();
+
+      const item = {
+        id: slug,
+        label: title,
+        href: ensureHref(slug),
+        snippet: snippetText,
+        sectionId: group.id,
+        type,
+        html,
+        summary: summary || snippetText,
+        title
+      };
+      group.items.push({ id: slug, label: title, href: ensureHref(slug), snippet: snippetText });
+      searchIndex.push({ title, url: ensureHref(slug), snippet: snippetText, group: group.label });
+      sections.push(item);
+      if (!homepagePage) {
+        const matchSource = source || slug;
+        if (homepageSlug && homepageSlug === source) homepagePage = item;
+        else if (homepageSlug && homepageSlug === slug) homepagePage = item;
+      }
+    }
+    if (group.items.length) nav.push(group);
+  }
+
+  if (!homepagePage) homepagePage = sections[0] || null;
+  const siteTitle = config.site?.title?.trim() || 'Praetorius Docs';
+  const siteSubtitle = config.site?.subtitle?.trim() || '';
+  const heroTitle = homepagePage?.title || siteTitle;
+  const heroSummary = homepagePage?.summary || config.site?.description || '';
+  const hero = {
+    title: heroTitle,
+    lede: heroSummary,
+    kicker: siteSubtitle,
+    works: []
+  };
+
+  if (config.works?.includeOnHome && works.length) {
+    hero.works = works.slice(0, 4).map((work) => ({
+      id: work.slug || slugify(work.title || 'work'),
+      title: work.title || work.slug || 'Untitled',
+      summary: work.one || ''
+    }));
+  }
+
+  return {
+    data: {
+      site: {
+        title: siteTitle,
+        subtitle: siteSubtitle,
+        description: config.site?.description || '',
+        accent: config.site?.accent || ''
+      },
+      hero,
+      nav,
+      search: searchIndex,
+      sections,
+      homepage: homepagePage ? homepagePage.id : '',
+      works: {
+        includeInNav: !!config.works?.includeInNav,
+        includeOnHome: !!config.works?.includeOnHome,
+        linkMode: config.works?.linkMode || 'auto'
+      }
+    },
+    warnings
+  };
 }
 
 function sectionLabelFromSegment(segment) {
@@ -3237,6 +3503,9 @@ program
       }
 
       // -------- UI bundle (template.html + main.js + style.css) ----------
+      let docsData = null;
+      let docsWarnings = [];
+
       if (!opts.noUi) {
         // Prefer project UI dir; fall back to packaged /ui
         const htmlName = opts.html || 'template.html';
@@ -3284,6 +3553,15 @@ program
               throw err;
             }
           }
+          if (chosenSkin === 'docs-reader') {
+            const docsConfig = loadDocsConfig();
+            const built = await buildDocsPayload({ config: docsConfig, projectRoot: process.cwd(), worksDb: db });
+            docsData = built.data;
+            docsWarnings = built.warnings;
+            docsWarnings.forEach((msg) => {
+              console.log(pc.yellow('Docs: ') + pc.gray(msg));
+            });
+          }
           const tplIn   = path.join(uiRoot, htmlName);
           const mainIn  = path.join(uiRoot, 'main.js');
           const styleIn = path.join(uiRoot, 'style.css');
@@ -3325,14 +3603,32 @@ program
           let html = fs.readFileSync(tplIn, 'utf8')
             .replace('<html', `<html data-skin="${chosenSkin}"`);
 
+          if (docsData) {
+            const titleText = docsData.site?.title || 'Praetorius Docs';
+            const subtitleText = docsData.site?.subtitle || '';
+            const fullTitle = subtitleText ? `${titleText} — ${subtitleText}` : `${titleText}`;
+            html = html.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtml(fullTitle)}</title>`);
+            html = html.replace(/<div class="docs-title" data-site-title>[\s\S]*?<\/div>/, `<div class="docs-title" data-site-title>${escapeHtml(titleText)}</div>`);
+            html = html.replace(/<div class="docs-subtitle" data-site-subtitle>[\s\S]*?<\/div>/, `<div class="docs-subtitle" data-site-subtitle>${escapeHtml(subtitleText)}</div>`);
+            html = html.replace(/<footer[\s\S]*?<\/footer>/, (match) => match
+              .replace(/<span data-site-title>[\s\S]*?<\/span>/, `<span data-site-title>${escapeHtml(titleText)}</span>`)
+              .replace(/<span data-site-subtitle>[\s\S]*?<\/span>/, `<span data-site-subtitle>${escapeHtml(subtitleText)}</span>`)
+            );
+            html = html.replace(/<article class="docs-article">[\s\S]*?<\/article>/, '<article class="docs-article"></article>');
+          }
+
           // Ensure the chosen light/dark theme class lands on <body>
           html = upsertBodyTheme(html, cfg.theme);
-          const inj = [
-            `<link rel="stylesheet" href="./${cssFile}">`,
-            haveStyle ? `<link rel="stylesheet" href="./${appCssFileName}">` : '',
-            `<script src="./${jsFile}" defer></script>`,
-            haveMain ? `<script type="module" src="./${appJsFileName}" defer></script>` : ''
-          ].filter(Boolean).join('\n');
+          const injParts = [
+            `<link rel="stylesheet" href="./${cssFile}">`
+          ];
+          if (haveStyle) injParts.push(`<link rel="stylesheet" href="./${appCssFileName}">`);
+          injParts.push(`<script src="./${jsFile}" defer></script>`);
+          if (docsData) {
+            injParts.push(`<script id="prae-docs-data" type="application/json">${serializeForScript(docsData)}</script>`);
+          }
+          if (haveMain) injParts.push(`<script type="module" src="./${appJsFileName}" defer></script>`);
+          const inj = injParts.filter(Boolean).join('\n');
           if (/<\/body>/i.test(html)) {
             html = html.replace(/<\/body>/i, `${inj}\n</body>`);
           } else {
