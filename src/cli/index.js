@@ -332,7 +332,7 @@ const DEFAULT_CONFIG = Object.freeze({
   theme: 'dark',
   output: { minify: false, embed: false },
   ui: {
-      skin: 'console',          // 'console' (current), 'vite-breeze', 'cards-tabs', 'docs-reader', 'kiosk', 'typefolio'
+      skin: 'console',          // 'console' (current), 'vite-breeze', 'cards-tabs', 'docs-reader', 'kiosk', 'typefolio', 'typescatter'
       allowUrlOverride: true    // ?skin=vite-breeze in preview/index.html
     },
   site: {
@@ -357,7 +357,8 @@ const BUILTIN_SKINS = Object.freeze({
   'cards-tabs':   { label: 'Cards & Tabs', aliases: ['dashboard'] },
   'docs-reader':  { label: 'Docs Reader', aliases: ['docs'] },
   'kiosk':        { label: 'Kiosk / Presentation', aliases: ['presentation'] },
-  'typefolio':    { label: 'Typefolio', aliases: ['typography'] }
+  'typefolio':    { label: 'Typefolio', aliases: ['typography'] },
+  'typescatter':  { label: 'TypeScatter', aliases: ['posterboard'] }
 });
 
 const DEFAULT_DOCS_CONFIG = Object.freeze({
@@ -397,7 +398,8 @@ function builtinSkinList() {
     'cards-tabs': 'portfolio dashboard (cards + tabs from works list)',
     'kiosk': 'touch-first tiles for demos/galleries (oversized controls)',
     'console': 'console view used for debugging + starter scaffolds',
-    'typefolio': 'web-book reader (two-page spread, Caslon-style typography)'
+    'typefolio': 'web-book reader (two-page spread, Caslon-style typography)',
+    'typescatter': 'type-only poster wall (scatter to grid; draggable)'
   };
   return Object.entries(BUILTIN_SKINS).map(([key, meta]) => {
     const aliases = (meta.aliases && meta.aliases.length)
@@ -1599,6 +1601,7 @@ Supported skins:
   • cards-tabs (alias: dashboard) — portfolio dashboard (cards + tabs from your works list).
   • kiosk (alias: presentation) — touch-first tiles for demos/galleries (oversized controls).
   • typefolio (alias: typography) — web-book reader: light header/footer, two-page spread, Caslon-style typography; portfolio actions intact.
+  • typescatter (alias: posterboard) — type-only poster wall with draggable tiles; scatter → editorial grid toggle.
 Theme: light/dark via the built-in #wc-theme-toggle. No WAAPI.
 
 Examples:
@@ -1611,6 +1614,7 @@ Examples:
   $ prae generate --skin cards-tabs
   $ prae generate --skin kiosk
   $ prae generate --skin typefolio
+  $ prae generate --skin typescatter
 
   # Deep link the second spread of work ID 7:
   # (0-based pageIndex if you used p)
@@ -3476,7 +3480,7 @@ program
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
   .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'ui')
-  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Supported: vite-breeze — Liquid Glass portfolio shell; docs-reader (alias: docs) — spacious docs UI; cards-tabs (alias: dashboard) — portfolio dashboard; kiosk (alias: presentation) — touch-first tiles. All skins render PRAE.works only.', '')
+  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Supported: vite-breeze — Liquid Glass portfolio shell; docs-reader (alias: docs) — spacious docs UI; cards-tabs (alias: dashboard) — portfolio dashboard; kiosk (alias: presentation) — touch-first tiles; typescatter (alias: posterboard) — type-only poster wall with drag + scatter/grid toggle. All skins render PRAE.works only.', '')
   .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')
