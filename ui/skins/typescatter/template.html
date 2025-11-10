@@ -9,20 +9,23 @@
 <body class="prae-theme-light" data-theme="light">
   <header class="ts-header" role="banner">
     <div class="ts-header-brand">
-      <span class="ts-site-title" data-site-title>Praetorius</span>
-      <span class="ts-site-subtitle" data-site-subtitle>Works</span>
+      <span class="ts-site-title" data-site-title></span>
+      <span class="ts-site-subtitle" data-site-subtitle></span>
     </div>
-    <nav id="prae-nav" class="ts-nav" aria-label="Primary"></nav>
-    <button id="wc-theme-toggle" class="ts-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme">Theme: Light</button>
+    <nav id="prae-nav" class="ts-nav" aria-label="Site links"></nav>
+    <span id="wc-theme-toggle" class="ts-theme-toggle" role="switch" aria-checked="false" tabindex="0">Light</span>
   </header>
 
-  <main class="ts-shell" role="main">
+  <main class="ts-main" role="main">
     <section id="ts-field" class="ts-field" aria-label="Type field"></section>
-    <section id="ts-controls" class="ts-controls" aria-label="Layout &amp; type controls"></section>
-    <aside id="ts-reader" class="ts-reader" aria-label="Reader" hidden></aside>
+    <a id="ts-help-toggle" class="ts-help-link" href="#" role="button">help</a>
+    <aside id="ts-help-overlay" class="ts-help-overlay" hidden aria-hidden="true">
+      <div class="ts-help-text">
+        <p>Arrow keys move selection. Double-click or Space plays or pauses audio. S opens the score pane. L toggles loose and neat layouts. R resets drag positions.</p>
+        <p>[ and ] change type scale. , and . adjust measure. C copies a deep link. @ toggles timecodes for the selection. Alt/Opt+D switches theme. Esc closes the score pane. ? or help hides this text.</p>
+      </div>
+    </aside>
   </main>
-
-  <footer id="prae-footer" class="ts-footer" role="contentinfo"></footer>
 
   <script type="module" src="./main.js" defer></script>
 </body>

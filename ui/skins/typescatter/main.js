@@ -23,7 +23,6 @@ function praeSyncThemeOnDom(mode) {
   const eff = praeNormalizeTheme(mode);
   const doc = document.documentElement;
   const body = document.body;
-  const host = document.getElementById('works-console');
   if (doc) {
     doc.setAttribute('data-theme', eff);
     doc.style.colorScheme = eff === 'dark' ? 'dark' : 'light';
@@ -32,11 +31,6 @@ function praeSyncThemeOnDom(mode) {
     body.classList.remove(...PRAE_THEME_CLASSNAMES);
     body.classList.add(eff === 'light' ? PRAE_THEME_CLASSNAMES[0] : PRAE_THEME_CLASSNAMES[1]);
     body.setAttribute('data-theme', eff);
-  }
-  if (host) {
-    host.classList.remove(...PRAE_THEME_CLASSNAMES);
-    host.classList.add(eff === 'light' ? PRAE_THEME_CLASSNAMES[0] : PRAE_THEME_CLASSNAMES[1]);
-    host.setAttribute('data-theme', eff);
   }
   return eff;
 }
@@ -48,9 +42,9 @@ function praeApplyTheme(mode, opts) {
   }
   const btn = document.getElementById('wc-theme-toggle');
   if (btn) {
-    btn.setAttribute('aria-checked', String(eff === 'dark'));
+    btn.setAttribute('aria-checked', eff === 'dark' ? 'true' : 'false');
     btn.dataset.mode = eff;
-    btn.textContent = eff === 'dark' ? 'Theme: Dark' : 'Theme: Light';
+    btn.textContent = eff === 'dark' ? 'Dark' : 'Light';
     btn.title = eff === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   }
   return eff;
@@ -148,34 +142,41 @@ const pfMap = (() => {
   return map;
 })();
 
-const SCALE_STEPS = [0.9, 0.96, 1, 1.08, 1.18];
-const MEASURE_MIN = 58;
-const MEASURE_MAX = 78;
+const SCALE_STEPS = [0.85, 0.92, 1, 1.08, 1.18];
+const MEASURE_MIN = 48;
+const MEASURE_MAX = 88;
 const MEASURE_STEP = 4;
 const HASH_WORK_KEY = 'work';
 const HASH_MODE_KEY = 'mode';
 
 const state = {
   field: null,
-  controls: null,
-  reader: null,
-  footer: null,
-  tiles: new Map(),
-  worksById: new Map(),
+  helpLink: null,
+  helpOverlay: null,
   layoutMode: 'loose',
   scaleIndex: 2,
-  baseMeasure: 66,
-  currentMeasure: 66,
-  dragging: null,
-  overlay: { id: null, restore: null },
-  pdf: { pane: null, frame: null, title: null, close: null, backdrop: null, viewerReady: false, pendingGoto: null, currentSlug: null, restoreFocus: null, followAudio: null, followHandler: null, followSlug: null, lastPrinted: null },
-  hudState: { last: { id: works[0]?.id ?? null, at: 0 } },
+  measure: 66,
+  blocks: [],
+  blockMap: new Map(),
+  worksById: new Map(),
+  selectedIndex: -1,
+  cuesVisibleFor: null,
+  drag: null,
   updatingHash: false,
   prefersReducedMotion: typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  zCounter: 10
+  fieldSize: { width: 0, height: 0 },
+  helpArea: { width: 0, height: 0 },
+  zCounter: 20,
+  pdf: { pane: null, frame: null, title: null, close: null, backdrop: null, viewerReady: false, pendingGoto: null, currentSlug: null, restoreFocus: null, followAudio: null, followHandler: null, followSlug: null, lastPrinted: null },
+  hudState: { last: { id: works[0]?.id ?? null, at: 0 } }
 };
 
 function findWorkById(id) {
+  if (id && typeof id === 'object') {
+    const record = { data: id, audio: null };
+    if (id.id != null) state.worksById.set(Number(id.id), record);
+    return record;
+  }
   const num = Number(id);
   if (Number.isNaN(num)) return null;
   if (state.worksById.has(num)) return state.worksById.get(num);
@@ -364,15 +365,13 @@ function ensurePdfDom() {
     backdrop.setAttribute('hidden', '');
     pane = document.createElement('aside');
     pane.className = 'ts-pdfpane';
-    pane.setAttribute('role', 'dialog');
-    pane.setAttribute('aria-modal', 'true');
     pane.setAttribute('aria-hidden', 'true');
     pane.setAttribute('tabindex', '-1');
     pane.setAttribute('hidden', '');
     pane.innerHTML = `
       <header class="ts-pdfbar">
-        <div class="ts-pdf-title" aria-live="polite"></div>
-        <button type="button" class="ts-pdf-close">Close</button>
+        <p class="ts-pdf-title" aria-live="polite"></p>
+        <a href="#" class="ts-pdf-close" role="button">close</a>
       </header>
       <iframe class="ts-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>`;
     document.body.append(backdrop, pane);
@@ -380,26 +379,22 @@ function ensurePdfDom() {
   const frame = pane.querySelector('.ts-pdf-frame');
   const title = pane.querySelector('.ts-pdf-title');
   const close = pane.querySelector('.ts-pdf-close');
-  state.pdf = Object.assign(state.pdf, { pane, frame, title, close, backdrop, viewerReady: false, pendingGoto: null, currentSlug: null, restoreFocus: null });
-  if (backdrop && backdrop.dataset.tsPdf !== '1') {
-    backdrop.addEventListener('click', hidePdfPane);
-    backdrop.dataset.tsPdf = '1';
-  }
-  if (close && close.dataset.tsPdf !== '1') {
-    close.addEventListener('click', hidePdfPane);
-    close.dataset.tsPdf = '1';
-  }
-  if (frame && frame.dataset.tsPdf !== '1') {
-    frame.addEventListener('load', () => {
-      state.pdf.viewerReady = true;
-      const pending = state.pdf.pendingGoto;
-      if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
-        gotoPdfPage(pending.pdfPage);
-        state.pdf.pendingGoto = null;
-      }
+  if (close && !close.dataset.bound) {
+    close.dataset.bound = '1';
+    close.addEventListener('click', (event) => {
+      event.preventDefault();
+      hidePdfPane();
     });
-    frame.dataset.tsPdf = '1';
   }
+  if (backdrop && !backdrop.dataset.bound) {
+    backdrop.dataset.bound = '1';
+    backdrop.addEventListener('click', hidePdfPane);
+  }
+  state.pdf.pane = pane;
+  state.pdf.frame = frame;
+  state.pdf.title = title;
+  state.pdf.close = close;
+  state.pdf.backdrop = backdrop;
   return state.pdf;
 }
 
@@ -442,6 +437,7 @@ function openPdfFor(id) {
   pane.setAttribute('aria-hidden', 'false');
   pane.focus?.({ preventScroll: true });
   backdrop?.removeAttribute('hidden');
+  document.body.classList.add('ts-pdf-open');
   document.body.classList.add('ts-reader-open');
   if (title) title.textContent = String(work.title || 'Score');
   frame.src = 'about:blank';
@@ -461,6 +457,7 @@ function hidePdfPane() {
   pane?.setAttribute('aria-hidden', 'true');
   pane?.setAttribute('hidden', '');
   backdrop?.setAttribute('hidden', '');
+  document.body.classList.remove('ts-pdf-open');
   document.body.classList.remove('ts-reader-open');
   if (frame) frame.src = 'about:blank';
   state.pdf.viewerReady = false;
@@ -484,23 +481,8 @@ window.addEventListener('wc:pdf-goto', (event) => {
   if (detail.pdfPage) gotoPdfPage(detail.pdfPage);
 });
 
-function getActiveAudioInfo() {
-  if (!works.length) return { id: null, audio: null };
-  for (const work of works) {
-    const audio = document.getElementById('wc-a' + work.id);
-    if (audio && !audio.paused && !audio.ended) {
-      return { id: work.id, audio };
-    }
-  }
-  return { id: null, audio: null };
-}
-
-function markPlaying(id, on) {
-  const tile = state.tiles.get(Number(id));
-  if (tile?.el) {
-    tile.el.dataset.playing = on ? '1' : '0';
-  }
-  hudSetPlaying(on);
+function getAudioSourceFor(work) {
+  return work?.audioUrl || work?.audio || '';
 }
 
 function ensureAudioTags() {
@@ -509,23 +491,26 @@ function ensureAudioTags() {
   }
 }
 
-function getAudioSourceFor(work) {
-  return work?.audioUrl || work?.audio || '';
+function markPlaying(id, on) {
+  const block = state.blockMap.get(Number(id));
+  if (block?.el) {
+    block.el.dataset.playing = on ? '1' : '0';
+  }
+  hudSetPlaying(on);
 }
 
 function playAt(id, t = 0) {
   const record = findWorkById(id);
   const work = record?.data;
   if (!work) return;
+  const src = normalizeSrc(getAudioSourceFor(work));
+  if (!src) return;
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
   if (!audio) return;
   state.hudState.last = { id: work.id, at: t || 0 };
   if (!audio.src) {
-    const src = normalizeSrc(getAudioSourceFor(work));
-    if (src) {
-      audio.src = src;
-      audio.load();
-    }
+    audio.src = src;
+    audio.load();
   }
   const seekAndPlay = () => {
     try { audio.currentTime = Math.max(0, Number(t) || 0); } catch (_) {}
@@ -548,17 +533,20 @@ function playAt(id, t = 0) {
 function togglePlayFor(id) {
   const record = findWorkById(id);
   const work = record?.data;
-  if (!work) return;
+  if (!work) return false;
+  const src = normalizeSrc(getAudioSourceFor(work));
+  if (!src) return false;
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
-  if (!audio) return;
+  if (!audio) return false;
   bindAudioToHud(work.id, audio);
   if (audio.paused || audio.ended) {
     playAt(work.id, 0);
-  } else {
-    audio.pause();
-    markPlaying(work.id, false);
-    hudUpdate(work.id, audio);
+    return true;
   }
+  audio.pause();
+  markPlaying(work.id, false);
+  hudUpdate(work.id, audio);
+  return true;
 }
 
 const hudApi = {
@@ -604,593 +592,575 @@ function parseHash() {
   return { workId: Number.isNaN(workId) ? null : workId, mode };
 }
 
-function updateHash({ workId }) {
-  state.updatingHash = true;
+function updateHash() {
+  if (state.updatingHash) return;
   const params = new URLSearchParams();
-  if (workId != null) params.set(HASH_WORK_KEY, String(workId));
+  const block = state.blocks[state.selectedIndex];
+  if (block?.work?.id != null) params.set(HASH_WORK_KEY, String(block.work.id));
   if (state.layoutMode) params.set(HASH_MODE_KEY, state.layoutMode);
   const next = params.toString();
   const hash = next ? `#${next}` : '#';
+  state.updatingHash = true;
   history.replaceState(null, '', hash);
-  setTimeout(() => { state.updatingHash = false; }, 60);
+  setTimeout(() => { state.updatingHash = false; }, 80);
 }
 
 function hydrateFromHash() {
   if (state.updatingHash) return;
   const { workId, mode } = parseHash();
-  if (mode) {
+  if (mode && mode !== state.layoutMode) {
     state.layoutMode = mode;
-    updateModeLabel();
     applyLayout();
   }
   if (workId != null) {
-    const tile = state.tiles.get(workId);
-    if (tile?.el) {
-      openReaderFor(workId, tile.el);
-    }
-  } else {
-    closeReader();
+    const index = state.blocks.findIndex((block) => Number(block.work.id) === Number(workId));
+    if (index >= 0) selectBlock(index, { focus: false, updateHash: false });
   }
 }
 
-function applyTypeScale() {
+function applyTypeSettings() {
   const scale = SCALE_STEPS[clamp(state.scaleIndex, 0, SCALE_STEPS.length - 1)] || 1;
   document.documentElement.style.setProperty('--ts-scale', scale.toFixed(3));
-  document.documentElement.style.setProperty('--measure', `${state.currentMeasure}ch`);
+  document.documentElement.style.setProperty('--measure', `${state.measure}ch`);
 }
 
-function updateControlsState() {
-  if (!state.controls) return;
-  const modeBtn = state.controls.querySelector('[data-control="mode"]');
-  if (modeBtn) {
-    const next = state.layoutMode === 'loose' ? 'Neat' : 'Loose';
-    modeBtn.textContent = `Switch to ${next}`;
-    modeBtn.setAttribute('aria-pressed', state.layoutMode === 'neat' ? 'true' : 'false');
+function parseNumericVar(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+  const parsed = parseFloat(value);
+  if (Number.isFinite(parsed)) return parsed;
+  return fallback;
+}
+
+function computeHelpArea() {
+  const link = state.helpLink;
+  if (!link) {
+    state.helpArea = { width: 0, height: 0 };
+    return;
   }
-  const sizeDown = state.controls.querySelector('[data-control="size-dec"]');
-  const sizeUp = state.controls.querySelector('[data-control="size-inc"]');
-  const sizeDownDisabled = state.scaleIndex <= 0;
-  const sizeUpDisabled = state.scaleIndex >= SCALE_STEPS.length - 1;
-  if (sizeDown) {
-    sizeDown.setAttribute('aria-disabled', sizeDownDisabled ? 'true' : 'false');
-    sizeDown.disabled = sizeDownDisabled;
+  state.helpArea = {
+    width: link.offsetWidth + 32,
+    height: link.offsetHeight + 32
+  };
+}
+
+function clampBlockPosition(block, x, y) {
+  const fieldWidth = state.fieldSize.width || state.field?.clientWidth || window.innerWidth;
+  const fieldHeight = state.fieldSize.height || state.field?.clientHeight || window.innerHeight;
+  const margin = 24;
+  const width = block.width || block.el.offsetWidth;
+  const height = block.height || block.el.offsetHeight;
+  const minX = margin;
+  const maxX = Math.max(minX, fieldWidth - width - margin);
+  const minY = margin;
+  const maxY = Math.max(minY, fieldHeight - height - margin);
+  let clampedX = clamp(x, minX, maxX);
+  let clampedY = clamp(y, minY, maxY);
+  if (state.helpLink) {
+    const safeTop = fieldHeight - state.helpArea.height;
+    const limitY = Math.max(minY, safeTop - height);
+    if (clampedY > limitY) clampedY = limitY;
+    if (clampedY + height > safeTop) {
+      const minSafeX = Math.max(minX, state.helpArea.width);
+      if (clampedX < minSafeX) clampedX = Math.min(maxX, minSafeX);
+    }
   }
-  if (sizeUp) {
-    sizeUp.setAttribute('aria-disabled', sizeUpDisabled ? 'true' : 'false');
-    sizeUp.disabled = sizeUpDisabled;
-  }
-  const measureDown = state.controls.querySelector('[data-control="measure-dec"]');
-  const measureUp = state.controls.querySelector('[data-control="measure-inc"]');
-  const measureDownDisabled = state.currentMeasure <= MEASURE_MIN;
-  const measureUpDisabled = state.currentMeasure >= MEASURE_MAX;
-  if (measureDown) {
-    measureDown.setAttribute('aria-disabled', measureDownDisabled ? 'true' : 'false');
-    measureDown.disabled = measureDownDisabled;
-  }
-  if (measureUp) {
-    measureUp.setAttribute('aria-disabled', measureUpDisabled ? 'true' : 'false');
-    measureUp.disabled = measureUpDisabled;
-  }
-  updateFullscreenButton();
+  return { x: clampedX, y: clampedY };
 }
 
-function renderControls(container) {
-  if (!container) return;
-  container.innerHTML = '';
-  const panel = document.createElement('div');
-  panel.className = 'ts-control-panel';
-  panel.innerHTML = `
-    <button type="button" data-control="mode" aria-pressed="false">Switch to Neat</button>
-    <button type="button" data-control="size-dec" aria-label="Decrease type size">A−</button>
-    <button type="button" data-control="size-inc" aria-label="Increase type size">A+</button>
-    <button type="button" data-control="measure-dec" aria-label="Narrow measure">Measure −</button>
-    <button type="button" data-control="measure-inc" aria-label="Widen measure">Measure +</button>
-    <button type="button" data-control="fullscreen" aria-pressed="false">Enter fullscreen</button>
-    <button type="button" data-control="reset">Reset</button>`;
-  container.appendChild(panel);
-  container.addEventListener('click', (event) => {
-    const btn = event.target.closest('button[data-control]');
-    if (!btn) return;
-    const control = btn.getAttribute('data-control');
-    handleControl(control, btn);
-  });
-  container.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') {
-        ev.preventDefault();
-        btn.click();
-      }
-    });
-  });
-  updateControlsState();
-}
-
-function handleControl(control, button) {
-  switch (control) {
-    case 'mode':
-      state.layoutMode = state.layoutMode === 'loose' ? 'neat' : 'loose';
-      updateModeLabel();
-      applyLayout();
-      updateHash({ workId: state.overlay.id });
-      break;
-    case 'size-dec':
-      if (state.scaleIndex > 0) {
-        state.scaleIndex -= 1;
-        applyTypeScale();
-        scheduleLayout();
-      }
-      break;
-    case 'size-inc':
-      if (state.scaleIndex < SCALE_STEPS.length - 1) {
-        state.scaleIndex += 1;
-        applyTypeScale();
-        scheduleLayout();
-      }
-      break;
-    case 'measure-dec':
-      if (state.currentMeasure > MEASURE_MIN) {
-        state.currentMeasure = Math.max(MEASURE_MIN, state.currentMeasure - MEASURE_STEP);
-        applyTypeScale();
-        scheduleLayout();
-      }
-      break;
-    case 'measure-inc':
-      if (state.currentMeasure < MEASURE_MAX) {
-        state.currentMeasure = Math.min(MEASURE_MAX, state.currentMeasure + MEASURE_STEP);
-        applyTypeScale();
-        scheduleLayout();
-      }
-      break;
-    case 'fullscreen':
-      toggleFullscreen();
-      break;
-    case 'reset':
-      resetLayout();
-      break;
-    default:
-      break;
-  }
-  updateControlsState();
-}
-
-function resetLayout() {
-  state.layoutMode = 'loose';
-  state.scaleIndex = 2;
-  state.currentMeasure = state.baseMeasure;
-  state.tiles.forEach((tile) => {
-    tile.dragX = 0;
-    tile.dragY = 0;
-    tile.el.style.zIndex = '';
-    tile.el.classList.remove('is-dragging');
-  });
-  applyTypeScale();
-  updateModeLabel();
-  applyLayout();
-  updateHash({ workId: state.overlay.id });
-}
-
-function updateModeLabel() {
-  const root = document.documentElement;
-  root.dataset.layout = state.layoutMode;
-}
-
-let layoutTimer = null;
-
-function scheduleLayout() {
-  if (layoutTimer) cancelAnimationFrame(layoutTimer);
-  layoutTimer = requestAnimationFrame(() => {
-    layoutTimer = null;
-    applyLayout();
-  });
-}
-
-function parseRotateToken() {
-  const style = getComputedStyle(document.documentElement);
-  const raw = style.getPropertyValue('--tile-rotate-max').trim();
-  if (!raw) return 5;
-  const match = raw.match(/(-?\d+(?:\.\d+)?)deg/);
-  if (match) return parseFloat(match[1]);
-  const num = parseFloat(raw);
-  return Number.isNaN(num) ? 5 : num;
+function updateBlockTransform(block) {
+  const mode = state.layoutMode;
+  const scatter = mode === 'loose' ? (block.scatter || { x: 0, y: 0, r: 0 }) : { x: 0, y: 0, r: 0 };
+  const baseX = block.baseX ?? 0;
+  const baseY = block.baseY ?? 0;
+  const dragX = block.dragX || 0;
+  const dragY = block.dragY || 0;
+  const rawX = baseX + dragX + scatter.x;
+  const rawY = baseY + dragY + scatter.y;
+  const { x, y } = clampBlockPosition(block, rawX, rawY);
+  block.positionX = x;
+  block.positionY = y;
+  const rotation = mode === 'loose' ? scatter.r : 0;
+  block.el.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${rotation}deg)`;
 }
 
 function applyLayout() {
   const field = state.field;
-  if (!field || !state.tiles.size) return;
+  if (!field) return;
+  computeHelpArea();
+  const header = document.querySelector('.ts-header');
+  const headerHeight = header?.offsetHeight || 0;
   const rect = field.getBoundingClientRect();
-  const width = rect.width || window.innerWidth || 1024;
-  const controlsBox = state.controls?.getBoundingClientRect();
-  const safeTop = controlsBox ? Math.max(0, controlsBox.bottom - rect.top) + 24 : 24;
-  const gap = 48;
-  const tiles = Array.from(state.tiles.values());
-  let avgWidth = 0;
-  tiles.forEach((tile) => { avgWidth += tile.el.offsetWidth; });
-  avgWidth = tiles.length ? avgWidth / tiles.length : 320;
-  const targetWidth = clamp(avgWidth, 280, 420);
-  const columns = clamp(Math.floor(width / (targetWidth + gap / 2)) || 1, 1, 4);
-  const columnWidth = width / columns;
-  const heights = new Array(columns).fill(safeTop);
-  const rotateMax = parseRotateToken();
-  tiles.forEach((tile, index) => {
-    const col = heights.indexOf(Math.min(...heights));
-    const tileWidth = tile.el.offsetWidth;
-    const tileHeight = tile.el.offsetHeight;
-    const baseX = (col * columnWidth) + Math.max(16, (columnWidth - tileWidth) / 2);
-    const baseY = heights[col];
-    heights[col] += tileHeight + gap;
-    tile.baseX = baseX;
-    tile.baseY = baseY;
-    if (!tile.scatter) {
-      const seed = `${tile.data.id}-${tile.data.slug || ''}-${index}`;
+  const fieldWidth = rect.width || window.innerWidth || 1024;
+  const marginTop = 40;
+  const gapY = 72;
+  const blocks = state.blocks;
+  const jitterX = state.prefersReducedMotion ? 0 : parseNumericVar('--jitter-x', 120);
+  const jitterY = state.prefersReducedMotion ? 0 : parseNumericVar('--jitter-y', 80);
+  const rotateMax = state.prefersReducedMotion ? 0 : parseNumericVar('--rotate-max', 5);
+  blocks.forEach((block) => {
+    block.el.style.transform = 'translate3d(0, 0, 0)';
+    block.width = block.el.offsetWidth;
+    block.height = block.el.offsetHeight;
+  });
+  const avgWidth = blocks.reduce((acc, block) => acc + (block.width || 320), 0) / (blocks.length || 1);
+  const targetWidth = clamp(avgWidth, 280, 480);
+  const columns = clamp(Math.floor(fieldWidth / (targetWidth + 60)) || 1, 1, 4);
+  const columnWidth = fieldWidth / columns;
+  const columnHeights = new Array(columns).fill(marginTop);
+  blocks.forEach((block, index) => {
+    const columnIndex = columnHeights.indexOf(Math.min(...columnHeights));
+    const xBase = (columnWidth * columnIndex) + Math.max(24, (columnWidth - block.width) / 2);
+    const yBase = columnHeights[columnIndex];
+    columnHeights[columnIndex] += block.height + gapY;
+    block.baseX = xBase;
+    block.baseY = yBase;
+    if (!block.scatter || state.prefersReducedMotion) {
+      const seed = `${block.work.id || index}-${block.work.slug || index}`;
       const rand = createSeededRandom(seed);
-      const jitterMagX = Math.min(180, columnWidth * 0.45);
-      const jitterMagY = Math.min(120, tileHeight * 0.35 + 40);
-      tile.scatter = {
-        x: (rand() - 0.5) * jitterMagX,
-        y: (rand() - 0.5) * jitterMagY,
-        r: (rand() - 0.5) * 2 * rotateMax
+      block.scatter = {
+        x: state.prefersReducedMotion ? 0 : (rand() - 0.5) * 2 * jitterX,
+        y: state.prefersReducedMotion ? 0 : (rand() - 0.5) * 2 * jitterY,
+        r: state.prefersReducedMotion ? 0 : (rand() - 0.5) * 2 * rotateMax
       };
     }
-    updateTileTransform(tile);
+    updateBlockTransform(block);
   });
-  const maxHeight = Math.max(...heights);
-  field.style.height = `${Math.max(maxHeight + 120, window.innerHeight * 0.6)}px`;
+  const contentHeight = Math.max(...columnHeights, marginTop + 320) + state.helpArea.height;
+  const minHeight = Math.max(window.innerHeight - headerHeight, contentHeight);
+  field.style.height = `${Math.ceil(minHeight)}px`;
+  state.fieldSize = { width: fieldWidth, height: minHeight };
+  blocks.forEach((block, idx) => {
+    block.el.style.zIndex = String(20 + idx);
+  });
+  if (state.cuesVisibleFor) {
+    const target = state.blockMap.get(Number(state.cuesVisibleFor));
+    if (target?.cuesEl && target.cuesVisible) target.cuesEl.hidden = false;
+  }
 }
 
-function updateTileTransform(tile) {
-  const mode = state.layoutMode;
-  const baseX = tile.baseX ?? 0;
-  const baseY = tile.baseY ?? 0;
-  const scatter = tile.scatter || { x: 0, y: 0, r: 0 };
-  const dragX = tile.dragX || 0;
-  const dragY = tile.dragY || 0;
-  const x = baseX + dragX + (mode === 'loose' ? scatter.x : 0);
-  const y = baseY + dragY + (mode === 'loose' ? scatter.y : 0);
-  const rotation = mode === 'loose' ? scatter.r : 0;
-  tile.el.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${rotation}deg)`;
-}
-
-function bindTileDrag(tile) {
-  tile.el.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    tile.el.setPointerCapture(event.pointerId);
-    tile.el.classList.add('is-dragging');
-    tile.el.style.zIndex = String(state.zCounter += 1);
-    state.dragging = {
-      id: tile.data.id,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: tile.dragX || 0,
-      originY: tile.dragY || 0
-    };
-  });
-  tile.el.addEventListener('pointermove', (event) => {
-    if (!state.dragging || state.dragging.pointerId !== event.pointerId) return;
-    const dx = event.clientX - state.dragging.startX;
-    const dy = event.clientY - state.dragging.startY;
-    tile.dragX = state.dragging.originX + dx;
-    tile.dragY = state.dragging.originY + dy;
-    updateTileTransform(tile);
-  });
-  const release = () => {
-    if (!state.dragging) return;
-    tile.el.classList.remove('is-dragging');
-    tile.el.releasePointerCapture?.(state.dragging.pointerId);
-    state.dragging = null;
+function beginDrag(block, event) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  block.el.setPointerCapture(event.pointerId);
+  block.el.classList.add('is-dragging');
+  block.el.style.zIndex = String(state.zCounter += 1);
+  state.drag = {
+    block,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    originX: block.dragX || 0,
+    originY: block.dragY || 0
   };
-  tile.el.addEventListener('pointerup', release);
-  tile.el.addEventListener('pointercancel', release);
 }
 
-function createTile(work, index) {
-  const el = document.createElement('article');
-  el.className = 'ts-tile';
-  el.dataset.id = String(work.id);
-  el.setAttribute('role', 'group');
-  el.setAttribute('tabindex', '0');
+function moveDrag(event) {
+  const drag = state.drag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const dx = event.clientX - drag.startX;
+  const dy = event.clientY - drag.startY;
+  drag.block.dragX = drag.originX + dx;
+  drag.block.dragY = drag.originY + dy;
+  updateBlockTransform(drag.block);
+}
 
-  const content = document.createElement('div');
-  content.className = 'ts-tile-content';
+function endDrag(event) {
+  const drag = state.drag;
+  if (!drag || (event && drag.pointerId !== event.pointerId)) return;
+  drag.block.el.classList.remove('is-dragging');
+  drag.block.el.releasePointerCapture?.(drag.pointerId);
+  state.drag = null;
+}
 
-  const titleBtn = document.createElement('button');
-  titleBtn.type = 'button';
-  titleBtn.className = 'ts-tile-title';
-  titleBtn.dataset.action = 'open';
-  titleBtn.textContent = work.title || work.slug || `Work ${index + 1}`;
+function showFeedback(block, text) {
+  if (!block.feedbackEl) return;
+  block.feedbackEl.textContent = text;
+  block.feedbackEl.classList.add('is-visible');
+  clearTimeout(block.feedbackTimer);
+  block.feedbackTimer = setTimeout(() => {
+    block.feedbackEl.classList.remove('is-visible');
+  }, 1600);
+}
 
-  const slug = document.createElement('p');
-  slug.className = 'ts-tile-slug';
-  slug.textContent = (work.slug || '').toUpperCase();
-
-  const one = document.createElement('p');
-  one.className = 'ts-tile-one';
-  one.textContent = work.one || '';
-
-  content.append(titleBtn, slug, one);
-
-  const actionsWrap = document.createElement('div');
-  actionsWrap.className = 'ts-tile-actions';
-
-  const openBtn = document.createElement('button');
-  openBtn.type = 'button';
-  openBtn.className = 'ts-action';
-  openBtn.dataset.action = 'open';
-  openBtn.textContent = 'Open';
-
-  const playBtn = document.createElement('button');
-  playBtn.type = 'button';
-  playBtn.className = 'ts-action';
-  playBtn.dataset.action = 'play';
-  playBtn.textContent = 'Play';
-
-  const scoreBtn = document.createElement('button');
-  scoreBtn.type = 'button';
-  scoreBtn.className = 'ts-action';
-  scoreBtn.dataset.action = 'score';
-  scoreBtn.textContent = 'Open Score';
-
-  const copyBtn = document.createElement('button');
-  copyBtn.type = 'button';
-  copyBtn.className = 'ts-action';
-  copyBtn.dataset.action = 'copy';
-  copyBtn.textContent = 'Copy URL';
-
-  actionsWrap.append(openBtn, playBtn, scoreBtn, copyBtn);
-
-  el.append(content, actionsWrap);
-
-  const actions = actionsWrap.querySelectorAll('.ts-action[data-action="score"], .ts-action[data-action="play"]');
-  actions.forEach((btn) => {
-    const action = btn.getAttribute('data-action');
-    if (action === 'score' && !(work.pdfUrl || work.pdf)) {
-      btn.setAttribute('aria-disabled', 'true');
-      btn.disabled = true;
-    }
-    if (action === 'play' && !(work.audioUrl || work.audio)) {
-      btn.setAttribute('aria-disabled', 'true');
-      btn.disabled = true;
+function hideAllCues() {
+  state.blocks.forEach((block) => {
+    if (block.cuesEl) {
+      block.cuesEl.hidden = true;
+      block.cuesVisible = false;
     }
   });
-  const cues = Array.isArray(work.cues) ? work.cues : [];
-  if (cues.length) {
-    const wrap = document.createElement('p');
-    wrap.className = 'ts-tile-cues';
-    for (const cue of cues) {
-      const label = cue.label || `@${formatTime(cueTime(cue.at))}`;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ts-cue';
-      btn.dataset.action = 'cue';
-      btn.dataset.at = String(cueTime(cue.at));
-      btn.textContent = label;
-      wrap.appendChild(btn);
-    }
-    el.appendChild(wrap);
+  state.cuesVisibleFor = null;
+}
+
+function toggleCuesForSelected() {
+  const block = state.blocks[state.selectedIndex];
+  if (!block) return;
+  if (!block.cuesEl || !block.cuesEl.childElementCount) {
+    showFeedback(block, 'no timecodes');
+    return;
   }
-  el.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
+  const key = block.work.id != null ? block.work.id : `idx-${block.index}`;
+  const shouldShow = state.cuesVisibleFor !== key;
+  hideAllCues();
+  if (shouldShow) {
+    block.cuesEl.hidden = false;
+    block.cuesVisible = true;
+    state.cuesVisibleFor = key;
+  }
+}
+
+function selectBlock(index, opts = {}) {
+  const { focus = true, updateHash: doUpdate = true } = opts;
+  if (index < 0 || index >= state.blocks.length) {
+    if (state.selectedIndex !== -1) {
+      const prev = state.blocks[state.selectedIndex];
+      prev?.el.classList.remove('is-selected');
+    }
+    hideAllCues();
+    state.selectedIndex = -1;
+    if (doUpdate) updateHash();
+    return;
+  }
+  if (state.selectedIndex !== -1 && state.selectedIndex !== index) {
+    const prev = state.blocks[state.selectedIndex];
+    prev?.el.classList.remove('is-selected');
+    if (prev && state.cuesVisibleFor === prev.work.id) {
+      hideAllCues();
+    }
+  }
+  const block = state.blocks[index];
+  state.selectedIndex = index;
+  block.el.classList.add('is-selected');
+  if (focus) block.el.focus({ preventScroll: true });
+  if (doUpdate) updateHash();
+}
+
+function selectNext(delta) {
+  if (!state.blocks.length) return;
+  const next = state.selectedIndex < 0 ? 0 : clamp(state.selectedIndex + delta, 0, state.blocks.length - 1);
+  selectBlock(next, { focus: true, updateHash: true });
+}
+
+function toggleLayoutMode() {
+  state.layoutMode = state.layoutMode === 'loose' ? 'neat' : 'loose';
+  applyLayout();
+  updateHash();
+}
+
+function resetDragPositions() {
+  state.blocks.forEach((block) => {
+    block.dragX = 0;
+    block.dragY = 0;
+    updateBlockTransform(block);
+  });
+}
+
+function adjustScale(delta) {
+  state.scaleIndex = clamp(state.scaleIndex + delta, 0, SCALE_STEPS.length - 1);
+  applyTypeSettings();
+  applyLayout();
+}
+
+function adjustMeasure(delta) {
+  state.measure = clamp(state.measure + delta, MEASURE_MIN, MEASURE_MAX);
+  applyTypeSettings();
+  applyLayout();
+}
+
+function copyDeepLink(block) {
+  if (!block?.work?.id) return;
+  const params = new URLSearchParams();
+  params.set(HASH_WORK_KEY, String(block.work.id));
+  params.set(HASH_MODE_KEY, state.layoutMode);
+  const url = new URL(location.href);
+  url.hash = params.toString();
+  copyToClipboard(url.toString()).then((ok) => {
+    showFeedback(block, ok ? 'link copied' : url.toString());
+  }).catch(() => {
+    showFeedback(block, url.toString());
+  });
+}
+
+function attemptPlay(block) {
+  if (!block?.work) return;
+  const hasAudio = !!normalizeSrc(getAudioSourceFor(block.work));
+  if (!hasAudio) {
+    showFeedback(block, 'no audio');
+    return;
+  }
+  const played = togglePlayFor(block.work.id);
+  if (!played) {
+    showFeedback(block, 'audio unavailable');
+  }
+}
+
+function attemptOpenPdf(block) {
+  if (!block?.work) return;
+  const hasPdf = !!normalizePdfUrl(block.work.pdfUrl || block.work.pdf);
+  if (!hasPdf) {
+    showFeedback(block, 'no score');
+    return;
+  }
+  openPdfFor(block.work.id);
+}
+
+function handleKeydown(event) {
+  const activeTag = document.activeElement?.tagName;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) return;
+  if ((event.key === 'd' || event.key === 'D') && (event.altKey || event.metaKey)) {
+    event.preventDefault();
+    praeCycleTheme();
+    return;
+  }
+  switch (event.key) {
+    case 'ArrowRight':
+    case 'ArrowDown':
       event.preventDefault();
-      openReaderFor(work.id, el);
-    }
-  });
-  const tile = { el, data: work, baseX: 0, baseY: 0, dragX: 0, dragY: 0, scatter: null };
-  state.tiles.set(Number(work.id), tile);
-  bindTileDrag(tile);
-  return el;
-}
-
-function renderTiles(field) {
-  if (!field) return;
-  field.innerHTML = '';
-  state.tiles.clear();
-  if (!works.length) {
-    const empty = document.createElement('div');
-    empty.className = 'ts-empty-state';
-    empty.textContent = 'No works available yet — update PRAE.works to begin.';
-    field.appendChild(empty);
-    return;
-  }
-  works.forEach((work, index) => {
-    const tile = createTile(work, index);
-    field.appendChild(tile);
-  });
-  scheduleLayout();
-}
-
-function updateFullscreenButton() {
-  const btn = state.controls?.querySelector('[data-control="fullscreen"]');
-  if (!btn) return;
-  const active = !!document.fullscreenElement;
-  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  btn.textContent = active ? 'Exit fullscreen' : 'Enter fullscreen';
-}
-
-function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen?.().catch(() => {});
-  } else {
-    document.exitFullscreen?.();
-  }
-}
-
-document.addEventListener('fullscreenchange', updateFullscreenButton, { passive: true });
-
-function handleFieldClick(event) {
-  const actionEl = event.target.closest('[data-action]');
-  if (!actionEl) {
-    const tileEl = event.target.closest('.ts-tile');
-    if (tileEl) {
-      const id = Number(tileEl.dataset.id);
-      openReaderFor(id, tileEl);
-    }
-    return;
-  }
-  const tileEl = actionEl.closest('.ts-tile');
-  const id = tileEl ? Number(tileEl.dataset.id) : null;
-  if (!id) return;
-  const action = actionEl.getAttribute('data-action');
-  if (actionEl.getAttribute('aria-disabled') === 'true') return;
-  switch (action) {
-    case 'open':
-      openReaderFor(id, actionEl);
+      selectNext(1);
       break;
-    case 'play':
-      togglePlayFor(id);
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      event.preventDefault();
+      selectNext(-1);
       break;
-    case 'score':
-      openPdfFor(id);
+    case ' ': // Space
+      if (state.selectedIndex >= 0) {
+        event.preventDefault();
+        attemptPlay(state.blocks[state.selectedIndex]);
+      }
       break;
-    case 'copy':
-      copyDeepLink(id);
+    case 'S':
+    case 's':
+      if (state.selectedIndex >= 0) {
+        event.preventDefault();
+        attemptOpenPdf(state.blocks[state.selectedIndex]);
+      }
       break;
-    case 'cue':
-      playAt(id, Number(actionEl.dataset.at || 0));
+    case 'C':
+    case 'c':
+      if (state.selectedIndex >= 0) {
+        event.preventDefault();
+        copyDeepLink(state.blocks[state.selectedIndex]);
+      }
+      break;
+    case '@':
+      event.preventDefault();
+      toggleCuesForSelected();
+      break;
+    case 'L':
+    case 'l':
+      event.preventDefault();
+      toggleLayoutMode();
+      break;
+    case 'R':
+    case 'r':
+      event.preventDefault();
+      resetDragPositions();
+      break;
+    case '[':
+      event.preventDefault();
+      adjustScale(-1);
+      break;
+    case ']':
+      event.preventDefault();
+      adjustScale(1);
+      break;
+    case ',':
+      event.preventDefault();
+      adjustMeasure(-MEASURE_STEP);
+      break;
+    case '.':
+      event.preventDefault();
+      adjustMeasure(MEASURE_STEP);
+      break;
+    case '?':
+      event.preventDefault();
+      toggleHelpOverlay();
+      break;
+    case 'Escape':
+      if (!hideHelpOverlayIfVisible()) {
+        hidePdfPane();
+      }
       break;
     default:
       break;
   }
 }
 
-async function copyDeepLink(id) {
-  const params = new URLSearchParams();
-  params.set(HASH_WORK_KEY, String(id));
-  params.set(HASH_MODE_KEY, state.layoutMode);
-  const url = new URL(location.href);
-  url.hash = params.toString();
-  await copyToClipboard(url.toString());
+function toggleHelpOverlay(force) {
+  const overlay = state.helpOverlay;
+  if (!overlay) return;
+  const show = force != null ? force : overlay.hasAttribute('hidden');
+  if (show) {
+    overlay.removeAttribute('hidden');
+    overlay.setAttribute('aria-hidden', 'false');
+  } else {
+    overlay.setAttribute('hidden', '');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
 }
 
-function renderReaderContent(id) {
-  const record = findWorkById(id);
-  const work = record?.data;
-  if (!work || !state.reader) return;
-  state.reader.innerHTML = '';
-  state.reader.setAttribute('role', 'dialog');
-  state.reader.setAttribute('aria-modal', 'true');
-  state.reader.tabIndex = -1;
-  const header = document.createElement('header');
-  const title = document.createElement('h1');
-  title.textContent = work.title || work.slug || `Work ${id}`;
+function hideHelpOverlayIfVisible() {
+  const overlay = state.helpOverlay;
+  if (overlay && !overlay.hasAttribute('hidden')) {
+    toggleHelpOverlay(false);
+    return true;
+  }
+  return false;
+}
+
+function buildBlock(work, index) {
+  const el = document.createElement('article');
+  el.className = 'ts-block';
+  el.dataset.workId = work.id != null ? String(work.id) : '';
+  el.dataset.slug = work.slug || '';
+  el.setAttribute('tabindex', '0');
+  el.setAttribute('role', 'group');
+
+  const title = document.createElement('h2');
+  title.className = 'ts-block-title';
+  title.textContent = work.title || work.slug || `Work ${index + 1}`;
+
   const slug = document.createElement('p');
-  slug.className = 'ts-reader-slug';
+  slug.className = 'ts-block-slug';
   slug.textContent = (work.slug || '').toUpperCase();
-  const summary = document.createElement('p');
-  summary.className = 'ts-reader-summary';
-  summary.textContent = work.one || '';
-  header.append(title, slug, summary);
-  const actions = document.createElement('div');
-  actions.className = 'ts-reader-actions';
-  actions.innerHTML = `
-    <button type="button" data-action="play">Play</button>
-    <button type="button" data-action="score">Open Score</button>
-    <button type="button" data-action="copy">Copy URL</button>
-    <button type="button" data-action="back">Back</button>`;
-  if (!(work.audioUrl || work.audio)) {
-    const playBtn = actions.querySelector('[data-action="play"]');
-    if (playBtn) {
-      playBtn.setAttribute('aria-disabled', 'true');
-      playBtn.disabled = true;
-    }
-  }
-  if (!(work.pdfUrl || work.pdf)) {
-    const scoreBtn = actions.querySelector('[data-action="score"]');
-    if (scoreBtn) {
-      scoreBtn.setAttribute('aria-disabled', 'true');
-      scoreBtn.disabled = true;
-    }
-  }
-  const body = document.createElement('div');
-  body.className = 'ts-reader-body';
-  const note = Array.isArray(work.openNote) ? work.openNote : (work.openNote ? [work.openNote] : []);
-  const description = Array.isArray(work.description) ? work.description : (work.description ? [work.description] : []);
-  const extra = [...note, ...description];
-  extra.forEach((line) => {
-    const content = String(line || '').trim();
-    if (!content) return;
-    const p = document.createElement('p');
-    p.textContent = content;
-    body.appendChild(p);
-  });
-  state.reader.append(header, actions, body);
-  actions.addEventListener('click', (event) => {
-    const btn = event.target.closest('button[data-action]');
-    if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
-    const act = btn.getAttribute('data-action');
-    switch (act) {
-      case 'play':
-        togglePlayFor(id);
-        break;
-      case 'score':
-        openPdfFor(id);
-        break;
-      case 'copy':
-        copyDeepLink(id);
-        break;
-      case 'back':
-        closeReader();
-        break;
-      default:
-        break;
-    }
-  });
-}
 
-function openReaderFor(id, trigger) {
-  const record = findWorkById(id);
-  if (!record || !state.reader) return;
-  state.overlay.id = id;
-  state.overlay.restore = trigger instanceof HTMLElement ? trigger : null;
-  state.tiles.forEach((tile) => {
-    if (tile.data.id === id) tile.el.classList.add('is-selected');
-    else tile.el.classList.remove('is-selected');
-  });
-  renderReaderContent(id);
-  state.reader.hidden = false;
-  state.reader.setAttribute('aria-hidden', 'false');
-  document.body.classList.add('ts-reader-open');
-  requestAnimationFrame(() => state.reader?.focus({ preventScroll: true }));
-  updateHash({ workId: id });
-}
+  const one = document.createElement('p');
+  one.className = 'ts-block-one';
+  one.textContent = work.one || '';
 
-function closeReader() {
-  if (!state.reader) return;
-  state.tiles.forEach((tile) => tile.el.classList.remove('is-selected'));
-  state.reader.setAttribute('aria-hidden', 'true');
-  state.reader.hidden = true;
-  document.body.classList.remove('ts-reader-open');
-  const restore = state.overlay.restore;
-  state.overlay = { id: null, restore: null };
-  if (restore && typeof restore.focus === 'function') {
-    requestAnimationFrame(() => restore.focus());
-  }
-  updateHash({ workId: null });
-}
+  el.append(title, slug, one);
 
-function bindReaderClose() {
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      if (document.fullscreenElement) {
-        document.exitFullscreen?.();
-        return;
+  const block = {
+    el,
+    work,
+    index,
+    cuesEl: null,
+    feedbackEl: null,
+    feedbackTimer: null,
+    dragX: 0,
+    dragY: 0,
+    scatter: null,
+    cuesVisible: false
+  };
+
+  const cuesEl = document.createElement('div');
+  cuesEl.className = 'ts-block-cues';
+  cuesEl.setAttribute('hidden', '');
+  const cues = Array.isArray(work.cues) ? work.cues : [];
+  cues.forEach((cue) => {
+    const raw = typeof cue === 'object' ? (cue.label || cue.at || cue.time || cue.t) : cue;
+    const seconds = typeof cue === 'object' ? cueTime(cue.at ?? cue.time ?? cue.t ?? cue.label) : cueTime(cue);
+    if (!raw && !seconds) return;
+    const label = raw ? String(raw) : formatTime(seconds);
+    const text = label.startsWith('@') ? label : `@${label}`;
+    const link = document.createElement('a');
+    link.href = '#';
+    link.className = 'ts-block-cue';
+    link.textContent = text;
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (work.id != null) {
+        if (normalizeSrc(getAudioSourceFor(work))) {
+          playAt(work.id, seconds || 0);
+        } else {
+          showFeedback(block, 'no audio');
+        }
       }
-      if (!state.reader?.hidden) {
-        closeReader();
-      } else {
-        hidePdfPane();
-      }
+    });
+    cuesEl.appendChild(link);
+  });
+  if (cuesEl.childElementCount) {
+    el.appendChild(cuesEl);
+    block.cuesEl = cuesEl;
+  }
+
+  const feedback = document.createElement('p');
+  feedback.className = 'ts-feedback';
+  el.appendChild(feedback);
+  block.feedbackEl = feedback;
+
+  el.addEventListener('pointerdown', (event) => beginDrag(block, event));
+  el.addEventListener('pointermove', moveDrag);
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+  el.addEventListener('click', () => {
+    const idx = state.blocks.indexOf(block);
+    selectBlock(idx, { focus: true, updateHash: true });
+  });
+  el.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+    selectBlock(state.blocks.indexOf(block), { focus: true, updateHash: true });
+    attemptPlay(block);
+  });
+  el.addEventListener('focus', () => {
+    const idx = state.blocks.indexOf(block);
+    if (idx >= 0 && state.selectedIndex !== idx) {
+      selectBlock(idx, { focus: false, updateHash: true });
     }
   });
+
+  return block;
 }
 
-function bindThemeToggle() {
-  const btn = document.getElementById('wc-theme-toggle');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
+function renderWorks() {
+  const field = state.field;
+  if (!field) return;
+  field.innerHTML = '';
+  state.blocks = [];
+  state.blockMap.clear();
+  if (!works.length) {
+    const empty = document.createElement('p');
+    empty.className = 'ts-field-empty';
+    empty.textContent = 'No works yet.';
+    field.appendChild(empty);
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  works.forEach((work, index) => {
+    const block = buildBlock(work, index);
+    state.blocks.push(block);
+    if (work.id != null) state.blockMap.set(Number(work.id), block);
+    fragment.appendChild(block.el);
+  });
+  field.appendChild(fragment);
+  requestAnimationFrame(() => applyLayout());
+}
+
+function setupSiteBrand() {
+  const site = PRAE.config?.site || {};
+  const nameParts = [site.fullName, [site.firstName, site.lastName].filter(Boolean).join(' ')].filter(Boolean);
+  const fallbackName = nameParts[0] || nameParts[1] || site.title || site.copyrightName || 'Praetorius';
+  const title = String(fallbackName || '').trim();
+  const subtitle = site.subtitle ? String(site.subtitle) : '';
+  document.querySelectorAll('[data-site-title]').forEach((el) => { el.textContent = title; });
+  document.querySelectorAll('[data-site-subtitle]').forEach((el) => { el.textContent = subtitle; });
+  const nav = document.getElementById('prae-nav');
+  if (nav) {
+    const links = Array.isArray(site.links) ? site.links.filter((link) => link?.href && link?.label) : [];
+    nav.innerHTML = '';
+    if (!links.length) {
+      nav.setAttribute('hidden', '');
+    } else {
+      nav.removeAttribute('hidden');
+      links.forEach((link) => {
+        const a = document.createElement('a');
+        a.href = link.href;
+        a.textContent = link.label;
+        nav.appendChild(a);
+      });
+    }
+  }
+}
+
+function initThemeToggle() {
+  const toggle = document.getElementById('wc-theme-toggle');
+  if (!toggle) return;
+  toggle.addEventListener('click', (event) => {
+    event.preventDefault();
     praeCycleTheme();
   });
-  btn.addEventListener('keydown', (event) => {
+  toggle.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       praeCycleTheme();
@@ -1198,123 +1168,64 @@ function bindThemeToggle() {
   });
 }
 
-function bindKeyboardShortcuts() {
-  document.addEventListener('keydown', (event) => {
-    if (event.defaultPrevented) return;
-    if (event.target && event.target !== document.body && event.target !== document.documentElement) {
-      const tag = event.target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target.isContentEditable) return;
-    }
-    switch (event.key) {
-      case 'l':
-      case 'L':
-        event.preventDefault();
-        state.layoutMode = state.layoutMode === 'loose' ? 'neat' : 'loose';
-        updateModeLabel();
-        applyLayout();
-        updateHash({ workId: state.overlay.id });
-        break;
-      case '[':
-        if (state.scaleIndex > 0) {
-          event.preventDefault();
-          state.scaleIndex -= 1;
-          applyTypeScale();
-          scheduleLayout();
-          updateControlsState();
-        }
-        break;
-      case ']':
-        if (state.scaleIndex < SCALE_STEPS.length - 1) {
-          event.preventDefault();
-          state.scaleIndex += 1;
-          applyTypeScale();
-          scheduleLayout();
-          updateControlsState();
-        }
-        break;
-      case ',':
-        if (state.currentMeasure > MEASURE_MIN) {
-          event.preventDefault();
-          state.currentMeasure = Math.max(MEASURE_MIN, state.currentMeasure - MEASURE_STEP);
-          applyTypeScale();
-          scheduleLayout();
-          updateControlsState();
-        }
-        break;
-      case '.':
-        if (state.currentMeasure < MEASURE_MAX) {
-          event.preventDefault();
-          state.currentMeasure = Math.min(MEASURE_MAX, state.currentMeasure + MEASURE_STEP);
-          applyTypeScale();
-          scheduleLayout();
-          updateControlsState();
-        }
-        break;
-      case 'f':
-      case 'F':
-        event.preventDefault();
-        toggleFullscreen();
-        break;
-      default:
-        break;
-    }
-  });
-}
-
-function bindHashChange() {
-  window.addEventListener('hashchange', hydrateFromHash);
-}
-
-function initSiteMeta() {
-  const footer = document.getElementById('prae-footer');
-  const nav = document.getElementById('prae-nav');
-  const site = (PRAE.config && PRAE.config.site) || {};
-  if (nav && Array.isArray(site.links)) {
-    nav.innerHTML = '';
-    site.links.forEach((link) => {
-      const a = document.createElement('a');
-      a.href = link.href || '#';
-      a.textContent = link.label || link.href || 'Link';
-      if (link.external) {
-        a.target = '_blank';
-        a.rel = 'noopener';
-      }
-      nav.appendChild(a);
+function bindHelp() {
+  if (state.helpLink) {
+    state.helpLink.addEventListener('click', (event) => {
+      event.preventDefault();
+      toggleHelpOverlay();
     });
   }
-  if (footer) {
-    footer.textContent = site.copyrightName ? `© ${new Date().getFullYear()} ${site.copyrightName}` : '';
+}
+
+function handleResize() {
+  applyLayout();
+}
+
+function hydrateInitialSettings() {
+  const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  if (media && typeof media.addEventListener === 'function') {
+    media.addEventListener('change', (event) => {
+      state.prefersReducedMotion = !!event.matches;
+      state.blocks.forEach((block) => {
+        if (event.matches) {
+          block.scatter = { x: 0, y: 0, r: 0 };
+        } else {
+          block.scatter = null;
+        }
+      });
+      applyLayout();
+    });
   }
+  const computedMeasure = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--measure'));
+  if (Number.isFinite(computedMeasure)) state.measure = computedMeasure;
+  applyTypeSettings();
 }
 
 ready(() => {
-  document.documentElement.dataset.skin = 'typescatter';
-  praeApplyTheme(praeCurrentTheme(), { persist: false });
-  bindThemeToggle();
-  ensureAudioTags();
   state.field = document.getElementById('ts-field');
-  state.controls = document.getElementById('ts-controls');
-  state.reader = document.getElementById('ts-reader');
-  state.footer = document.getElementById('prae-footer');
-  const styleMeasure = getComputedStyle(document.documentElement).getPropertyValue('--measure');
-  const numericMeasure = parseFloat(styleMeasure);
-  if (!Number.isNaN(numericMeasure)) {
-    state.baseMeasure = clamp(Math.round(numericMeasure), MEASURE_MIN, MEASURE_MAX);
-    state.currentMeasure = state.baseMeasure;
-  }
-  applyTypeScale();
-  renderTiles(state.field);
-  renderControls(state.controls);
-  state.field?.addEventListener('click', handleFieldClick);
-  bindReaderClose();
-  bindKeyboardShortcuts();
-  bindHashChange();
-  initSiteMeta();
-  window.addEventListener('resize', () => scheduleLayout(), { passive: true });
+  state.helpLink = document.getElementById('ts-help-toggle');
+  state.helpOverlay = document.getElementById('ts-help-overlay');
+  setupSiteBrand();
+  initThemeToggle();
+  bindHelp();
+  hydrateInitialSettings();
+  praeApplyTheme(praeCurrentTheme(), { persist: false });
+  renderWorks();
   hydrateFromHash();
-  if (!state.overlay.id && works[0]) {
-    updateHash({ workId: null });
-  }
+  ensureAudioTags();
+  window.addEventListener('resize', handleResize);
+  document.addEventListener('keydown', handleKeydown);
+  window.addEventListener('hashchange', hydrateFromHash);
 });
 
-export {};
+window.addEventListener('message', (event) => {
+  if (!event?.data || typeof event.data !== 'object') return;
+  if (event.data.type === 'wc:pdf-ready') {
+    state.pdf.viewerReady = true;
+    const pending = state.pdf.pendingGoto;
+    if (pending?.pdfPage) {
+      gotoPdfPage(pending.pdfPage);
+      state.pdf.pendingGoto = null;
+    }
+  }
+});
