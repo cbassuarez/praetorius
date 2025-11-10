@@ -275,3 +275,92 @@ a:hover{opacity:1}
   opacity: .55;
   transform: translateY(-1px);
 }
+/* === HUD Play/Pause — Inline SVG refresh === */
+#vb-hud .hud-actions .hud-btn,
+#wc-hud .hud-actions .hud-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  color: inherit;
+  text-shadow: none;
+}
+
+#vb-hud .hud-actions .hud-btn::before,
+#wc-hud .hud-actions .hud-btn::before {
+  content: none;
+}
+
+#vb-hud .hud-actions .hud-btn::after,
+#wc-hud .hud-actions .hud-btn::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 120% at 20% 15%, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.08) 60%, rgba(0, 0, 0, 0.18));
+  opacity: 0.45;
+  transform: translateY(0);
+  transition: opacity 0.2s ease, transform 0.18s ease;
+}
+
+#vb-hud .hud-actions .hud-btn:hover::after,
+#wc-hud .hud-actions .hud-btn:hover::after {
+  opacity: 0.6;
+  transform: translateY(-1px);
+}
+
+#vb-hud .hud-actions .hud-btn:active::after,
+#wc-hud .hud-actions .hud-btn:active::after {
+  opacity: 0.35;
+  transform: translateY(1px);
+}
+
+#vb-hud .hud-actions .hud-btn svg[data-hud-icon],
+#wc-hud .hud-actions .hud-btn svg[data-hud-icon] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  fill: currentColor;
+  filter: drop-shadow(0 0.5px 1.5px rgba(0, 0, 0, 0.25)) drop-shadow(0 2px 6px rgba(255, 255, 255, 0.22));
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+#vb-hud .hud-actions .hud-btn:hover svg[data-hud-icon],
+#wc-hud .hud-actions .hud-btn:hover svg[data-hud-icon] {
+  transform: scale(1.05);
+  opacity: 0.96;
+}
+
+#vb-hud .hud-actions .hud-btn:active svg[data-hud-icon],
+#wc-hud .hud-actions .hud-btn:active svg[data-hud-icon] {
+  transform: scale(0.94);
+  opacity: 0.85;
+}
+
+#vb-hud .hud-actions .hud-btn .hud-sr,
+#wc-hud .hud-actions .hud-btn .hud-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #vb-hud .hud-actions .hud-btn::after,
+  #wc-hud .hud-actions .hud-btn::after,
+  #vb-hud .hud-actions .hud-btn svg[data-hud-icon],
+  #wc-hud .hud-actions .hud-btn svg[data-hud-icon] {
+    transition: none;
+    transform: none;
+  }
+}
