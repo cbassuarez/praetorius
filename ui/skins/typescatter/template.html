@@ -17,15 +17,14 @@
   </header>
 
   <main class="ts-main" role="main">
-    <section id="ts-field" class="ts-field" aria-label="Type field"></section>
-    <a id="ts-help-toggle" class="ts-help-link" href="#" role="button">help</a>
-    <aside id="ts-help-overlay" class="ts-help-overlay" hidden aria-hidden="true">
-      <div class="ts-help-text">
-        <p>Arrow keys move selection. Double-click or Space plays or pauses audio. S opens the score pane. L toggles loose and neat layouts. R resets drag positions.</p>
-        <p>[ and ] change type scale. , and . adjust measure. C copies a deep link. @ toggles timecodes for the selection. Alt/Opt+D switches theme. Esc closes the score pane. ? or help hides this text.</p>
-      </div>
-    </aside>
+    <button id="ts-reset" class="ts-reset" type="button">Reset layout</button>
+    <section id="ts-field" class="ts-field" aria-label="Typescatter canvas"></section>
   </main>
+
+  <footer class="ts-footer" role="contentinfo">
+    <div data-now-playing></div>
+    <div data-footer-info></div>
+  </footer>
 
   <script type="module" src="./main.js" defer></script>
 </body>
