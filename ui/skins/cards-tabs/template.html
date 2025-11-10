@@ -4,105 +4,56 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Praetorius — Cards &amp; Tabs Dashboard</title>
+  <link rel="stylesheet" href="./style.css"/>
 </head>
 <body class="prae-theme-dark" data-theme="dark">
-  <div class="dash-app" data-skin="cards-tabs">
-    <header class="dash-header" role="banner">
-      <div class="dash-header-left">
-        <div class="dash-brand">
-          <span class="dash-title" data-site-title>Praetorius</span>
-          <span class="dash-subtitle" data-site-subtitle>Cards &amp; Tabs</span>
-        </div>
-        <nav id="prae-nav" class="dash-nav" aria-label="Site"></nav>
+  <header class="ct-header" role="banner">
+    <div class="ct-header-left">
+      <div class="ct-brand">
+        <span class="ct-title" data-site-title>Praetorius</span>
+        <span class="ct-subtitle" data-site-subtitle>Portfolio</span>
       </div>
-      <div class="dash-header-right">
-        <button id="wc-theme-toggle" class="dash-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme" title="Toggle theme"></button>
+      <nav id="prae-nav" class="ct-nav" aria-label="Site"></nav>
+    </div>
+    <div class="ct-header-right">
+      <button id="wc-theme-toggle" class="ct-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme" title="Toggle theme"></button>
+    </div>
+  </header>
+
+  <main class="ct-shell" role="main">
+    <div class="ct-grid">
+      <div class="ct-column ct-column-left">
+        <aside id="ct-summary" class="ct-summary" aria-label="Portfolio summary"></aside>
+        <section id="works-console" class="ct-works" aria-label="Works list"></section>
       </div>
-    </header>
-
-    <main class="dash-shell" role="main">
-      <section id="dash-left" class="dash-column dash-column-left" aria-label="Overview metrics and activity">
-        <section class="dash-section" aria-labelledby="dash-metrics-title">
-          <div class="dash-section-head">
-            <h2 id="dash-metrics-title">Key metrics</h2>
-            <div class="dash-section-actions">
-              <label class="dash-filter" for="dash-metric-range">
-                <span>Range</span>
-                <select id="dash-metric-range" name="dash-metric-range">
-                  <option value="7d">Last 7 days</option>
-                  <option value="14d">Last 14 days</option>
-                  <option value="30d">Last 30 days</option>
-                  <option value="90d">Last 90 days</option>
-                </select>
-              </label>
-            </div>
+      <div class="ct-column ct-column-right">
+        <section id="ct-tabs" class="ct-tabs" aria-label="Work details">
+          <div class="ct-tablist" role="tablist" aria-label="Work detail tabs">
+            <button type="button" class="ct-tab" id="ct-tab-details" role="tab" data-tab="details" aria-selected="true" aria-controls="ct-panel-details" tabindex="0">Details</button>
+            <button type="button" class="ct-tab" id="ct-tab-cues" role="tab" data-tab="cues" aria-selected="false" aria-controls="ct-panel-cues" tabindex="-1">Cues</button>
+            <button type="button" class="ct-tab" id="ct-tab-playback" role="tab" data-tab="playback" aria-selected="false" aria-controls="ct-panel-playback" tabindex="-1">Playback</button>
+            <button type="button" class="ct-tab" id="ct-tab-score" role="tab" data-tab="score" aria-selected="false" aria-controls="ct-panel-score" tabindex="-1">Score</button>
           </div>
-          <div id="dash-metric-list" class="dash-metric-list" role="list" aria-live="polite"></div>
-        </section>
-
-        <section class="dash-section" aria-labelledby="dash-actions-title">
-          <div class="dash-section-head">
-            <h2 id="dash-actions-title">Quick actions</h2>
-            <p class="dash-section-desc">Kick off the most common flows. Shortcuts are shown on each button.</p>
+          <div class="ct-tabpanels">
+            <article id="ct-panel-details" class="ct-panel" role="tabpanel" tabindex="0" aria-labelledby="ct-tab-details"></article>
+            <article id="ct-panel-cues" class="ct-panel" role="tabpanel" tabindex="0" aria-labelledby="ct-tab-cues" hidden></article>
+            <article id="ct-panel-playback" class="ct-panel" role="tabpanel" tabindex="0" aria-labelledby="ct-tab-playback" hidden></article>
+            <article id="ct-panel-score" class="ct-panel" role="tabpanel" tabindex="0" aria-labelledby="ct-tab-score" hidden></article>
           </div>
-          <div id="dash-actions" class="dash-actions" role="group" aria-describedby="dash-action-status"></div>
-          <div id="dash-action-status" class="dash-action-status" role="status" aria-live="polite"></div>
         </section>
+      </div>
+    </div>
+    <aside class="ct-pdfpane vb-pdfpane" aria-label="Score PDF" aria-hidden="true">
+      <header class="ct-pdfbar">
+        <div class="ct-pdf-title" aria-live="polite"></div>
+        <button type="button" class="ct-pdf-close" aria-label="Close PDF">✕</button>
+      </header>
+      <iframe class="ct-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    </aside>
+  </main>
 
-        <section class="dash-section" aria-labelledby="dash-activity-title">
-          <div class="dash-section-head">
-            <h2 id="dash-activity-title">Activity feed</h2>
-            <div class="dash-section-actions" id="dash-activity-filters" role="group" aria-label="Activity filters"></div>
-          </div>
-          <ol id="dash-activity-feed" class="dash-activity-feed" aria-live="polite"></ol>
-          <button id="dash-activity-more" type="button" class="dash-link-btn">Load more</button>
-        </section>
-      </section>
+  <footer id="prae-footer" class="ct-footer" role="contentinfo"></footer>
 
-      <section id="dash-right" class="dash-column dash-column-right" aria-label="Detail panes">
-        <form class="dash-filter-row" aria-label="Dashboard filters">
-          <label class="dash-filter" for="dash-filter-status">
-            <span>Status</span>
-            <select id="dash-filter-status" name="status">
-              <option value="all">All statuses</option>
-              <option value="ok">Healthy</option>
-              <option value="warn">Warnings</option>
-              <option value="err">Errors</option>
-              <option value="pending">Pending</option>
-            </select>
-          </label>
-          <label class="dash-filter" for="dash-filter-date">
-            <span>Date range</span>
-            <input id="dash-filter-date" type="date" name="date"/>
-          </label>
-          <button type="submit" class="dash-filter-apply">Apply</button>
-        </form>
-
-        <div class="dash-tabs" role="tablist" aria-label="Dashboard detail panes">
-          <button type="button" class="dash-tab" id="dash-tab-activity" role="tab" aria-selected="true" aria-controls="dash-panel-activity" tabindex="0">Activity</button>
-          <button type="button" class="dash-tab" id="dash-tab-queues" role="tab" aria-selected="false" aria-controls="dash-panel-queues" tabindex="-1">Queues</button>
-          <button type="button" class="dash-tab" id="dash-tab-results" role="tab" aria-selected="false" aria-controls="dash-panel-results" tabindex="-1">Results</button>
-          <button type="button" class="dash-tab" id="dash-tab-settings" role="tab" aria-selected="false" aria-controls="dash-panel-settings" tabindex="-1">Settings</button>
-        </div>
-
-        <section class="dash-tabpanels">
-          <article id="dash-panel-activity" class="dash-panel" role="tabpanel" tabindex="0" aria-labelledby="dash-tab-activity"></article>
-          <article id="dash-panel-queues" class="dash-panel" role="tabpanel" tabindex="0" aria-labelledby="dash-tab-queues" hidden></article>
-          <article id="dash-panel-results" class="dash-panel" role="tabpanel" tabindex="0" aria-labelledby="dash-tab-results" hidden></article>
-          <article id="dash-panel-settings" class="dash-panel" role="tabpanel" tabindex="0" aria-labelledby="dash-tab-settings" hidden></article>
-        </section>
-      </section>
-    </main>
-
-    <section id="works-console" hidden aria-hidden="true"></section>
-
-    <footer id="prae-footer" class="dash-footer" role="contentinfo">
-      <span data-site-title>Praetorius</span>
-      <span>·</span>
-      <span data-site-subtitle>Cards &amp; Tabs Dashboard</span>
-    </footer>
-  </div>
-
-  <div id="dash-toasts" class="dash-toasts" role="region" aria-live="polite" aria-atomic="false"></div>
+  <script type="module" src="./main.js" defer></script>
 </body>
 </html>

@@ -1,76 +1,8 @@
-const METRIC_ORDER_KEY = 'cards-tabs.metrics.order';
-const TAB_HASH_KEY = 'cards-tabs.tab.hash';
-const FILTER_STATE_KEY = 'cards-tabs.filters.state';
-
-const METRICS = [
-  {
-    id: 'new-subscribers',
-    label: 'New subscribers',
-    value: 248,
-    delta: '+18%',
-    trend: 'up',
-    completion: 0.72,
-    points: [5, 7, 6, 8, 9, 11, 12]
-  },
-  {
-    id: 'queue-depth',
-    label: 'Queue depth',
-    value: 38,
-    delta: '-6%',
-    trend: 'down',
-    completion: 0.42,
-    points: [12, 10, 9, 8, 7, 6, 5]
-  },
-  {
-    id: 'avg-turnaround',
-    label: 'Avg. turnaround',
-    value: '2.8 h',
-    delta: '-11%',
-    trend: 'up',
-    completion: 0.58,
-    points: [7, 6, 6, 5, 4, 4, 3]
-  },
-  {
-    id: 'open-issues',
-    label: 'Open issues',
-    value: 14,
-    delta: '+2',
-    trend: 'warn',
-    completion: 0.23,
-    points: [3, 4, 4, 6, 9, 11, 14]
-  }
-];
-
-const QUICK_ACTIONS = [
-  { id: 'refresh', label: 'Run sync', description: 'Pull the latest activity from integrations.', shortcut: 'r' },
-  { id: 'invite', label: 'Invite collaborator', description: 'Send an access link with staging permissions.', shortcut: 'i' },
-  { id: 'publish', label: 'Publish changes', description: 'Push the most recent edits live.', shortcut: 'p' },
-  { id: 'archive', label: 'Archive queue', description: 'Snooze low-priority tasks until next week.', shortcut: 'a' }
-];
-
-const FEED_SEED = [
-  { id: 'act-1', type: 'update', title: 'Prae Ensemble rehearsed Movement IV', by: 'Morgan', minutesAgo: 14 },
-  { id: 'act-2', type: 'alert', title: 'Score PDF missing page markers', by: 'System', minutesAgo: 47 },
-  { id: 'act-3', type: 'note', title: 'Commissioner uploaded revisions', by: 'Aria', minutesAgo: 93 },
-  { id: 'act-4', type: 'success', title: 'Queue cleared for tonight', by: 'Morgan', minutesAgo: 120 },
-  { id: 'act-5', type: 'update', title: 'New cue timings synced', by: 'System', minutesAgo: 240 },
-  { id: 'act-6', type: 'alert', title: 'Audio HUD latency spike detected', by: 'Monitoring', minutesAgo: 360 }
-];
-
-const QUEUE_ROWS = [
-  { name: 'Orchestra — Dress', owner: 'Morgan', tasks: 12, eta: '2h', state: 'ok' },
-  { name: 'Wind band edits', owner: 'Dana', tasks: 7, eta: '6h', state: 'pending' },
-  { name: 'Chamber notes', owner: 'Alex', tasks: 4, eta: '1d', state: 'warn' },
-  { name: 'Youth ensemble', owner: 'Taylor', tasks: 9, eta: '3d', state: 'ok' }
-];
-
-const RESULT_ROWS = [
-  { name: 'HUD playback', lastRun: '2 minutes ago', status: 'ok' },
-  { name: 'PDF stitching', lastRun: '14 minutes ago', status: 'ok' },
-  { name: 'Cue validation', lastRun: '22 minutes ago', status: 'warn' },
-  { name: 'Score export', lastRun: '58 minutes ago', status: 'pending' },
-  { name: 'Webhooks', lastRun: '1 hour ago', status: 'err' }
-];
+const TAB_KEYS = ['details', 'cues', 'playback', 'score'];
+const HASH_WORK_KEY = 'work';
+const HASH_TAB_KEY = 'tab';
+const PRAE_THEME_STORAGE_KEY = 'wc.theme';
+const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
 
 function ready(fn) {
   if (document.readyState === 'loading') {
@@ -80,699 +12,985 @@ function ready(fn) {
   }
 }
 
-function ensureThemeHelpers() {
-  if (typeof window.praeApplyTheme === 'function' && typeof window.praeCurrentTheme === 'function') {
-    return {
-      apply: window.praeApplyTheme,
-      current: window.praeCurrentTheme,
-      cycle: typeof window.praeCycleTheme === 'function'
-        ? window.praeCycleTheme
-        : () => window.praeApplyTheme(window.praeCurrentTheme() === 'dark' ? 'light' : 'dark')
-    };
+function praeNormalizeTheme(value) {
+  return value === 'light' ? 'light' : 'dark';
+}
+
+function praeReadStoredTheme() {
+  try {
+    let saved = localStorage.getItem(PRAE_THEME_STORAGE_KEY);
+    if (!saved) return 'dark';
+    if (saved.trim().charAt(0) === '{') {
+      const parsed = JSON.parse(saved);
+      return praeNormalizeTheme(parsed?.mode);
+    }
+    return praeNormalizeTheme(saved);
+  } catch (_) {
+    return 'dark';
   }
-
-  const STORAGE_KEY = 'wc.theme';
-  const THEME_CLASSES = ['prae-theme-light', 'prae-theme-dark'];
-
-  const normalize = (value) => (value === 'light' ? 'light' : 'dark');
-
-  const readStoredTheme = () => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return 'dark';
-      if (raw.trim().startsWith('{')) {
-        const parsed = JSON.parse(raw);
-        return normalize(parsed?.mode);
-      }
-      return normalize(raw);
-    } catch (_) {
-      return 'dark';
-    }
-  };
-
-  const sync = (mode) => {
-    const eff = normalize(mode);
-    const body = document.body;
-    const html = document.documentElement;
-    const host = document.getElementById('works-console');
-    if (html) {
-      html.setAttribute('data-theme', eff);
-      html.style.colorScheme = eff;
-    }
-    if (body) {
-      body.setAttribute('data-theme', eff);
-      body.classList.remove(...THEME_CLASSES);
-      body.classList.add(eff === 'dark' ? THEME_CLASSES[1] : THEME_CLASSES[0]);
-    }
-    if (host) {
-      host.classList.remove(...THEME_CLASSES);
-      host.classList.add(eff === 'dark' ? THEME_CLASSES[1] : THEME_CLASSES[0]);
-      host.setAttribute('data-theme', eff);
-    }
-    return eff;
-  };
-
-  const apply = (mode, opts) => {
-    const eff = sync(mode);
-    if (!opts || opts.persist !== false) {
-      try { localStorage.setItem(STORAGE_KEY, eff); } catch (_) {}
-    }
-    updateThemeToggle(eff);
-    return eff;
-  };
-
-  const current = () => {
-    const bodyTheme = document.body?.getAttribute('data-theme');
-    if (bodyTheme === 'light' || bodyTheme === 'dark') return bodyTheme;
-    return readStoredTheme();
-  };
-
-  const cycle = () => {
-    const next = current() === 'dark' ? 'light' : 'dark';
-    apply(next);
-  };
-
-  window.praeApplyTheme = apply;
-  window.praeCurrentTheme = current;
-  window.praeCycleTheme = cycle;
-
-  return { apply, current, cycle };
 }
 
-function updateThemeToggle(mode) {
-  const btn = document.getElementById('wc-theme-toggle');
-  if (!btn) return;
-  const nextTitle = mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-  btn.setAttribute('aria-checked', String(mode === 'dark'));
-  btn.dataset.mode = mode;
-  btn.title = nextTitle;
-  btn.textContent = mode === 'dark' ? '🌙' : '☀️';
+function praeSyncThemeOnDom(mode) {
+  const eff = praeNormalizeTheme(mode);
+  const body = document.body;
+  const doc = document.documentElement;
+  const host = document.getElementById('works-console');
+  if (doc) {
+    doc.setAttribute('data-theme', eff);
+    doc.style.colorScheme = eff === 'dark' ? 'dark' : 'light';
+  }
+  if (body) {
+    body.classList.remove(...PRAE_THEME_CLASSNAMES);
+    body.classList.add(eff === 'light' ? PRAE_THEME_CLASSNAMES[0] : PRAE_THEME_CLASSNAMES[1]);
+    body.setAttribute('data-theme', eff);
+  }
+  if (host) {
+    host.classList.remove(...PRAE_THEME_CLASSNAMES);
+    host.classList.add(eff === 'light' ? PRAE_THEME_CLASSNAMES[0] : PRAE_THEME_CLASSNAMES[1]);
+    host.setAttribute('data-theme', eff);
+  }
+  return eff;
 }
 
-function initTheme() {
-  const helpers = ensureThemeHelpers();
-  const current = helpers.current();
-  helpers.apply(current, { persist: false });
-  updateThemeToggle(current);
+function praeApplyTheme(mode, opts) {
+  const eff = praeSyncThemeOnDom(mode);
+  if (!opts || opts.persist !== false) {
+    try { localStorage.setItem(PRAE_THEME_STORAGE_KEY, eff); } catch (_) {}
+  }
   const btn = document.getElementById('wc-theme-toggle');
   if (btn) {
-    btn.addEventListener('click', () => {
-      helpers.cycle();
-      updateThemeToggle(helpers.current());
-    });
+    btn.setAttribute('aria-checked', String(eff === 'dark'));
+    btn.dataset.mode = eff;
+    btn.textContent = eff === 'dark' ? '🌙' : '☀️';
+    btn.title = eff === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   }
+  return eff;
 }
 
-function readMetricOrder() {
-  try {
-    const raw = localStorage.getItem(METRIC_ORDER_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch (_) {
-    return null;
-  }
+function praeCurrentTheme() {
+  const attr = document.body?.getAttribute('data-theme');
+  if (attr === 'light' || attr === 'dark') return attr;
+  return praeReadStoredTheme();
 }
 
-function writeMetricOrder(order) {
-  try {
-    localStorage.setItem(METRIC_ORDER_KEY, JSON.stringify(order));
-  } catch (_) {}
+function praeCycleTheme() {
+  const next = praeCurrentTheme() === 'dark' ? 'light' : 'dark';
+  praeApplyTheme(next);
 }
 
-function createMetricCard(metric) {
-  const article = document.createElement('article');
-  article.className = 'dash-metric-card';
-  article.setAttribute('role', 'listitem');
-  article.tabIndex = 0;
-  article.dataset.metricId = metric.id;
-
-  const header = document.createElement('div');
-  header.className = 'dash-metric-meta';
-
-  const title = document.createElement('p');
-  title.className = 'dash-metric-name';
-  title.textContent = metric.label;
-
-  const delta = document.createElement('span');
-  delta.className = 'dash-metric-delta';
-  const trend = ['up', 'down', 'warn', 'flat'].includes(metric.trend) ? metric.trend : (metric.trend === 'down' ? 'down' : 'up');
-  delta.dataset.trend = trend;
-  delta.textContent = metric.delta;
-
-  header.append(title, delta);
-
-  const value = document.createElement('div');
-  value.className = 'dash-metric-value';
-  value.textContent = metric.value;
-
-  const spark = document.createElement('canvas');
-  spark.className = 'dash-sparkline';
-  spark.height = 60;
-  spark.width = 240;
-
-  const progress = document.createElement('div');
-  progress.className = 'dash-progress';
-  const fill = document.createElement('span');
-  fill.style.width = `${Math.round(metric.completion * 100)}%`;
-  progress.appendChild(fill);
-
-  article.append(header, value, spark, progress);
-
-  article.addEventListener('click', () => {
-    showToast({
-      title: metric.label,
-      message: 'Opening detailed report…',
-      tone: 'pending'
-    });
-  });
-  article.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      article.click();
-    }
-  });
-
-  drawSparkline(spark, metric.points);
-  return article;
+if (typeof window.praeApplyTheme !== 'function') {
+  window.praeApplyTheme = praeApplyTheme;
+}
+if (typeof window.praeCurrentTheme !== 'function') {
+  window.praeCurrentTheme = praeCurrentTheme;
+}
+if (typeof window.praeCycleTheme !== 'function') {
+  window.praeCycleTheme = praeCycleTheme;
 }
 
-function drawSparkline(canvas, points) {
-  if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const width = canvas.width;
-  const height = canvas.height;
-  ctx.clearRect(0, 0, width, height);
-  const max = Math.max(...points);
-  const min = Math.min(...points);
-  const spread = Math.max(1, max - min);
-  const step = width / Math.max(1, points.length - 1);
+const PRAE = (window.PRAE = window.PRAE || {});
+const works = Array.isArray(PRAE.works) ? PRAE.works : [];
 
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--chart-grid') || 'rgba(255,255,255,0.15)';
-  ctx.beginPath();
-  for (let i = 0; i <= 4; i++) {
-    const y = (height / 4) * i;
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-  }
-  ctx.stroke();
+const pfMap = PRAE.pageFollowMaps || {};
 
-  ctx.beginPath();
-  points.forEach((value, index) => {
-    const x = index * step;
-    const y = height - ((value - min) / spread) * (height - 6) - 3;
-    if (index === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--chart-line') || '#6f8bff';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+let selectedId = works[0]?.id ?? null;
+let activeTab = 'details';
+const hudState = { last: { id: selectedId, at: 0 } };
 
-  const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  const fillColor = getComputedStyle(document.body).getPropertyValue('--chart-fill') || 'rgba(111,139,255,0.3)';
-  gradient.addColorStop(0, fillColor.trim());
-  gradient.addColorStop(1, 'rgba(0,0,0,0)');
-
-  ctx.lineTo(width, height);
-  ctx.lineTo(0, height);
-  ctx.closePath();
-  ctx.fillStyle = gradient;
-  ctx.fill();
-}
-
-function initMetrics() {
-  const container = document.getElementById('dash-metric-list');
-  if (!container) return;
-  container.innerHTML = '';
-
-  const savedOrder = readMetricOrder();
-  const ordered = savedOrder
-    ? savedOrder
-        .map(id => METRICS.find(metric => metric.id === id))
-        .filter(Boolean)
-    : METRICS.slice();
-
-  METRICS.forEach(metric => {
-    if (!ordered.includes(metric)) ordered.push(metric);
-  });
-
-  ordered.forEach(metric => container.appendChild(createMetricCard(metric)));
-
-  if (window.Sortable && typeof window.Sortable.create === 'function') {
-    window.Sortable.create(container, {
-      animation: 180,
-      ghostClass: 'is-dragging',
-      draggable: '.dash-metric-card',
-      onEnd: () => {
-        const order = Array.from(container.querySelectorAll('.dash-metric-card'))
-          .map(node => node.dataset.metricId)
-          .filter(Boolean);
-        writeMetricOrder(order);
-        showToast({ title: 'Order saved', message: 'Metric layout updated.', tone: 'ok' });
-      }
-    });
-  }
-}
-
-function renderQuickActions() {
-  const region = document.getElementById('dash-actions');
-  const status = document.getElementById('dash-action-status');
-  if (!region || !status) return;
-  region.innerHTML = '';
-  status.textContent = 'Select an action to begin.';
-
-  const state = new Map();
-
-  const perform = (action) => {
-    if (state.get(action.id) === 'loading') return;
-    state.set(action.id, 'loading');
-    updateButtonState(action.id, true);
-    status.textContent = `${action.label} started…`;
-
-    const duration = 1000 + Math.random() * 1200;
-    setTimeout(() => {
-      const success = Math.random() > 0.12;
-      state.set(action.id, success ? 'ok' : 'err');
-      updateButtonState(action.id, false);
-      const tone = success ? 'ok' : 'err';
-      const text = success ? `${action.label} completed.` : `${action.label} failed. Try again.`;
-      status.textContent = text;
-      showToast({ title: action.label, message: text, tone });
-    }, duration);
-  };
-
-  const updateButtonState = (id, loading) => {
-    const btn = region.querySelector(`[data-action-id="${id}"]`);
-    if (!btn) return;
-    btn.dataset.loading = String(!!loading);
-    btn.setAttribute('aria-busy', String(!!loading));
-  };
-
-  QUICK_ACTIONS.forEach(action => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'dash-action-btn';
-    btn.dataset.actionId = action.id;
-    btn.innerHTML = `
-      <strong>${action.label}</strong>
-      <span>${action.description}</span>
-      <span class="dash-action-shortcut">${action.shortcut.toUpperCase()}</span>
-    `;
-    btn.addEventListener('click', () => perform(action));
-    btn.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        perform(action);
-      }
-    });
-    region.appendChild(btn);
-  });
-
-  document.addEventListener('keydown', (event) => {
-    const tag = event.target?.tagName;
-    if (tag && (/input|textarea|select/.test(tag.toLowerCase()))) return;
-    const action = QUICK_ACTIONS.find(item => item.shortcut.toLowerCase() === event.key.toLowerCase());
-    if (action) {
-      event.preventDefault();
-      perform(action);
-    }
-  });
-}
-
-function timeAgo(minutesAgo) {
-  const now = Date.now();
-  const then = now - minutesAgo * 60 * 1000;
-  const diffMs = then - now;
-  const minutes = Math.round(diffMs / (60 * 1000));
-  try {
-    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-    if (Math.abs(minutes) < 60) return rtf.format(minutes, 'minute');
-    const hours = Math.round(minutes / 60);
-    if (Math.abs(hours) < 24) return rtf.format(hours, 'hour');
-    const days = Math.round(hours / 24);
-    return rtf.format(days, 'day');
-  } catch (_) {
-    if (Math.abs(minutes) < 60) return `${Math.abs(minutes)} min ago`;
-    const hours = Math.round(Math.abs(minutes) / 60);
-    if (hours < 24) return `${hours} h ago`;
-    const days = Math.round(hours / 24);
-    return `${days} d ago`;
-  }
-}
-
-const FEED_TYPES = {
-  update: { icon: '📝', label: 'Update' },
-  alert: { icon: '⚠️', label: 'Alert' },
-  note: { icon: '💬', label: 'Note' },
-  success: { icon: '✅', label: 'Success' }
+const state = {
+  worksById: new Map(),
+  audioDurations: new Map(),
+  playbackContext: new Map(),
+  durationTotal: 0,
+  hud: null,
+  pdf: {
+    shell: null,
+    pane: null,
+    title: null,
+    close: null,
+    frame: null,
+    currentSlug: null,
+    viewerReady: false,
+    pendingGoto: null,
+  },
+  pageFollow: { audio: null, slug: null, lastPrinted: null, on: null }
 };
 
-function renderActivityFeed(feedItems) {
-  const list = document.getElementById('dash-activity-feed');
-  if (!list) return;
-  list.innerHTML = '';
-  feedItems.forEach(item => {
-    const meta = FEED_TYPES[item.type] || FEED_TYPES.update;
-    const li = document.createElement('li');
-    li.className = 'dash-activity-item';
-    li.dataset.type = item.type;
+function ensureHudRoot() {
+  const HUD_ID = 'wc-hud';
+  let root = document.getElementById(HUD_ID);
+  if (!root) {
+    root = document.createElement('div');
+    root.id = HUD_ID;
+    root.className = 'wc-hud';
+    document.body.prepend(root);
+  } else {
+    root.id = HUD_ID;
+    root.classList.add('wc-hud');
+  }
+  root.setAttribute('data-component', 'prae-hud');
+  return root;
+}
 
-    const icon = document.createElement('div');
-    icon.className = 'dash-activity-icon';
-    icon.textContent = meta.icon;
+function ensureHudDom() {
+  const root = ensureHudRoot();
+  if (root.dataset.hudBound === '1' && state.hud) return state.hud;
+  root.innerHTML = `
+    <div class="hud-left">
+      <div class="hud-title" data-part="title"></div>
+      <div class="hud-sub" data-part="subtitle"></div>
+    </div>
+    <div class="hud-meter" data-part="meter"><span></span></div>
+    <div class="hud-actions">
+      <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" data-icon="play"></button>
+    </div>`;
+  const refs = {
+    root,
+    title: root.querySelector('[data-part="title"]'),
+    sub: root.querySelector('[data-part="subtitle"]'),
+    meter: root.querySelector('[data-part="meter"]'),
+    fill: root.querySelector('[data-part="meter"] span'),
+    btn: root.querySelector('[data-part="toggle"]')
+  };
+  state.hud = refs;
+  root.dataset.hudBound = '1';
+  return refs;
+}
 
-    const body = document.createElement('div');
-    body.className = 'dash-activity-body';
+function hudSetSubtitle(text) {
+  const refs = ensureHudDom();
+  if (refs?.sub) refs.sub.textContent = String(text ?? '');
+}
 
-    const title = document.createElement('p');
-    title.className = 'dash-activity-title';
-    title.textContent = item.title;
+function hudSetTitle(text) {
+  const refs = ensureHudDom();
+  if (refs?.title) refs.title.textContent = String(text ?? '');
+}
 
-    const metaRow = document.createElement('div');
-    metaRow.className = 'dash-activity-meta';
-    const author = document.createElement('span');
-    author.textContent = `${meta.label} · ${item.by}`;
-    const time = document.createElement('time');
-    time.dateTime = new Date(Date.now() - item.minutesAgo * 60000).toISOString();
-    time.textContent = timeAgo(item.minutesAgo);
-    metaRow.append(author, time);
+function hudSetPlaying(on) {
+  const refs = ensureHudDom();
+  if (!refs?.btn) return;
+  refs.btn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+  refs.btn.dataset.icon = on ? 'pause' : 'play';
+}
 
-    body.append(title, metaRow);
-    li.append(icon, body);
-    list.appendChild(li);
+function hudSetProgress(ratio) {
+  const refs = ensureHudDom();
+  if (!refs?.fill) return;
+  const pct = Math.max(0, Math.min(1, Number(ratio) || 0));
+  refs.fill.style.width = `${pct * 100}%`;
+}
+
+function injectHudCssOnce() {
+  if (document.getElementById('prae-hud-css')) return;
+  const css = `
+    #wc-hud{display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;border:1px solid var(--line,#2a2a2a);border-radius:12px;background:var(--panel,rgba(255,255,255,.03));margin:0 0 12px}
+    #wc-hud .hud-left{display:flex;flex-direction:column;gap:.25rem;min-width:0}
+    #wc-hud .hud-title{font-weight:600;font-size:0.95rem}
+    #wc-hud .hud-sub{font-size:0.8rem;opacity:.8}
+    #wc-hud .hud-meter{flex:1;height:4px;background:var(--line,#2a2a2a);border-radius:999px;overflow:hidden}
+    #wc-hud .hud-meter>span{display:block;height:100%;background:var(--fg,#fff);transition:width .12s ease-out}
+    #wc-hud .hud-actions .hud-btn{min-width:44px;min-height:44px;border:0;border-radius:999px;background:rgba(255,255,255,0.08);color:inherit;cursor:pointer}
+  `;
+  const s = document.createElement('style');
+  s.id = 'prae-hud-css';
+  s.textContent = css;
+  document.head.appendChild(s);
+}
+
+function formatTime(sec) {
+  const clamped = Math.max(0, Math.floor(sec || 0));
+  const m = Math.floor(clamped / 60);
+  const s = (clamped % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function labelForCue(t, label) {
+  if (label && /^@?\d+:\d{2}$/.test(label)) return label.replace(/^@?/, '@');
+  return `@${formatTime(t)}`;
+}
+
+function normalizeSrc(url) {
+  if (!url) return '';
+  const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+  if (match) return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+  return url;
+}
+
+function normalizePdfUrl(url) {
+  if (!url) return '';
+  const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+  if (match) return `https://drive.google.com/file/d/${match[1]}/view?usp=drivesdk`;
+  return url;
+}
+
+function choosePdfViewer(url) {
+  const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+  const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : url;
+  return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
+}
+
+function ensureAudioFor(work) {
+  let el = document.getElementById('wc-a' + work.id);
+  if (!el) {
+    el = document.createElement('audio');
+    el.id = 'wc-a' + work.id;
+    el.preload = 'none';
+    el.playsInline = true;
+    if (work.audio) el.setAttribute('data-audio', work.audio);
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function findWorkById(id) {
+  const num = Number(id);
+  if (Number.isNaN(num)) return null;
+  if (state.worksById.has(num)) return state.worksById.get(num);
+  const data = works.find((item) => Number(item.id) === num) || null;
+  if (!data) return null;
+  const record = { data, el: document.querySelector(`[data-work-id="${data.id}"]`) };
+  state.worksById.set(num, record);
+  return record;
+}
+
+function deepUrl(id) {
+  const w = findWorkById(id)?.data;
+  if (!w) return location.href;
+  const base = `${location.origin}${location.pathname}`;
+  return `${base}#${HASH_WORK_KEY}=${encodeURIComponent(w.id)}&${HASH_TAB_KEY}=${encodeURIComponent(activeTab)}`;
+}
+
+function markPlaying(id, on) {
+  const record = findWorkById(id);
+  if (!record) return;
+  record.el?.classList.toggle('playing', !!on);
+  const audio = document.getElementById('wc-a' + id);
+  if (!audio) return;
+  const off = () => {
+    record.el?.classList.remove('playing');
+    audio.removeEventListener('pause', off);
+    audio.removeEventListener('ended', off);
+  };
+  audio.addEventListener('pause', off, { once: true });
+  audio.addEventListener('ended', off, { once: true });
+}
+
+function flash(element, text) {
+  if (!element) return;
+  try {
+    const span = document.createElement('span');
+    span.className = 'ct-flash';
+    span.textContent = text;
+    element.appendChild(span);
+    requestAnimationFrame(() => span.classList.add('is-visible'));
+    setTimeout(() => span.classList.remove('is-visible'), 1400);
+    setTimeout(() => span.remove(), 1700);
+  } catch (_) {}
+}
+
+function computePdfPage(slug, tSec) {
+  const cfg = pfMap[slug];
+  if (!cfg) return 1;
+  const printed = printedPageForTime(cfg, tSec || 0);
+  return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
+}
+
+function printedPageForTime(cfg, tSec) {
+  const time = (tSec || 0) + (cfg.mediaOffsetSec || 0);
+  let current = cfg.pageMap?.[0]?.page ?? 1;
+  for (const row of cfg.pageMap || []) {
+    const at = typeof row.at === 'number' ? row.at : cueTime(row.at);
+    if (time >= at) current = row.page; else break;
+  }
+  return current;
+}
+
+function cueTime(value) {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  if (/^\d+$/.test(String(value))) return parseInt(value, 10);
+  const match = String(value).match(/^(\d+):([0-5]?\d)$/);
+  if (!match) return 0;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+function gotoPdfPage(pageNum) {
+  const frame = state.pdf.frame;
+  if (!frame || !frame.src) return;
+  if (!/\/viewer\.html/i.test(frame.src)) return;
+  const url = new URL(frame.src, location.href);
+  const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
+  const current = Number(hash.get('page') || '1');
+  const next = Number(pageNum || 1);
+  if (current === next) return;
+  hash.set('page', String(next));
+  if (!hash.has('zoom')) hash.set('zoom', 'page-width');
+  if (!hash.has('sidebar')) hash.set('sidebar', '0');
+  url.hash = '#' + hash.toString();
+  state.pdf.viewerReady = false;
+  frame.src = url.toString();
+}
+
+function detachPageFollow() {
+  if (state.pageFollow.audio && state.pageFollow.on) {
+    state.pageFollow.audio.removeEventListener('timeupdate', state.pageFollow.on);
+    state.pageFollow.audio.removeEventListener('seeking', state.pageFollow.on);
+  }
+  state.pageFollow = { audio: null, slug: null, lastPrinted: null, on: null };
+}
+
+function attachPageFollow(slug, audio) {
+  detachPageFollow();
+  if (!slug || !audio) return;
+  const cfg = pfMap[slug];
+  if (!cfg) return;
+  const onTick = () => {
+    const printed = printedPageForTime(cfg, audio.currentTime || 0);
+    if (printed !== state.pageFollow.lastPrinted) {
+      state.pageFollow.lastPrinted = printed;
+      const pdfPage = computePdfPage(slug, audio.currentTime || 0);
+      window.dispatchEvent(new CustomEvent('wc:pdf-goto', {
+        detail: { slug, printedPage: printed, pdfPage }
+      }));
+    }
+  };
+  state.pageFollow = { audio, slug, lastPrinted: null, on: onTick };
+  audio.addEventListener('timeupdate', onTick, { passive: true });
+  audio.addEventListener('seeking', onTick, { passive: true });
+  onTick();
+}
+
+function playAt(id, t = 0) {
+  const meta = findWorkById(id);
+  if (!meta) return;
+  const work = meta.data;
+  if (selectedId !== work.id) {
+    setSelected(work.id);
+  }
+  const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
+  if (!audio) return;
+  hudState.last = { id: work.id, at: t || 0 };
+  if (!audio.src) {
+    const raw = audio.getAttribute('data-audio') || work.audio || '';
+    const src = normalizeSrc(raw);
+    if (src) {
+      audio.src = src;
+      audio.load();
+    }
+  }
+  const seekAndPlay = () => {
+    try { audio.currentTime = Math.max(0, Number(t) || 0); } catch (_) {}
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch((err) => {
+        if (err && err.name === 'NotAllowedError') flash(meta.el, 'Tap to enable audio');
+      });
+    }
+    markPlaying(work.id, true);
+    bindAudio(work.id);
+    requestAnimationFrame(() => hudUpdate(work.id, audio));
+    if (work.slug) attachPageFollow(work.slug, audio);
+  };
+  if (audio.readyState >= 1) {
+    seekAndPlay();
+  } else {
+    audio.addEventListener('loadedmetadata', () => seekAndPlay(), { once: true });
+  }
+}
+
+function openPdfFor(id) {
+  const meta = findWorkById(id);
+  if (!meta) return;
+  const work = meta.data;
+  if (!work.pdf) return;
+  const raw = normalizePdfUrl(work.pdf);
+  const viewerUrl = choosePdfViewer(raw);
+  const shell = state.pdf.shell;
+  const pane = state.pdf.pane;
+  const title = state.pdf.title;
+  const frame = state.pdf.frame;
+  if (!shell || !pane || !frame) {
+    window.open(viewerUrl, '_blank', 'noopener');
+    return;
+  }
+  state.pdf.currentSlug = work.slug || null;
+  let initPage = 1;
+  try {
+    if (state.pageFollow.slug && state.pageFollow.slug === state.pdf.currentSlug) {
+      initPage = computePdfPage(state.pdf.currentSlug, state.pageFollow.audio?.currentTime || 0);
+    } else if (pfMap[state.pdf.currentSlug]) {
+      initPage = computePdfPage(state.pdf.currentSlug, 0);
+    }
+  } catch (_) {}
+  if (title) title.textContent = String(work.title || 'Score');
+  shell?.classList.add('has-pdf');
+  pane.removeAttribute('aria-hidden');
+  frame.src = 'about:blank';
+  requestAnimationFrame(() => {
+    state.pdf.viewerReady = false;
+    frame.src = `${viewerUrl.split('#')[0]}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`;
   });
 }
 
-function renderActivityFilters(activeType) {
-  const container = document.getElementById('dash-activity-filters');
+function hidePdfPane() {
+  const { shell, pane, frame } = state.pdf;
+  shell?.classList.remove('has-pdf');
+  pane?.setAttribute('aria-hidden', 'true');
+  if (frame) frame.src = 'about:blank';
+  state.pdf.currentSlug = null;
+  state.pdf.viewerReady = false;
+}
+
+function getActiveAudioInfo() {
+  for (const work of works) {
+    const audio = document.getElementById('wc-a' + work.id);
+    if (audio && !audio.paused && !audio.ended) {
+      return { id: work.id, audio };
+    }
+  }
+  return { id: null, audio: null };
+}
+
+function hudUpdate(id, audio) {
+  const refs = ensureHudDom();
+  if (!refs) return;
+  const work = findWorkById(id)?.data;
+  const name = work ? work.title : '—';
+  const duration = audio && Number.isFinite(audio.duration) ? formatTime(audio.duration | 0) : '--:--';
+  const current = audio && Number.isFinite(audio.currentTime) ? formatTime(audio.currentTime | 0) : '0:00';
+  const ratio = audio && audio.duration ? Math.max(0, Math.min(1, (audio.currentTime || 0) / Math.max(1, audio.duration))) : 0;
+  hudSetTitle(`Now playing — ${name}`);
+  hudSetSubtitle(`${current} / ${duration}`);
+  hudSetProgress(ratio);
+  hudSetPlaying(!!(audio && !audio.paused));
+}
+
+function bindAudio(id) {
+  const audio = document.getElementById('wc-a' + id);
+  if (!audio || audio.dataset.hudBound === '1') return;
+  audio.addEventListener('timeupdate', () => hudUpdate(id, audio), { passive: true });
+  audio.addEventListener('ratechange', () => hudUpdate(id, audio), { passive: true });
+  audio.addEventListener('volumechange', () => hudUpdate(id, audio), { passive: true });
+  audio.addEventListener('loadedmetadata', () => {
+    hudUpdate(id, audio);
+    if (Number.isFinite(audio.duration)) {
+      state.audioDurations.set(id, audio.duration);
+      recomputeDurationTotal();
+    }
+  }, { once: true, passive: true });
+  audio.addEventListener('ended', () => hudUpdate(id, audio), { passive: true });
+  audio.dataset.hudBound = '1';
+}
+
+function bindPlaybackListeners(id) {
+  const audio = document.getElementById('wc-a' + id);
+  if (!audio) return;
+  if (audio.dataset.cardsTabsPlayback === '1') return;
+  const handler = () => updatePlaybackContext(id);
+  audio.addEventListener('timeupdate', handler, { passive: true });
+  audio.addEventListener('play', handler, { passive: true });
+  audio.addEventListener('pause', handler, { passive: true });
+  audio.addEventListener('ended', handler, { passive: true });
+  audio.addEventListener('loadedmetadata', handler, { passive: true });
+  audio.dataset.cardsTabsPlayback = '1';
+}
+
+function updatePlaybackContext(id) {
+  const ctx = state.playbackContext.get(id);
+  if (!ctx) return;
+  const audio = document.getElementById('wc-a' + id);
+  if (!audio) return;
+  const isPlaying = !audio.paused && !audio.ended;
+  if (ctx.status) {
+    ctx.status.textContent = `${isPlaying ? 'Playing' : 'Paused'} · ${formatTime(audio.currentTime || 0)} / ${audio.duration ? formatTime(audio.duration) : '--:--'}`;
+  }
+  if (ctx.playBtn) {
+    ctx.playBtn.textContent = isPlaying ? 'Pause' : 'Play';
+  }
+}
+
+function recomputeDurationTotal() {
+  let total = 0;
+  for (const value of state.audioDurations.values()) {
+    if (Number.isFinite(value)) total += value;
+  }
+  state.durationTotal = total;
+  updateSummaryDuration();
+}
+
+function updateSummaryDuration() {
+  const card = document.querySelector('[data-summary="duration"] strong');
+  if (!card) return;
+  if (!state.durationTotal) {
+    card.textContent = '—';
+    return;
+  }
+  card.textContent = formatTime(Math.floor(state.durationTotal));
+}
+
+function parseHash() {
+  const hash = location.hash.replace(/^#/, '');
+  const params = new URLSearchParams(hash);
+  const id = params.get(HASH_WORK_KEY);
+  const tab = params.get(HASH_TAB_KEY);
+  const parsed = { id: null, tab: null };
+  if (id && !Number.isNaN(Number(id))) parsed.id = Number(id);
+  if (tab && TAB_KEYS.includes(tab)) parsed.tab = tab;
+  return parsed;
+}
+
+function syncHash() {
+  if (!selectedId) return;
+  const params = new URLSearchParams();
+  params.set(HASH_WORK_KEY, String(selectedId));
+  params.set(HASH_TAB_KEY, activeTab);
+  const next = `#${params.toString()}`;
+  if (location.hash !== next) {
+    history.replaceState(null, '', `${location.pathname}${location.search}${next}`);
+  }
+}
+
+function setActiveTab(key, opts = {}) {
+  if (!TAB_KEYS.includes(key)) return;
+  activeTab = key;
+  const tabButtons = document.querySelectorAll('#ct-tabs [role="tab"]');
+  tabButtons.forEach((btn) => {
+    const isActive = btn.dataset.tab === key;
+    btn.setAttribute('aria-selected', String(isActive));
+    btn.tabIndex = isActive ? 0 : -1;
+  });
+  const panels = document.querySelectorAll('#ct-tabs [role="tabpanel"]');
+  panels.forEach((panel) => {
+    const controls = panel.getAttribute('aria-labelledby');
+    const btn = controls ? document.getElementById(controls) : null;
+    const isActive = btn?.dataset.tab === key;
+    panel.toggleAttribute('hidden', !isActive);
+  });
+  if (!opts.skipHash) syncHash();
+  renderPanels();
+}
+
+function setSelected(id, opts = {}) {
+  if (!id || Number.isNaN(Number(id))) return;
+  const record = findWorkById(id);
+  if (!record) return;
+  selectedId = record.data.id;
+  document.querySelectorAll('.work').forEach((item) => {
+    item.classList.toggle('is-selected', Number(item.dataset.workId) === selectedId);
+  });
+  if (!opts.skipHash) syncHash();
+  renderPanels();
+}
+
+function renderPanels() {
+  const work = selectedId ? findWorkById(selectedId)?.data : null;
+  const detailsPanel = document.getElementById('ct-panel-details');
+  const cuesPanel = document.getElementById('ct-panel-cues');
+  const playbackPanel = document.getElementById('ct-panel-playback');
+  const scorePanel = document.getElementById('ct-panel-score');
+  if (detailsPanel) {
+    if (!work) {
+      detailsPanel.innerHTML = `<div class="ct-empty">Select a work to view details.</div>`;
+    } else {
+      detailsPanel.innerHTML = `
+        <header>
+          <h2>${escapeHtml(work.title || '')}</h2>
+          <p class="ct-muted">Slug: ${escapeHtml(work.slug || '')}</p>
+        </header>
+        <p>${escapeHtml(work.one || '')}</p>
+      `;
+    }
+  }
+  if (cuesPanel) {
+    if (!work || !Array.isArray(work.cues) || work.cues.length === 0) {
+      cuesPanel.innerHTML = `<div class="ct-empty">No cues for this work.</div>`;
+    } else {
+      const list = document.createElement('div');
+      list.className = 'ct-cues-list';
+      work.cues.forEach((cue, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'work-cue';
+        btn.dataset.id = String(work.id);
+        btn.dataset.t = String(cue.t || 0);
+        btn.textContent = cue.label ? `${cue.label}` : labelForCue(cue.t || 0, cue.label);
+        btn.addEventListener('click', () => {
+          setSelected(work.id);
+          playAt(work.id, cue.t || 0);
+        });
+        btn.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            setSelected(work.id);
+            playAt(work.id, cue.t || 0);
+          }
+        });
+        const wrapper = document.createElement('div');
+        wrapper.className = 'ct-cue-row';
+        const label = cue.label ? cue.label : labelForCue(cue.t || 0, cue.label);
+        wrapper.innerHTML = `<span>${escapeHtml(label)}</span>`;
+        wrapper.appendChild(btn);
+        list.appendChild(wrapper);
+      });
+      cuesPanel.innerHTML = '';
+      cuesPanel.appendChild(list);
+    }
+  }
+  if (playbackPanel) {
+    if (!work || !work.audio) {
+      playbackPanel.innerHTML = `<div class="ct-empty">No playback available.</div>`;
+      state.playbackContext.delete(work?.id ?? selectedId ?? 0);
+    } else {
+      const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
+      bindAudio(work.id);
+      bindPlaybackListeners(work.id);
+      playbackPanel.innerHTML = '';
+      const statusEl = document.createElement('div');
+      statusEl.className = 'ct-playback-status';
+      const controls = document.createElement('div');
+      controls.className = 'ct-playback-controls';
+      const playBtn = document.createElement('button');
+      playBtn.type = 'button';
+      playBtn.textContent = 'Play';
+      playBtn.addEventListener('click', () => {
+        if (!audio) return;
+        if (audio.paused) {
+          playAt(work.id, audio.currentTime || 0);
+        } else {
+          audio.pause();
+          hudSetPlaying(false);
+          hudState.last = { id: work.id, at: audio.currentTime || 0 };
+        }
+        updatePlaybackContext(work.id);
+      });
+      const restartBtn = document.createElement('button');
+      restartBtn.type = 'button';
+      restartBtn.textContent = 'Restart';
+      restartBtn.addEventListener('click', () => {
+        playAt(work.id, 0);
+        updatePlaybackContext(work.id);
+      });
+      controls.append(playBtn, restartBtn);
+      playbackPanel.append(statusEl, controls);
+      state.playbackContext.set(work.id, { status: statusEl, playBtn });
+      updatePlaybackContext(work.id);
+    }
+  }
+  if (scorePanel) {
+    if (!work || !work.pdf) {
+      scorePanel.innerHTML = `<div class="ct-empty">No score available.</div>`;
+    } else {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'ct-score-actions';
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'work-action';
+      openBtn.textContent = 'Open PDF';
+      openBtn.addEventListener('click', () => {
+        openPdfFor(work.id);
+      });
+      wrapper.appendChild(openBtn);
+      scorePanel.innerHTML = '';
+      scorePanel.appendChild(wrapper);
+    }
+  }
+}
+
+function escapeHtml(input) {
+  return String(input ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderSummary() {
+  const container = document.getElementById('ct-summary');
   if (!container) return;
   container.innerHTML = '';
-  const types = ['all', ...Object.keys(FEED_TYPES)];
-  types.forEach(type => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'dash-chip';
-    btn.textContent = type === 'all' ? 'All' : FEED_TYPES[type].label;
-    btn.setAttribute('aria-pressed', String(type === activeType));
-    btn.addEventListener('click', () => {
-      saveFilterState({ activity: type });
-      renderActivityFilters(type);
-      const feed = type === 'all' ? FEED_SEED : FEED_SEED.filter(item => item.type === type);
-      renderActivityFeed(feed);
-    });
-    container.appendChild(btn);
+  const cards = [
+    { key: 'total', title: 'Total Works', value: String(works.length), note: 'All portfolio entries' },
+    { key: 'audio', title: 'Playable', value: String(works.filter((w) => !!w.audio).length), note: 'Audio available' },
+    { key: 'pdf', title: 'With Scores', value: String(works.filter((w) => !!w.pdf).length), note: 'Score PDFs ready' },
+    { key: 'duration', title: 'Total Duration', value: '—', note: 'Loaded from audio metadata' }
+  ];
+  cards.forEach((card) => {
+    const box = document.createElement('article');
+    box.className = 'ct-summary-card';
+    box.dataset.summary = card.key;
+    box.innerHTML = `
+      <h3>${escapeHtml(card.title)}</h3>
+      <strong>${escapeHtml(card.value)}</strong>
+      <p>${escapeHtml(card.note)}</p>
+    `;
+    container.appendChild(box);
   });
 }
 
-function loadMoreActivity(currentCount) {
-  const extra = FEED_SEED.map((item, idx) => ({
-    ...item,
-    id: `${item.id}-more-${currentCount + idx}`,
-    minutesAgo: item.minutesAgo + (idx + 1) * 45
-  }));
-  return extra;
-}
-
-function initActivity() {
-  const initialFilter = readFilterState().activity || 'all';
-  renderActivityFilters(initialFilter);
-  const feed = initialFilter === 'all' ? FEED_SEED : FEED_SEED.filter(item => item.type === initialFilter);
-  renderActivityFeed(feed);
-
-  const moreBtn = document.getElementById('dash-activity-more');
-  if (moreBtn) {
-    moreBtn.addEventListener('click', () => {
-      const list = document.getElementById('dash-activity-feed');
-      if (!list) return;
-      const more = loadMoreActivity(list.children.length);
-      more.forEach(item => FEED_SEED.push(item));
-      const active = readFilterState().activity || 'all';
-      const feedItems = active === 'all' ? FEED_SEED : FEED_SEED.filter(entry => entry.type === active);
-      renderActivityFeed(feedItems);
-      showToast({ title: 'Activity', message: 'Loaded more entries.', tone: 'ok' });
-    });
+function renderWorksList() {
+  const container = document.getElementById('works-console');
+  if (!container) return;
+  state.worksById.clear();
+  container.innerHTML = '';
+  if (works.length === 0) {
+    state.playbackContext.clear();
+    const empty = document.createElement('div');
+    empty.className = 'ct-works-empty';
+    empty.textContent = 'No works available.';
+    container.appendChild(empty);
+    return;
   }
-}
-
-function readFilterState() {
-  try {
-    const raw = localStorage.getItem(FILTER_STATE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed ? parsed : {};
-  } catch (_) {
-    return {};
-  }
-}
-
-function saveFilterState(partial) {
-  const current = readFilterState();
-  const next = { ...current, ...partial };
-  try {
-    localStorage.setItem(FILTER_STATE_KEY, JSON.stringify(next));
-  } catch (_) {}
-  return next;
-}
-
-function initFilters() {
-  const statusSelect = document.getElementById('dash-filter-status');
-  const dateInput = document.getElementById('dash-filter-date');
-  const form = statusSelect?.form;
-  const state = readFilterState();
-
-  if (statusSelect && state.status) statusSelect.value = state.status;
-  if (dateInput && state.date) dateInput.value = state.date;
-
-  if (typeof window.Choices === 'function' && statusSelect) {
-    new window.Choices(statusSelect, {
-      searchEnabled: false,
-      allowHTML: false,
-      position: 'bottom',
-      shouldSort: false
-    });
-  }
-
-  if (form) {
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const status = statusSelect ? statusSelect.value : 'all';
-      const date = dateInput ? dateInput.value : '';
-      saveFilterState({ status, date });
-      showToast({
-        title: 'Filters updated',
-        message: `Status: ${statusSelect?.selectedOptions?.[0]?.textContent || status}, Date: ${date || 'Any time'}`,
-        tone: 'ok'
+  works.forEach((work) => {
+    const card = document.createElement('article');
+    card.className = 'work';
+    card.dataset.workId = String(work.id);
+    card.tabIndex = 0;
+    card.innerHTML = `
+      <div class="work-header">
+        <div class="work-title">${escapeHtml(work.title)}</div>
+        <div class="work-slug">${escapeHtml(work.slug)}</div>
+      </div>
+      <p class="work-one">${escapeHtml(work.one)}</p>
+    `;
+    const cues = Array.isArray(work.cues) ? work.cues : [];
+    if (cues.length) {
+      const cueWrap = document.createElement('div');
+      cueWrap.className = 'work-cues';
+      cues.forEach((cue) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'work-cue';
+        btn.dataset.id = String(work.id);
+        btn.dataset.t = String(cue.t || 0);
+        btn.textContent = cue.label ? cue.label : labelForCue(cue.t || 0, cue.label);
+        btn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          setSelected(work.id);
+          playAt(work.id, cue.t || 0);
+        });
+        cueWrap.appendChild(btn);
       });
-      form.classList.add('is-applied');
-      window.requestAnimationFrame(() => form.classList.remove('is-applied'));
+      card.appendChild(cueWrap);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'work-actions';
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'work-action';
+    playBtn.textContent = 'Play';
+    playBtn.dataset.act = 'play';
+    playBtn.dataset.id = String(work.id);
+    if (!work.audio) playBtn.disabled = true;
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'work-action';
+    copyBtn.textContent = 'Copy URL';
+    copyBtn.dataset.act = 'copy';
+    copyBtn.dataset.id = String(work.id);
+    const pdfBtn = document.createElement('button');
+    pdfBtn.type = 'button';
+    pdfBtn.className = 'work-action';
+    pdfBtn.textContent = 'PDF';
+    pdfBtn.dataset.act = 'pdf';
+    pdfBtn.dataset.id = String(work.id);
+    if (!work.pdf) pdfBtn.disabled = true;
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'work-action';
+    openBtn.textContent = 'Open';
+    openBtn.dataset.act = 'open';
+    openBtn.dataset.id = String(work.id);
+    actions.append(playBtn, copyBtn, pdfBtn, openBtn);
+    card.appendChild(actions);
+    card.addEventListener('click', () => {
+      setSelected(work.id);
     });
-  }
-}
-
-function showToast({ title, message, tone = 'ok', duration = 2800 }) {
-  const host = document.getElementById('dash-toasts');
-  if (!host) return;
-  const toast = document.createElement('div');
-  toast.className = 'dash-toast';
-  toast.dataset.tone = tone;
-  toast.innerHTML = `<strong>${title}</strong><span>${message}</span>`;
-  host.appendChild(toast);
-  requestAnimationFrame(() => {
-    toast.dataset.visible = 'true';
+    card.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        setSelected(work.id);
+      }
+    });
+    container.appendChild(card);
+    state.worksById.set(Number(work.id), { data: work, el: card });
+    if (work.audio) ensureAudioFor(work);
   });
-  setTimeout(() => {
-    toast.dataset.visible = 'false';
-    setTimeout(() => {
-      if (toast.parentNode === host) host.removeChild(toast);
-    }, 220);
-  }, duration);
+  setSelected(selectedId, { skipHash: true });
 }
 
-function parseHashTab() {
-  const hash = window.location.hash.slice(1);
-  if (!hash) return null;
-  const query = hash.includes('=') ? hash : `tab=${hash}`;
-  const params = new URLSearchParams(query);
-  const tab = params.get('tab');
-  if (!tab) return null;
-  return tab.toLowerCase();
-}
-
-function updateHash(tabId) {
-  const params = new URLSearchParams(window.location.hash.slice(1));
-  params.set('tab', tabId);
-  const newHash = `#${params.toString()}`;
-  if (window.location.hash !== newHash) {
-    window.history.replaceState({}, '', newHash);
-  }
-  try { localStorage.setItem(TAB_HASH_KEY, tabId); } catch (_) {}
-}
-
-function readStoredTab() {
-  const hashTab = parseHashTab();
-  if (hashTab) return hashTab;
-  try {
-    const stored = localStorage.getItem(TAB_HASH_KEY);
-    return stored || null;
-  } catch (_) {
-    return null;
-  }
+function handleWorksActions() {
+  const container = document.getElementById('works-console');
+  if (!container) return;
+  container.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button || !button.dataset.act) return;
+    const act = button.dataset.act;
+    const id = Number(button.dataset.id || selectedId || 0);
+    if (!id) return;
+    if (act === 'play') {
+      event.preventDefault();
+      setSelected(id);
+      playAt(id, 0);
+    }
+    if (act === 'copy') {
+      event.preventDefault();
+      const url = deepUrl(id);
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(url).then(() => flash(button, 'Copied'));
+      } else {
+        flash(button, url);
+      }
+    }
+    if (act === 'pdf') {
+      event.preventDefault();
+      setSelected(id);
+      openPdfFor(id);
+    }
+    if (act === 'open') {
+      event.preventDefault();
+      setSelected(id);
+      setActiveTab('details');
+      document.getElementById('ct-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
 }
 
 function initTabs() {
-  const tabButtons = Array.from(document.querySelectorAll('.dash-tab'));
-  const panels = new Map();
-  tabButtons.forEach(btn => {
-    const panel = document.getElementById(btn.getAttribute('aria-controls') || '');
-    if (panel) panels.set(btn.id, panel);
-  });
-  if (!tabButtons.length || panels.size === 0) return;
-
-  let activeId = readStoredTab() || 'activity';
-  if (!tabButtons.some(btn => btn.id === `dash-tab-${activeId}`)) activeId = 'activity';
-
-  const activate = (id, { focus } = { focus: false }) => {
-    tabButtons.forEach((btn, idx) => {
-      const isActive = btn.id === `dash-tab-${id}`;
-      btn.setAttribute('aria-selected', String(isActive));
-      btn.tabIndex = isActive ? 0 : -1;
-      if (isActive && focus) btn.focus();
-      const panel = panels.get(btn.id);
-      if (panel) {
-        if (isActive) {
-          panel.removeAttribute('hidden');
-        } else {
-          panel.setAttribute('hidden', '');
-        }
-      }
+  const tabButtons = document.querySelectorAll('#ct-tabs [role="tab"]');
+  tabButtons.forEach((btn, index) => {
+    btn.addEventListener('click', () => {
+      setActiveTab(btn.dataset.tab || 'details');
     });
-    activeId = id;
-    updateHash(id);
-    renderPanel(id);
-  };
-
-  const renderPanel = (id) => {
-    const panel = document.getElementById(`dash-panel-${id}`);
-    if (!panel) return;
-    panel.innerHTML = '';
-    if (id === 'activity') {
-      panel.innerHTML = `
-        <h3>Recent highlights</h3>
-        <p>Monitor critical wins and alerts without losing sight of the full feed.</p>
-        <ul>
-          ${FEED_SEED.slice(0, 3).map(item => {
-            const state = mapTypeToState(item.type);
-            return `<li>${item.title} — <span class="dash-state" data-state="${state}">${formatStateLabel(state)}</span></li>`;
-          }).join('')}
-        </ul>
-      `;
-    } else if (id === 'queues') {
-      const table = document.createElement('table');
-      table.innerHTML = `
-        <thead>
-          <tr><th>Queue</th><th>Owner</th><th>Tasks</th><th>ETA</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-          ${QUEUE_ROWS.map(row => `
-            <tr>
-              <td>${row.name}</td>
-              <td>${row.owner}</td>
-              <td>${row.tasks}</td>
-              <td>${row.eta}</td>
-              <td><span class="dash-state" data-state="${row.state}">${row.state}</span></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      `;
-      panel.appendChild(table);
-    } else if (id === 'results') {
-      const list = document.createElement('div');
-      list.className = 'dash-results';
-      RESULT_ROWS.forEach(row => {
-        const item = document.createElement('div');
-        item.className = 'dash-result-item';
-        item.innerHTML = `
-          <strong>${row.name}</strong>
-          <span>${row.lastRun}</span>
-          <span class="dash-state" data-state="${row.status}">${formatStateLabel(row.status)}</span>
-        `;
-        list.appendChild(item);
-      });
-      panel.appendChild(list);
-    } else if (id === 'settings') {
-      panel.innerHTML = `
-        <h3>Workspace settings</h3>
-        <p>These controls are optimistic—adjust values and wire them to the Works Console later.</p>
-        <label class="dash-filter" for="dash-setting-name">
-          <span>Workspace name</span>
-          <input id="dash-setting-name" type="text" value="Praetorius Dashboard"/>
-        </label>
-        <label class="dash-filter" for="dash-setting-email">
-          <span>Notification email</span>
-          <input id="dash-setting-email" type="email" value="hud@praetorius.dev"/>
-        </label>
-        <button type="button" class="dash-filter-apply" id="dash-settings-save">Save</button>
-      `;
-      const save = panel.querySelector('#dash-settings-save');
-      if (save) {
-        save.addEventListener('click', () => {
-          showToast({ title: 'Settings', message: 'Settings saved (mock).', tone: 'ok' });
-        });
+    btn.addEventListener('keydown', (ev) => {
+      const currentIndex = TAB_KEYS.indexOf(btn.dataset.tab || 'details');
+      if (ev.key === 'ArrowRight' || ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        const next = TAB_KEYS[(currentIndex + 1) % TAB_KEYS.length];
+        setActiveTab(next);
+        const nextBtn = document.querySelector(`[data-tab="${next}"]`);
+        nextBtn?.focus();
       }
-    }
-  };
-
-  const mapTypeToState = (type) => {
-    if (type === 'alert') return 'warn';
-    if (type === 'success') return 'ok';
-    if (type === 'note') return 'pending';
-    return 'ok';
-  };
-
-  const formatStateLabel = (state) => {
-    const normalized = String(state || '');
-    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-  };
-
-  tabButtons.forEach((btn) => {
-    btn.addEventListener('click', () => activate(btn.id.replace('dash-tab-', ''), { focus: true }));
-    btn.addEventListener('keydown', (event) => {
-      const idx = tabButtons.indexOf(btn);
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        const next = tabButtons[(idx + 1) % tabButtons.length];
-        activate(next.id.replace('dash-tab-', ''), { focus: true });
-      } else if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        const prev = tabButtons[(idx - 1 + tabButtons.length) % tabButtons.length];
-        activate(prev.id.replace('dash-tab-', ''), { focus: true });
-      } else if (event.key === 'Home') {
-        event.preventDefault();
-        activate(tabButtons[0].id.replace('dash-tab-', ''), { focus: true });
-      } else if (event.key === 'End') {
-        event.preventDefault();
-        activate(tabButtons[tabButtons.length - 1].id.replace('dash-tab-', ''), { focus: true });
+      if (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        const prev = TAB_KEYS[(currentIndex - 1 + TAB_KEYS.length) % TAB_KEYS.length];
+        setActiveTab(prev);
+        const prevBtn = document.querySelector(`[data-tab="${prev}"]`);
+        prevBtn?.focus();
+      }
+      if (ev.key === 'Home') {
+        ev.preventDefault();
+        setActiveTab(TAB_KEYS[0]);
+        document.querySelector(`[data-tab="${TAB_KEYS[0]}"]`)?.focus();
+      }
+      if (ev.key === 'End') {
+        ev.preventDefault();
+        setActiveTab(TAB_KEYS[TAB_KEYS.length - 1]);
+        document.querySelector(`[data-tab="${TAB_KEYS[TAB_KEYS.length - 1]}"]`)?.focus();
       }
     });
   });
+}
 
-  window.addEventListener('hashchange', () => {
-    const next = parseHashTab();
-    if (next && next !== activeId && tabButtons.some(btn => btn.id === `dash-tab-${next}`)) {
-      activate(next, { focus: false });
+function hydrateFromHash() {
+  const parsed = parseHash();
+  if (parsed.id) {
+    selectedId = parsed.id;
+  }
+  if (parsed.tab) {
+    activeTab = parsed.tab;
+  }
+  setSelected(selectedId, { skipHash: true });
+  setActiveTab(activeTab, { skipHash: true });
+}
+
+function bindThemeToggle() {
+  const btn = document.getElementById('wc-theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    window.praeCycleTheme();
+    window.praeApplyTheme(window.praeCurrentTheme());
+  });
+  btn.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      window.praeCycleTheme();
+      window.praeApplyTheme(window.praeCurrentTheme());
     }
   });
+  document.addEventListener('keydown', (ev) => {
+    if ((ev.altKey || ev.metaKey) && (ev.key === 'd' || ev.key === 'D')) {
+      ev.preventDefault();
+      window.praeCycleTheme();
+      window.praeApplyTheme(window.praeCurrentTheme());
+    }
+  }, { passive: false });
+}
 
-  activate(activeId);
+function bindPdfEvents() {
+  state.pdf.shell = document.querySelector('.ct-shell');
+  state.pdf.pane = document.querySelector('.ct-pdfpane');
+  state.pdf.title = document.querySelector('.ct-pdf-title');
+  state.pdf.close = document.querySelector('.ct-pdf-close');
+  state.pdf.frame = document.querySelector('.ct-pdf-frame');
+  state.pdf.close?.addEventListener('click', hidePdfPane);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') hidePdfPane();
+  }, { passive: true });
+  if (state.pdf.frame) {
+    state.pdf.frame.addEventListener('load', () => {
+      state.pdf.viewerReady = true;
+      if (state.pdf.pendingGoto) {
+        gotoPdfPage(state.pdf.pendingGoto.pdfPage);
+        state.pdf.pendingGoto = null;
+      }
+    });
+  }
+  window.addEventListener('wc:pdf-goto', (event) => {
+    const detail = event?.detail || {};
+    if (!state.pdf.viewerReady || !state.pdf.pane || state.pdf.pane.getAttribute('aria-hidden') === 'true' || (detail.slug && detail.slug !== state.pdf.currentSlug)) {
+      state.pdf.pendingGoto = detail;
+      return;
+    }
+    gotoPdfPage(detail.pdfPage);
+  });
+}
+
+function bindHudToggle() {
+  const refs = ensureHudDom();
+  const root = refs?.root;
+  if (!root) return;
+  root.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-hud="toggle"]');
+    if (!btn) return;
+    const now = getActiveAudioInfo();
+    if (now.audio && !now.audio.paused) {
+      hudState.last = { id: now.id, at: now.audio.currentTime || 0 };
+      now.audio.pause();
+      hudUpdate(now.id, now.audio);
+      return;
+    }
+    const id = hudState.last.id || (works[0] && works[0].id);
+    if (!id) return;
+    playAt(id, hudState.last.at || 0);
+  });
 }
 
 ready(() => {
-  initTheme();
-  initMetrics();
-  renderQuickActions();
-  initActivity();
-  initFilters();
+  document.documentElement.dataset.skin = 'cards-tabs';
+  injectHudCssOnce();
+  ensureHudDom();
+  bindHudToggle();
+  window.praeApplyTheme(window.praeCurrentTheme(), { persist: false });
+  bindThemeToggle();
+  renderSummary();
+  renderWorksList();
+  handleWorksActions();
   initTabs();
+  bindPdfEvents();
+  hydrateFromHash();
+  renderPanels();
 });
+
+export {};
