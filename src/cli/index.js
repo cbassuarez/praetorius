@@ -352,11 +352,31 @@ const DEFAULT_CONFIG = Object.freeze({
 });
 
 const BUILTIN_SKINS = Object.freeze({
-  'console':      { label: 'Console (default)', aliases: [] },
-  'vite-breeze':  { label: 'Vite Breeze', aliases: [] },
-  'cards-tabs':   { label: 'Cards & Tabs', aliases: ['dashboard'] },
-  'docs-reader':  { label: 'Docs Reader', aliases: ['docs'] },
-  'kiosk':        { label: 'Kiosk / Presentation', aliases: ['presentation'] }
+  'console': {
+    label: 'Console (default)',
+    aliases: [],
+    summary: 'Baseline list used for CLI previews and legacy embeds.'
+  },
+  'vite-breeze': {
+    label: 'Vite Breeze',
+    aliases: [],
+    summary: 'Liquid Glass portfolio shell with split layout + PDF pane.'
+  },
+  'cards-tabs': {
+    label: 'Cards & Tabs',
+    aliases: ['dashboard'],
+    summary: 'Portfolio dashboard where cards fan out into tabbed detail panes.'
+  },
+  'docs-reader': {
+    label: 'Docs Reader',
+    aliases: ['docs'],
+    summary: 'Spacious docs UI with left nav, right outline, and copy-on-code.'
+  },
+  'kiosk': {
+    label: 'Kiosk / Presentation',
+    aliases: ['presentation'],
+    summary: 'Touch-first tiles with oversized controls for demos and galleries.'
+  }
 });
 
 const DEFAULT_DOCS_CONFIG = Object.freeze({
@@ -394,7 +414,8 @@ function builtinSkinList() {
     const aliases = (meta.aliases && meta.aliases.length)
       ? ` (alias: ${meta.aliases.join(', ')})`
       : '';
-    return `${key}${aliases}`;
+    const summary = meta.summary ? ` — ${meta.summary}` : '';
+    return `${key}${aliases}${summary}`;
   });
 }
 
@@ -1568,7 +1589,7 @@ const program = new Command();
 program
   .name('praetorius')
   .alias('prae')
-  .description('Praetorius — Works Console scaffolder & wizard')
+  .description('Praetorius — portfolio-first SPA generator.\nRender your PRAE.works list with synchronized HUD + PDF glue across skins.')
   .version(pkgJson.version || '0.0.0');
 
 // Non-blocking update hint (industry standard)
@@ -1580,42 +1601,29 @@ try {
 
 // Rich, example-driven help footer
 program.addHelpText('after', `
+Praetorius — portfolio-first SPA generator. Render your works list, pick a skin, ship.
 
-Quick start:
-  $ prae init -o prae-out
-  $ prae add
-  $ prae generate -o dist --minify
-  $ prae preview --no-open --port 5173
+Skins (render PRAE.works; no mock data):
+  vite-breeze — Liquid Glass portfolio shell (split layout + PDF pane).
+  docs-reader (alias: docs) — spacious docs UI (left nav, right outline, copy-on-code).
+  cards-tabs (alias: dashboard) — portfolio dashboard (cards & tabs built from works list).
+  kiosk (alias: presentation) — touch-first tiles for demos/galleries (oversized controls).
+Theme: light/dark via #wc-theme-toggle (CSS tokens). No WAAPI.
 
-Import / Export:
-  # JSON / CSV / YAML (csv/yaml loaders are lazy)
-  $ prae import works.csv --assume-new-id --assume-new-slug
-  $ prae export --format=csv > works.csv
+Examples:
+  # Generate with default skin
+  $ prae generate
 
-Score / Page-Follow:
-  $ prae score add 3
-  $ prae score list 3
-  $ prae score validate 3
+  # Generate with a specific skin
+  $ prae generate --skin vite-breeze
+  $ prae generate --skin docs-reader
+  $ prae generate --skin cards-tabs
+  $ prae generate --skin kiosk
 
-Squarespace single-embed:
-  $ prae generate --embed -o paste
-  # Paste paste/embed.html into a Code block.
+  # Tip: deep-link a work or tab in supported skins by URL hash
+  # (actual hash keys depend on the skin; see README)
 
-UI bundle (template.html + main.js + style.css → dist/):
-  $ prae generate --ui-src ui --html template.html --app-js app.js --app-css app.css
-
-Skins:
-  • console (default) • vite-breeze • cards-tabs (alias: dashboard) • docs-reader (alias: docs) • kiosk (alias: presentation)
-  $ prae skin list
-
-Troubleshooting:
-  • CSV imports need "csv-parse"   → npm i csv-parse
-  • YAML imports need "yaml"       → npm i yaml
-  • Minification needs "esbuild"   → npm i esbuild
-  • URL checks (doctor): add src/cli/doctor.js exporting "doctor(argv)", or run with --offline
-
-Testing internals (without running the CLI):
-  $ PRAE_TEST_EXPORTS=1 node -e "import('./src/cli/index.js'); console.log(!!globalThis.__PRAE_TEST__)"
+All skins render your PRAE.works list. No mock data; no jobs/queues.
 `);
 
 const skinCmd = program.command('skin').description('Skin utilities');
@@ -1623,8 +1631,9 @@ skinCmd
   .command('list')
   .description('List built-in UI skins and aliases')
   .action(() => {
-    console.log(pc.bold('Built-in skins:'));
+    console.log(pc.bold('Built-in skins (render PRAE.works):'));
     builtinSkinList().forEach(entry => console.log('  - ' + entry));
+    console.log(pc.gray('Skins never fabricate projects; everything derives from PRAE.works.'));
   });
 
 /* ------------------ preview (tiny static server) ------------------ */
@@ -1803,6 +1812,7 @@ program
     console.log('\n' + pc.bold('Next steps:'));
     console.log('  • Add works: ' + pc.cyan('praetorius add'));
     console.log('  • Generate:  ' + pc.cyan('praetorius generate'));
+    console.log('  • Explore:   ' + pc.cyan('README.md → Skins, Theming & Tokens, PDF + HUD, Accessibility'));
     console.log('');
   });
 
@@ -3439,7 +3449,7 @@ program
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
   .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'ui')
-  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Built-ins: console, vite-breeze, cards-tabs (alias: dashboard), docs-reader (alias: docs), kiosk (alias: presentation)', '')
+  .option('--skin <name>',  'Choose UI skin. Supported: vite-breeze (Liquid Glass portfolio shell with PDF pane), docs-reader (alias: docs), cards-tabs (alias: dashboard), kiosk (alias: presentation).', '')
   .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')
