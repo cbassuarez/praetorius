@@ -30,12 +30,138 @@ const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge wit
 #works-console .actions{display:flex;gap:.6rem;margin:.25rem 0 .6rem}
 #works-console .toast{position:sticky;bottom:.5rem;align-self:flex-end;padding:.5rem .7rem;border-radius:.6rem;background:rgba(0,0,0,.7);backdrop-filter:blur(6px)}
 `;
+// Edit HUD in embed: generated from CLI; look for EMBED_RENDER block.
+const HUD_EMBED_CSS = `#wc-hud[data-component="prae-hud"]{outline:1px solid transparent; /* HUD_SOURCE:embed */ display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;border:1px solid var(--line,rgba(255,255,255,.18));border-radius:12px;background:var(--panel,rgba(0,0,0,.35));-webkit-backdrop-filter:saturate(120%) blur(10px);backdrop-filter:saturate(120%) blur(10px);margin:0 0 12px;}
+#wc-hud[data-component="prae-hud"] [data-part="title"]{font-weight:600;}
+#wc-hud[data-component="prae-hud"] [data-part="meter"]{flex:1;height:4px;background:var(--line,rgba(255,255,255,.18));border-radius:999px;overflow:hidden;}
+#wc-hud[data-component="prae-hud"] [data-part="meter"]>span{display:block;height:100%;width:0;background:var(--accent,#fff);transition:width .2s linear;}
+#wc-hud[data-component="prae-hud"] [data-part="toggle"]{padding:6px 10px;border-radius:8px;border:1px solid var(--chip-bd,rgba(255,255,255,.16));background:var(--chip-bg,rgba(255,255,255,.06));color:inherit;cursor:pointer;}
+#wc-hud[data-component="prae-hud"] [data-part="toggle"]:hover{background:var(--chip-bg-h,rgba(255,255,255,.1));}
+`;
 // Minimal renderer injected only for --embed so the snippet is self-contained.
 const EMBED_RENDER = `(function(){
+  /* HUD_SOURCE:embed (mirrors vite-breeze HUD API) */
+  function ensureHudRoot(){
+    var root = document.getElementById('wc-hud');
+    if(!root){
+      root = document.createElement('div');
+      root.id = 'wc-hud';
+      root.className = 'wc-hud';
+      if(document.body.firstChild){ document.body.insertBefore(root, document.body.firstChild); }
+      else { document.body.appendChild(root); }
+    } else {
+      root.id = 'wc-hud';
+      if(!root.classList.contains('wc-hud')) root.classList.add('wc-hud');
+    }
+    root.setAttribute('data-component','prae-hud');
+    return root;
+  }
+  function ensureHudDom(){
+    var root = ensureHudRoot();
+    if(!root) return null;
+    if(root.dataset.hudBound === '1' && root.__praeHudRefs) return root.__praeHudRefs;
+    root.innerHTML = ''+
+      '<div class="hud-left">'+
+        '<div class="hud-title" data-part="title"></div>'+
+        '<div class="hud-sub" data-part="subtitle"></div>'+
+      '</div>'+ 
+      '<div class="hud-meter" data-part="meter"><span></span></div>'+ 
+      '<div class="hud-actions">'+
+        '<button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" data-icon="play"></button>'+
+      '</div>';
+    var refs = {
+      root: root,
+      title: root.querySelector('[data-part="title"]'),
+      sub: root.querySelector('[data-part="subtitle"]'),
+      meter: root.querySelector('[data-part="meter"]'),
+      fill: root.querySelector('[data-part="meter"] > span'),
+      btn: root.querySelector('[data-part="toggle"]')
+    };
+    root.dataset.hudBound = '1';
+    root.__praeHudRefs = refs;
+    return refs;
+  }
+  function hudSetSubtitle(text){
+    var refs = ensureHudDom();
+    if(refs && refs.sub){ refs.sub.textContent = text == null ? '' : String(text); }
+  }
+  function hudSetPlaying(on){
+    var refs = ensureHudDom();
+    if(!refs || !refs.btn) return;
+    refs.btn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+    refs.btn.setAttribute('data-icon', on ? 'pause' : 'play');
+  }
+  function hudSetProgress(ratio){
+    var refs = ensureHudDom();
+    if(!refs || !refs.fill) return;
+    var pct = Math.max(0, Math.min(1, Number(ratio) || 0));
+    refs.fill.style.width = (pct * 100) + '%';
+  }
+  function hudEnsure(){
+    var refs = ensureHudDom();
+    return refs ? refs.root : ensureHudRoot();
+  }
+  function hudGetRoot(){ return ensureHudRoot(); }
+  function hudApplyApi(){
+    var PRAE = window.PRAE = window.PRAE || {};
+    var api = {
+      ensure: hudEnsure,
+      setSubtitle: hudSetSubtitle,
+      setPlaying: hudSetPlaying,
+      setProgress: hudSetProgress,
+      getRoot: hudGetRoot
+    };
+    PRAE.hud = Object.assign({}, PRAE.hud || {}, api);
+    return PRAE.hud;
+  }
+  function hudFormat(sec){
+    sec = Math.max(0, Math.floor(sec || 0));
+    var m = Math.floor(sec / 60);
+    var s = String(sec % 60).padStart(2, '0');
+    return m + ':' + s;
+  }
+  function hudUpdate(id, audio){
+    var refs = ensureHudDom();
+    if(!refs) return;
+    var worksById = (window.PRAE && window.PRAE.worksById) || {};
+    var work = worksById && worksById[id];
+    var title = work && work.title ? work.title : '—';
+    var dur = (audio && isFinite(audio.duration)) ? hudFormat(audio.duration) : '--:--';
+    var cur = (audio && isFinite(audio.currentTime)) ? hudFormat(audio.currentTime) : '0:00';
+    refs.title.textContent = 'Now playing — ' + title;
+    var vol = Math.round(((audio ? audio.volume : 1) * 100));
+    var rate = (audio ? audio.playbackRate : 1).toFixed(2);
+    hudSetSubtitle(cur + ' / ' + dur + ' · vol:' + vol + ' · speed:' + rate + 'x');
+    var ratio = (audio && audio.duration) ? Math.max(0, Math.min(1, (audio.currentTime || 0) / Math.max(1, audio.duration))) : 0;
+    hudSetProgress(ratio);
+    hudSetPlaying(!!(audio && !audio.paused));
+  }
+  function bindAudio(id){
+    var audio = document.getElementById('wc-a' + id);
+    if(!audio || audio.dataset.hud === '1') return;
+    var update = function(){ hudUpdate(id, audio); };
+    audio.addEventListener('timeupdate', update, { passive:true });
+    audio.addEventListener('ratechange', update, { passive:true });
+    audio.addEventListener('volumechange', update, { passive:true });
+    audio.addEventListener('loadedmetadata', update, { once:true });
+    audio.addEventListener('play', update, { passive:true });
+    audio.addEventListener('pause', update, { passive:true });
+    audio.addEventListener('ended', update, { passive:true });
+    audio.dataset.hud = '1';
+  }
   function render(){
     try{
-      var data = (window.PRAE && window.PRAE.works) || [];
+      var PRAE = window.PRAE = window.PRAE || {};
+      var data = PRAE.works || [];
       console.log('[prae embed] works:', data.length);
+      hudApplyApi().ensure();
+      var refs = ensureHudDom();
+      if(refs){
+        refs.title.textContent = 'Now playing — —';
+        hudSetSubtitle('');
+        hudSetProgress(0);
+        hudSetPlaying(false);
+      }
       // Ensure a host exists
       var host = document.querySelector('#works-console');
       if(!host){ host=document.createElement('section'); host.id='works-console'; document.body.appendChild(host); }
@@ -44,7 +170,7 @@ const EMBED_RENDER = `(function(){
       function esc(s){return String(s||'').replace(/[&<>\\"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c]); });}
       data.forEach(function(w){
         var line=document.createElement('div'); line.className='line';
-        var html = '<div class="title"><strong>'+esc(w.title)+'</strong> <span class="muted">('+esc(w.slug)+')</span></div>'
+        var html = '<div class="title"><strong>'+esc(w.title)+'</strong> <span class="muted">('+esc(w.slug||'')+')</span></div>'
                  + '<div class="one">'+esc(w.one||'')+'</div>';
         if(w.pdf){ html += '<div>score: <a href="'+esc(w.pdf)+'" target="_blank" rel="noopener">PDF</a></div>'; }
         if(w.audio){ html += '<div class="actions"><button class="btn" data-id="'+w.id+'">Play/Pause</button></div>'; }
@@ -52,18 +178,26 @@ const EMBED_RENDER = `(function(){
         list.appendChild(line);
       });
       host.appendChild(list);
-      if(window.PRAE && typeof window.PRAE.ensureAudioTags==='function'){ window.PRAE.ensureAudioTags(); }
-      host.addEventListener('click', function(e){
-        var b=e.target.closest('button[data-id]'); if(!b) return;
-        var id=b.getAttribute('data-id'); var a=document.getElementById('wc-a'+id); if(!a) return;
-        if(a.paused){ a.src=a.getAttribute('data-audio')||a.src; a.play(); } else { a.pause(); }
-      });
+      if(PRAE && typeof PRAE.ensureAudioTags==='function'){ PRAE.ensureAudioTags(); }
+      data.forEach(function(w){ bindAudio(w.id); });
+      if(!host.dataset.hudClick){
+        host.addEventListener('click', function(e){
+          var b=e.target.closest('button[data-id]'); if(!b) return;
+          var id=b.getAttribute('data-id');
+          var a=document.getElementById('wc-a'+id); if(!a) return;
+          bindAudio(id);
+          if(a.paused){ a.src=a.getAttribute('data-audio')||a.src; a.play(); }
+          else { a.pause(); }
+          hudUpdate(id, a);
+        });
+        host.dataset.hudClick = '1';
+      }
     }catch(err){ console.error('[prae embed]', err); }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render);
   else render();
 })();`;
-function buildCssBundle(){ return THEME_CSS + '\n' + STARTER_CSS; }
+function buildCssBundle(){ return THEME_CSS + '\n' + STARTER_CSS + '\n' + HUD_EMBED_CSS; }
 const STARTER_JS_NOTE = `/** Praetorius Works Console — starter v0
  * This is a seed file. The wizard-driven flow uses:
  *   - .prae/works.json  (your data)
