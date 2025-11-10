@@ -102,6 +102,8 @@ const state = {
   audioDurations: new Map(),
   playbackContext: new Map(),
   durationTotal: 0,
+  tablist: null,
+  tabIndicator: null,
   hud: null,
   pdf: {
     shell: null,
@@ -112,6 +114,9 @@ const state = {
     currentSlug: null,
     viewerReady: false,
     pendingGoto: null,
+    backdrop: null,
+    focusHandler: null,
+    restoreFocus: null,
   },
   pageFollow: { audio: null, slug: null, lastPrinted: null, on: null }
 };
@@ -366,7 +371,7 @@ function playAt(id, t = 0) {
   if (!meta) return;
   const work = meta.data;
   if (selectedId !== work.id) {
-    setSelected(work.id);
+    selectWork(work.id);
   }
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
   if (!audio) return;
@@ -414,6 +419,7 @@ function openPdfFor(id) {
     window.open(viewerUrl, '_blank', 'noopener');
     return;
   }
+  state.pdf.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.pdf.currentSlug = work.slug || null;
   let initPage = 1;
   try {
@@ -425,11 +431,14 @@ function openPdfFor(id) {
   } catch (_) {}
   if (title) title.textContent = String(work.title || 'Score');
   shell?.classList.add('has-pdf');
-  pane.removeAttribute('aria-hidden');
+  pane.setAttribute('aria-hidden', 'false');
+  state.pdf.backdrop?.removeAttribute('hidden');
+  document.documentElement.classList.add('ct-scroll-lock');
   frame.src = 'about:blank';
   requestAnimationFrame(() => {
     state.pdf.viewerReady = false;
     frame.src = `${viewerUrl.split('#')[0]}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`;
+    state.pdf.close?.focus({ preventScroll: true });
   });
 }
 
@@ -437,9 +446,16 @@ function hidePdfPane() {
   const { shell, pane, frame } = state.pdf;
   shell?.classList.remove('has-pdf');
   pane?.setAttribute('aria-hidden', 'true');
+  state.pdf.backdrop?.setAttribute('hidden', '');
+  document.documentElement.classList.remove('ct-scroll-lock');
   if (frame) frame.src = 'about:blank';
   state.pdf.currentSlug = null;
   state.pdf.viewerReady = false;
+  const restore = state.pdf.restoreFocus;
+  state.pdf.restoreFocus = null;
+  if (restore && typeof restore.focus === 'function') {
+    requestAnimationFrame(() => restore.focus());
+  }
 }
 
 function getActiveAudioInfo() {
@@ -503,10 +519,18 @@ function updatePlaybackContext(id) {
   if (!audio) return;
   const isPlaying = !audio.paused && !audio.ended;
   if (ctx.status) {
-    ctx.status.textContent = `${isPlaying ? 'Playing' : 'Paused'} · ${formatTime(audio.currentTime || 0)} / ${audio.duration ? formatTime(audio.duration) : '--:--'}`;
+    const current = formatTime(Math.floor(audio.currentTime || 0));
+    const total = audio.duration ? formatTime(Math.floor(audio.duration)) : '--:--';
+    ctx.status.textContent = `${isPlaying ? 'Playing' : 'Paused'} · ${current} / ${total}`;
   }
   if (ctx.playBtn) {
-    ctx.playBtn.textContent = isPlaying ? 'Pause' : 'Play';
+    const work = findWorkById(id)?.data;
+    const label = isPlaying ? 'Pause' : 'Play';
+    const titleSuffix = work?.title ? ` ${work.title}` : '';
+    ctx.playBtn.dataset.icon = isPlaying ? 'pause' : 'play';
+    ctx.playBtn.setAttribute('aria-label', `${label}${titleSuffix}`.trim());
+    if (ctx.sr) ctx.sr.textContent = `${label}${titleSuffix}`.trim();
+    if (ctx.text) ctx.text.textContent = label;
   }
 }
 
@@ -520,13 +544,27 @@ function recomputeDurationTotal() {
 }
 
 function updateSummaryDuration() {
-  const card = document.querySelector('[data-summary="duration"] strong');
-  if (!card) return;
-  if (!state.durationTotal) {
-    card.textContent = '—';
+  const container = document.getElementById('ct-summary');
+  if (!container) return;
+  const cardEl = container.querySelector('[data-summary="duration"]');
+  const strong = cardEl?.querySelector('strong');
+  if (!state.durationTotal || state.durationTotal <= 0) {
+    cardEl?.remove();
     return;
   }
-  card.textContent = formatTime(Math.floor(state.durationTotal));
+  if (!strong) {
+    const article = document.createElement('article');
+    article.className = 'ct-summary-card';
+    article.dataset.summary = 'duration';
+    const heading = document.createElement('h3');
+    heading.textContent = 'Known Duration';
+    const value = document.createElement('strong');
+    value.textContent = formatTime(Math.floor(state.durationTotal));
+    article.append(heading, value);
+    container.appendChild(article);
+    return;
+  }
+  strong.textContent = formatTime(Math.floor(state.durationTotal));
 }
 
 function parseHash() {
@@ -551,6 +589,28 @@ function syncHash() {
   }
 }
 
+function updateTabIndicator() {
+  if (!state.tablist) {
+    state.tablist = document.querySelector('.ct-tablist');
+  }
+  const list = state.tablist;
+  if (!list) return;
+  if (!state.tabIndicator) {
+    state.tabIndicator = list.querySelector('.ct-tab-indicator');
+  }
+  const indicator = state.tabIndicator;
+  const activeBtn = list.querySelector(`[data-tab="${activeTab}"]`);
+  if (!indicator || !activeBtn) {
+    list.dataset.active = '';
+    return;
+  }
+  const width = activeBtn.getBoundingClientRect().width;
+  const offset = activeBtn.offsetLeft - list.scrollLeft;
+  indicator.style.width = `${width}px`;
+  indicator.style.transform = `translateX(${Math.max(0, offset)}px)`;
+  list.dataset.active = 'true';
+}
+
 function setActiveTab(key, opts = {}) {
   if (!TAB_KEYS.includes(key)) return;
   activeTab = key;
@@ -566,12 +626,17 @@ function setActiveTab(key, opts = {}) {
     const btn = controls ? document.getElementById(controls) : null;
     const isActive = btn?.dataset.tab === key;
     panel.toggleAttribute('hidden', !isActive);
+    panel.tabIndex = isActive ? 0 : -1;
   });
   if (!opts.skipHash) syncHash();
   renderPanels();
+  requestAnimationFrame(() => {
+    updateTabIndicator();
+    focusActivePanelHeading();
+  });
 }
 
-function setSelected(id, opts = {}) {
+function selectWork(id, opts = {}) {
   if (!id || Number.isNaN(Number(id))) return;
   const record = findWorkById(id);
   if (!record) return;
@@ -589,98 +654,137 @@ function renderPanels() {
   const cuesPanel = document.getElementById('ct-panel-cues');
   const playbackPanel = document.getElementById('ct-panel-playback');
   const scorePanel = document.getElementById('ct-panel-score');
+  state.playbackContext.clear();
+
   if (detailsPanel) {
     if (!work) {
       detailsPanel.innerHTML = `<div class="ct-empty">Select a work to view details.</div>`;
     } else {
-      detailsPanel.innerHTML = `
-        <header>
-          <h2>${escapeHtml(work.title || '')}</h2>
-          <p class="ct-muted">Slug: ${escapeHtml(work.slug || '')}</p>
-        </header>
-        <p>${escapeHtml(work.one || '')}</p>
-      `;
+      detailsPanel.innerHTML = '';
+      const header = document.createElement('header');
+      const heading = document.createElement('h2');
+      heading.dataset.panelHeading = 'true';
+      heading.tabIndex = -1;
+      heading.textContent = work.title || 'Untitled work';
+      header.appendChild(heading);
+      const slugLine = document.createElement('p');
+      slugLine.className = 'ct-muted';
+      slugLine.textContent = work.slug ? `Slug · ${work.slug}` : 'Slug · —';
+      header.appendChild(slugLine);
+      detailsPanel.appendChild(header);
+      if (work.one) {
+        const summary = document.createElement('p');
+        summary.textContent = work.one;
+        detailsPanel.appendChild(summary);
+      }
     }
   }
+
   if (cuesPanel) {
-    if (!work || !Array.isArray(work.cues) || work.cues.length === 0) {
+    if (!work) {
+      cuesPanel.innerHTML = `<div class="ct-empty">Select a work to view cues.</div>`;
+    } else if (!Array.isArray(work.cues) || work.cues.length === 0) {
       cuesPanel.innerHTML = `<div class="ct-empty">No cues for this work.</div>`;
     } else {
-      const list = document.createElement('div');
-      list.className = 'ct-cues-list';
-      work.cues.forEach((cue, index) => {
+      cuesPanel.innerHTML = '';
+      const header = document.createElement('header');
+      const heading = document.createElement('h2');
+      heading.dataset.panelHeading = 'true';
+      heading.tabIndex = -1;
+      heading.textContent = 'Cues';
+      header.appendChild(heading);
+      cuesPanel.appendChild(header);
+      const cloud = document.createElement('div');
+      cloud.className = 'ct-cues-cloud';
+      work.cues.forEach((cue) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'work-cue';
         btn.dataset.id = String(work.id);
         btn.dataset.t = String(cue.t || 0);
-        btn.textContent = cue.label ? `${cue.label}` : labelForCue(cue.t || 0, cue.label);
-        btn.addEventListener('click', () => {
-          setSelected(work.id);
+        btn.dataset.act = 'play';
+        btn.textContent = cue.label ? String(cue.label) : labelForCue(cue.t || 0, cue.label);
+        btn.addEventListener('click', (event) => {
+          event.preventDefault();
+          selectWork(work.id);
           playAt(work.id, cue.t || 0);
         });
-        btn.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter' || ev.key === ' ') {
-            ev.preventDefault();
-            setSelected(work.id);
-            playAt(work.id, cue.t || 0);
-          }
-        });
-        const wrapper = document.createElement('div');
-        wrapper.className = 'ct-cue-row';
-        const label = cue.label ? cue.label : labelForCue(cue.t || 0, cue.label);
-        wrapper.innerHTML = `<span>${escapeHtml(label)}</span>`;
-        wrapper.appendChild(btn);
-        list.appendChild(wrapper);
+        cloud.appendChild(btn);
       });
-      cuesPanel.innerHTML = '';
-      cuesPanel.appendChild(list);
+      cuesPanel.appendChild(cloud);
     }
   }
+
   if (playbackPanel) {
-    if (!work || !work.audio) {
+    if (!work) {
+      playbackPanel.innerHTML = `<div class="ct-empty">Select a work to control playback.</div>`;
+    } else if (!work.audio) {
       playbackPanel.innerHTML = `<div class="ct-empty">No playback available.</div>`;
-      state.playbackContext.delete(work?.id ?? selectedId ?? 0);
     } else {
       const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
       bindAudio(work.id);
       bindPlaybackListeners(work.id);
       playbackPanel.innerHTML = '';
+      const header = document.createElement('header');
+      const heading = document.createElement('h2');
+      heading.dataset.panelHeading = 'true';
+      heading.tabIndex = -1;
+      heading.textContent = 'Playback';
+      header.appendChild(heading);
+      playbackPanel.appendChild(header);
       const statusEl = document.createElement('div');
       statusEl.className = 'ct-playback-status';
+      statusEl.setAttribute('role', 'status');
+      statusEl.setAttribute('aria-live', 'polite');
+      playbackPanel.appendChild(statusEl);
       const controls = document.createElement('div');
       controls.className = 'ct-playback-controls';
       const playBtn = document.createElement('button');
       playBtn.type = 'button';
-      playBtn.textContent = 'Play';
+      playBtn.className = 'ct-playback-button';
+      playBtn.dataset.icon = 'play';
+      playBtn.innerHTML = `
+        <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+        <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5h3v14H8zm5 0h3v14h-3z" fill="currentColor"/></svg>
+        <span class="sr-only">Play</span>
+        <span class="ct-btn-text" aria-hidden="true">Play</span>
+      `;
       playBtn.addEventListener('click', () => {
         if (!audio) return;
-        if (audio.paused) {
+        if (audio.paused || audio.ended) {
           playAt(work.id, audio.currentTime || 0);
         } else {
-          audio.pause();
-          hudSetPlaying(false);
           hudState.last = { id: work.id, at: audio.currentTime || 0 };
+          audio.pause();
         }
         updatePlaybackContext(work.id);
       });
-      const restartBtn = document.createElement('button');
-      restartBtn.type = 'button';
-      restartBtn.textContent = 'Restart';
-      restartBtn.addEventListener('click', () => {
-        playAt(work.id, 0);
-        updatePlaybackContext(work.id);
+      controls.appendChild(playBtn);
+      playbackPanel.appendChild(controls);
+      state.playbackContext.set(work.id, {
+        status: statusEl,
+        playBtn,
+        sr: playBtn.querySelector('.sr-only'),
+        text: playBtn.querySelector('.ct-btn-text')
       });
-      controls.append(playBtn, restartBtn);
-      playbackPanel.append(statusEl, controls);
-      state.playbackContext.set(work.id, { status: statusEl, playBtn });
       updatePlaybackContext(work.id);
     }
   }
+
   if (scorePanel) {
-    if (!work || !work.pdf) {
+    if (!work) {
+      scorePanel.innerHTML = `<div class="ct-empty">Select a work to view scores.</div>`;
+    } else if (!work.pdf) {
       scorePanel.innerHTML = `<div class="ct-empty">No score available.</div>`;
     } else {
+      scorePanel.innerHTML = '';
+      const header = document.createElement('header');
+      const heading = document.createElement('h2');
+      heading.dataset.panelHeading = 'true';
+      heading.tabIndex = -1;
+      heading.textContent = 'Score';
+      header.appendChild(heading);
+      scorePanel.appendChild(header);
       const wrapper = document.createElement('div');
       wrapper.className = 'ct-score-actions';
       const openBtn = document.createElement('button');
@@ -691,9 +795,17 @@ function renderPanels() {
         openPdfFor(work.id);
       });
       wrapper.appendChild(openBtn);
-      scorePanel.innerHTML = '';
       scorePanel.appendChild(wrapper);
     }
+  }
+}
+
+function focusActivePanelHeading() {
+  const panel = document.querySelector(`#ct-panel-${activeTab}`);
+  if (!panel || panel.hasAttribute('hidden')) return;
+  const heading = panel.querySelector('[data-panel-heading]');
+  if (heading && typeof heading.focus === 'function') {
+    heading.focus({ preventScroll: false });
   }
 }
 
@@ -706,25 +818,66 @@ function escapeHtml(input) {
     .replace(/'/g, '&#39;');
 }
 
+function readDurationSeconds(work) {
+  if (!work || typeof work !== 'object') return null;
+  const meta = work.meta || {};
+  const candidates = [
+    work.duration,
+    work.durationSec,
+    work.durationSeconds,
+    meta.duration,
+    meta.durationSec,
+    meta.durationSeconds
+  ];
+  for (const value of candidates) {
+    if (value == null) continue;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+        return parseFloat(trimmed);
+      }
+      const match = trimmed.match(/^(\d+):(\d{1,2})$/);
+      if (match) {
+        return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+      }
+    }
+  }
+  return null;
+}
+
 function renderSummary() {
   const container = document.getElementById('ct-summary');
   if (!container) return;
   container.innerHTML = '';
   const cards = [
-    { key: 'total', title: 'Total Works', value: String(works.length), note: 'All portfolio entries' },
-    { key: 'audio', title: 'Playable', value: String(works.filter((w) => !!w.audio).length), note: 'Audio available' },
-    { key: 'pdf', title: 'With Scores', value: String(works.filter((w) => !!w.pdf).length), note: 'Score PDFs ready' },
-    { key: 'duration', title: 'Total Duration', value: '—', note: 'Loaded from audio metadata' }
+    { key: 'total', title: 'Total Works', value: String(works.length) },
+    { key: 'audio', title: 'Playable', value: String(works.filter((w) => !!w.audio).length) },
+    { key: 'pdf', title: 'With Scores', value: String(works.filter((w) => !!w.pdf).length) }
   ];
+  let durationSum = 0;
+  for (const work of works) {
+    const secs = readDurationSeconds(work);
+    if (Number.isFinite(secs) && secs > 0) {
+      durationSum += secs;
+    }
+  }
+  state.durationTotal = durationSum;
+  if (durationSum > 0) {
+    cards.push({ key: 'duration', title: 'Known Duration', value: formatTime(Math.floor(durationSum)) });
+  }
   cards.forEach((card) => {
     const box = document.createElement('article');
     box.className = 'ct-summary-card';
     box.dataset.summary = card.key;
-    box.innerHTML = `
-      <h3>${escapeHtml(card.title)}</h3>
-      <strong>${escapeHtml(card.value)}</strong>
-      <p>${escapeHtml(card.note)}</p>
-    `;
+    const heading = document.createElement('h3');
+    heading.textContent = card.title;
+    const value = document.createElement('strong');
+    value.textContent = card.value;
+    box.append(heading, value);
     container.appendChild(box);
   });
 }
@@ -749,10 +902,10 @@ function renderWorksList() {
     card.tabIndex = 0;
     card.innerHTML = `
       <div class="work-header">
-        <div class="work-title">${escapeHtml(work.title)}</div>
-        <div class="work-slug">${escapeHtml(work.slug)}</div>
+        <div class="work-title">${escapeHtml(work.title ?? '')}</div>
+        <div class="work-slug">${escapeHtml(work.slug ?? '')}</div>
       </div>
-      <p class="work-one">${escapeHtml(work.one)}</p>
+      <p class="work-one">${escapeHtml(work.one ?? '')}</p>
     `;
     const cues = Array.isArray(work.cues) ? work.cues : [];
     if (cues.length) {
@@ -764,10 +917,11 @@ function renderWorksList() {
         btn.className = 'work-cue';
         btn.dataset.id = String(work.id);
         btn.dataset.t = String(cue.t || 0);
+        btn.dataset.act = 'play';
         btn.textContent = cue.label ? cue.label : labelForCue(cue.t || 0, cue.label);
         btn.addEventListener('click', (event) => {
           event.stopPropagation();
-          setSelected(work.id);
+          selectWork(work.id);
           playAt(work.id, cue.t || 0);
         });
         cueWrap.appendChild(btn);
@@ -804,20 +958,21 @@ function renderWorksList() {
     openBtn.dataset.id = String(work.id);
     actions.append(playBtn, copyBtn, pdfBtn, openBtn);
     card.appendChild(actions);
-    card.addEventListener('click', () => {
-      setSelected(work.id);
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('.work-actions') || event.target.closest('.work-cues')) return;
+      selectWork(work.id);
     });
     card.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' || ev.key === ' ') {
         ev.preventDefault();
-        setSelected(work.id);
+        selectWork(work.id);
       }
     });
     container.appendChild(card);
     state.worksById.set(Number(work.id), { data: work, el: card });
     if (work.audio) ensureAudioFor(work);
   });
-  setSelected(selectedId, { skipHash: true });
+  selectWork(selectedId, { skipHash: true });
 }
 
 function handleWorksActions() {
@@ -831,7 +986,7 @@ function handleWorksActions() {
     if (!id) return;
     if (act === 'play') {
       event.preventDefault();
-      setSelected(id);
+      selectWork(id);
       playAt(id, 0);
     }
     if (act === 'copy') {
@@ -845,16 +1000,64 @@ function handleWorksActions() {
     }
     if (act === 'pdf') {
       event.preventDefault();
-      setSelected(id);
+      selectWork(id);
       openPdfFor(id);
     }
     if (act === 'open') {
       event.preventDefault();
-      setSelected(id);
+      selectWork(id);
       setActiveTab('details');
       document.getElementById('ct-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   });
+}
+
+function renderFooter() {
+  const footer = document.getElementById('prae-footer');
+  if (!footer) return;
+  const site = (PRAE.config && PRAE.config.site) || {};
+  const year = new Date().getFullYear();
+  const name = site.copyrightName || site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ') || '';
+  footer.innerHTML = '';
+  const info = document.createElement('div');
+  info.className = 'ct-footer-left';
+  const copyright = document.createElement('span');
+  copyright.textContent = name ? `${name} © ${year}` : `© ${year}`;
+  info.appendChild(copyright);
+  if (site.tagline) {
+    const tagline = document.createElement('span');
+    tagline.textContent = site.tagline;
+    info.appendChild(tagline);
+  }
+  const badge = document.createElement('a');
+  badge.className = 'prae-badge';
+  badge.href = 'https://www.npmjs.com/package/praetorius';
+  badge.target = '_blank';
+  badge.rel = 'noopener';
+  badge.innerHTML = `
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.65 5.36 5.91.86-4.28 4.17 1.01 5.89L12 15.98l-5.29 2.8 1.01-5.89-4.28-4.17 5.91-.86z"/></svg>
+    <span>Powered by Praetorius</span>
+  `;
+  const linksWrap = document.createElement('nav');
+  linksWrap.className = 'ct-footer-links';
+  linksWrap.setAttribute('aria-label', 'Site links');
+  const links = Array.isArray(site.links) ? site.links : [];
+  links.forEach((link) => {
+    if (!link || !link.href) return;
+    const anchor = document.createElement('a');
+    anchor.href = link.href;
+    anchor.textContent = link.title || link.label || link.href;
+    if (link.external) {
+      anchor.target = '_blank';
+      anchor.rel = 'noopener';
+    }
+    linksWrap.appendChild(anchor);
+  });
+  if (linksWrap.childElementCount > 0) {
+    footer.append(info, badge, linksWrap);
+  } else {
+    footer.append(info, badge);
+  }
 }
 
 function initTabs() {
@@ -891,6 +1094,11 @@ function initTabs() {
       }
     });
   });
+  if (!state.tablist) {
+    state.tablist = document.querySelector('.ct-tablist');
+    state.tabIndicator = state.tablist?.querySelector('.ct-tab-indicator') || null;
+  }
+  state.tablist?.addEventListener('scroll', () => updateTabIndicator(), { passive: true });
 }
 
 function hydrateFromHash() {
@@ -901,7 +1109,10 @@ function hydrateFromHash() {
   if (parsed.tab) {
     activeTab = parsed.tab;
   }
-  setSelected(selectedId, { skipHash: true });
+  if (!selectedId && works.length) {
+    selectedId = works[0].id;
+  }
+  selectWork(selectedId, { skipHash: true });
   setActiveTab(activeTab, { skipHash: true });
 }
 
@@ -934,7 +1145,29 @@ function bindPdfEvents() {
   state.pdf.title = document.querySelector('.ct-pdf-title');
   state.pdf.close = document.querySelector('.ct-pdf-close');
   state.pdf.frame = document.querySelector('.ct-pdf-frame');
+  state.pdf.backdrop = document.querySelector('[data-pdf-backdrop]');
   state.pdf.close?.addEventListener('click', hidePdfPane);
+  state.pdf.backdrop?.addEventListener('click', hidePdfPane);
+  if (state.pdf.pane) {
+    state.pdf.focusHandler = (event) => {
+      if (event.key !== 'Tab' || state.pdf.pane?.getAttribute('aria-hidden') === 'true') return;
+      const selectors = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+      const focusable = Array.from(state.pdf.pane.querySelectorAll(selectors)).filter((el) => !el.hasAttribute('disabled') && !el.getAttribute('aria-hidden'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey) {
+        if (document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    state.pdf.pane.addEventListener('keydown', state.pdf.focusHandler);
+  }
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') hidePdfPane();
   }, { passive: true });
@@ -986,11 +1219,15 @@ ready(() => {
   bindThemeToggle();
   renderSummary();
   renderWorksList();
+  renderFooter();
   handleWorksActions();
   initTabs();
   bindPdfEvents();
   hydrateFromHash();
   renderPanels();
+  updateTabIndicator();
+  window.addEventListener('hashchange', hydrateFromHash);
+  window.addEventListener('resize', () => updateTabIndicator(), { passive: true });
 });
 
 export {};

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Praetorius — Cards &amp; Tabs Dashboard</title>
+  <title>Praetorius — Cards &amp; Tabs Portfolio</title>
   <link rel="stylesheet" href="./style.css"/>
 </head>
 <body class="prae-theme-dark" data-theme="dark">
@@ -33,6 +33,7 @@
             <button type="button" class="ct-tab" id="ct-tab-cues" role="tab" data-tab="cues" aria-selected="false" aria-controls="ct-panel-cues" tabindex="-1">Cues</button>
             <button type="button" class="ct-tab" id="ct-tab-playback" role="tab" data-tab="playback" aria-selected="false" aria-controls="ct-panel-playback" tabindex="-1">Playback</button>
             <button type="button" class="ct-tab" id="ct-tab-score" role="tab" data-tab="score" aria-selected="false" aria-controls="ct-panel-score" tabindex="-1">Score</button>
+            <span class="ct-tab-indicator" aria-hidden="true"></span>
           </div>
           <div class="ct-tabpanels">
             <article id="ct-panel-details" class="ct-panel" role="tabpanel" tabindex="0" aria-labelledby="ct-tab-details"></article>
@@ -43,12 +44,15 @@
         </section>
       </div>
     </div>
-    <aside class="ct-pdfpane vb-pdfpane" aria-label="Score PDF" aria-hidden="true">
+    <div class="ct-backdrop" data-pdf-backdrop hidden></div>
+    <aside class="ct-pdfpane vb-pdfpane" aria-label="Score PDF" aria-hidden="true" role="dialog" aria-modal="true">
       <header class="ct-pdfbar">
-        <div class="ct-pdf-title" aria-live="polite"></div>
-        <button type="button" class="ct-pdf-close" aria-label="Close PDF">✕</button>
+        <div class="ct-pdf-title vb-pdf-title" aria-live="polite"></div>
+        <button type="button" class="ct-pdf-close vb-pdf-close" aria-label="Close PDF">
+          <span aria-hidden="true">✕</span>
+        </button>
       </header>
-      <iframe class="ct-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+      <iframe class="ct-pdf-frame vb-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     </aside>
   </main>
 
