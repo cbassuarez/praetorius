@@ -73,13 +73,30 @@
   if (urlSkin) document.documentElement.setAttribute('data-skin', urlSkin);
 
   const PRAE  = (window.PRAE = window.PRAE || {});
+  // --- HUD bootstrap: create immediately so it always exists
+const HUD_ID = 'wc-hud';
+let hudBox = document.getElementById(HUD_ID);
+if (!hudBox) {
+  hudBox = document.createElement('div');
+  hudBox.id = HUD_ID;
+  hudBox.className = 'wc-hud';
+  document.body.prepend(hudBox);           // visible even before shell binds
+}
+
   const works = Array.isArray(PRAE.works) ? PRAE.works : [];
   const site  = (PRAE.config && PRAE.config.site) || {};
   const pfMap = PRAE.pageFollowMaps || {}; // <— FIX: was missing
+  // ---- Shared state (hoisted to avoid TDZ in mount / listeners) ----
+  let currentPdfSlug = null;
+  let pdfViewerReady = false;
+  let pendingPdfGoto = null;
+  let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
   if (typeof PRAE.ensureAudioTags === 'function') PRAE.ensureAudioTags();
 
   // DOM refs are bound inside mount() so they exist when used
   let host, headerNav, footer, shell, pdfPane, pdfTitle, pdfClose, pdfFrame;
+  let hudRefs = null;
+  const hudState = { last: { id:null, at:0 } };
   function bindDom(){
     host      = document.querySelector('#works-console');
     headerNav = document.getElementById('prae-nav');
@@ -94,6 +111,11 @@
   ready(mount);
   function mount(){
     bindDom();
+    // Move HUD into the grid when the shell exists
+if (shell && hudBox.parentNode !== shell) {
+  shell.insertBefore(hudBox, shell.firstChild);
+}
+
     // Bind PDF.js load once the iframe node actually exists
 if (pdfFrame && !pdfFrame.dataset.bound) {
   pdfFrame.addEventListener('load', () => {
@@ -136,6 +158,11 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
 
   // ---------------- Works list with console-aligned actions ----------------
   host.innerHTML = '';
+  // Create HUD as a SIBLING before #works-console so list renders never remove it
+  // HUD already exists from early bootstrap; just ensure internals + styles
+ensureHudDom();
+injectHudCssOnce();
+
   works.forEach(w => {
     const cues = Array.isArray(w.cues) ? w.cues : [];
     const el = document.createElement('article');
@@ -169,6 +196,19 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   });
 
   // ---------------- Interactions ----------------
+  // HUD toggle
+  hudBox.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
+    const now = getActiveAudioInfo();
+    if (now.audio && !now.audio.paused){
+      hudState.last = { id: now.id, at: now.audio.currentTime||0 };
+      now.audio.pause();
+      hudUpdate(now.id, now.audio);
+      return;
+    }
+    const id = hudState.last.id || (works[0] && works[0].id); if (!id) return;
+    playAt(id, hudState.last.at||0);
+  });
   host.addEventListener('click', (e)=>{
     const btn = e.target.closest('button, a');
     if (!btn) return;
@@ -261,6 +301,9 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
         });
       }
       markPlaying(id, true);
+      // Keep HUD in sync
+      bindAudio(id);
+      requestAnimationFrame(()=> hudUpdate(id, a));
       // NEW: enable page-follow for this work
       const meta = findWorkById(id);
       if (meta?.data?.slug) attachPageFollow(meta.data.slug, a);
@@ -396,11 +439,7 @@ pdfViewerReady = false;
     if(!m) return 0;
     return parseInt(m[1],10)*60 + parseInt(m[2],10);
   }
-    // ---- PDF.js page-follow (mirror of console) ----
-  let currentPdfSlug = null;
-  let pdfViewerReady = false;
-  let pendingPdfGoto = null;
-  let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
+  
 
   function gotoPdfPage(pageNum){
     if (!pdfFrame || !pdfFrame.src) return;
@@ -456,6 +495,83 @@ pdfViewerReady = false;
     audio.addEventListener('seeking', onTick, { passive:true });
     onTick();
   }
+    // ---- HUD helpers ----
+  function getActiveAudioInfo(){
+    for (const w of works){
+      const a = document.getElementById('wc-a'+w.id);
+      if (a && !a.paused && !a.ended) return { id:w.id, audio:a };
+    }
+    return { id:null, audio:null };
+  }
+
+  function ensureHudDom(){
+    if (!hudBox) return null;
+    if (hudRefs) return hudRefs;
+    hudBox.innerHTML = '';
+    const wrap  = document.createElement('div'); wrap.className = 'wc-hud-row';
+    const tag   = document.createElement('span'); tag.className  = 'tag';
+    const time  = document.createElement('span'); time.className = 'hud-time';
+    const vol   = document.createElement('span'); vol.className  = 'soft hud-vol';
+    const spd   = document.createElement('span'); spd.className  = 'soft hud-speed';
+    const meter = document.createElement('div');  meter.className= 'meter';
+    const fill  = document.createElement('span'); meter.appendChild(fill);
+    const acts  = document.createElement('div');  acts.className = 'hud-actions';
+    const btn   = document.createElement('button');
+    btn.type='button'; btn.className='btn hud-btn'; btn.setAttribute('data-hud','toggle'); btn.textContent='Play ▷';
+    acts.appendChild(btn);
+    tag.textContent = 'Now playing —';
+    wrap.append(tag, time, vol, spd, meter, acts);
+    hudBox.appendChild(wrap);
+    hudRefs = { tag, time, vol, spd, fill, btn };
+    return hudRefs;
+  }
+
+  function hudUpdate(id, a){
+    const r = ensureHudDom(); if (!r) return;
+    const w = findWorkById(id)?.data;
+    const title = w ? w.title : '—';
+    // Ensure HUD always visible
+    if (hudBox) hudBox.style.display = 'flex';
+    const dur = (a && Number.isFinite(a.duration)) ? formatTime(a.duration|0) : '--:--';
+    const cur = (a && Number.isFinite(a.currentTime)) ? formatTime(a.currentTime|0) : '0:00';
+    const pct = (a && a.duration) ? Math.max(0, Math.min(100, (a.currentTime/a.duration)*100)) : 0;
+    r.tag.textContent  = `Now playing — ${title}`;
+    r.time.textContent = `${cur} / ${dur}`;
+    r.vol.textContent  = `vol:${Math.round(((a ? a.volume : 1)*100))}`;
+    r.spd.textContent  = `speed:${(a ? a.playbackRate : 1).toFixed(2)}x`;
+    r.fill.style.width = `${pct}%`;
+    r.btn.textContent  = (a && !a.paused) ? 'Pause ❚❚' : 'Play ▷';
+  }
+
+  function bindAudio(id){
+    const a = document.getElementById('wc-a'+id); if (!a) return;
+    if (!a.dataset.hud){
+      a.addEventListener('timeupdate',    ()=> hudUpdate(id,a), { passive:true });
+      a.addEventListener('ratechange',    ()=> hudUpdate(id,a), { passive:true });
+      a.addEventListener('volumechange',  ()=> hudUpdate(id,a), { passive:true });
+      a.addEventListener('loadedmetadata',()=> hudUpdate(id,a), { once:true, passive:true });
+      a.addEventListener('ended',         ()=> hudUpdate(id,a), { passive:true });
+      a.dataset.hud = '1';
+    }
+  }
+  // Ensure HUD is visible even if skin CSS omits it
+  function injectHudCssOnce(){
+    if (document.getElementById('prae-hud-css')) return;
+    const css = `
+      #wc-hud{display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;
+        border:1px solid var(--line,#2a2a2a);border-radius:12px;
+        background:var(--panel,rgba(255,255,255,.03));margin:0 0 12px}
+      #wc-hud .meter{flex:1;height:4px;background:var(--line,#2a2a2a);
+        border-radius:999px;overflow:hidden}
+      #wc-hud .meter>span{display:block;height:100%;inset:0 100% 0 0;background:var(--fg,#fff)}
+      #wc-hud .tag,#wc-hud .hud-time,#wc-hud .soft{font:inherit;opacity:.85}
+      #wc-hud .hud-actions .hud-btn{cursor:pointer}
+    `;
+    const s = document.createElement('style');
+    s.id = 'prae-hud-css'; s.textContent = css;
+    document.head.appendChild(s);
+  }
+
   
   function flash(el, text){
     try{
