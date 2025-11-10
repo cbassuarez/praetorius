@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "works": [
+    {
+      "id": 1,
+      "slug": "fixture-demo",
+      "title": "Fixture Demo Work",
+      "one": "Sample work used for CLI seeding tests.",
+      "cues": [],
+      "audio": null,
+      "pdf": null
+    }
+  ]
+}
