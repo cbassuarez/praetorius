@@ -207,16 +207,16 @@ const state = {
   pageTotalEl: null,
   hudEl: null,
   themeLink: null,
+  footerPlayEl: null,
   reduceMotion: false,
   sections: [],
   observer: null,
-  pageIndex: 0,
-  totalPages: 1,
-  updatingHash: false,
+  activeWorkIndex: works.length ? 0 : -1,
+  activeWorkKey: null,
+  activeHasPdf: false,
+  activeHasAudio: false,
   hudState: { last: { id: works[0]?.id ?? null, at: 0 } },
   currentAudioId: null,
-  currentWork: null,
-  currentWorkKey: null,
   pdf: {
     root: null,
     frame: null,
@@ -228,8 +228,6 @@ const state = {
     live: null,
     toggle: null,
     close: null,
-    frames: new Map(),
-    loaded: new Set(),
     viewerReady: false,
     pendingGoto: null,
     currentSlug: null,
@@ -237,7 +235,6 @@ const state = {
     followHandler: null,
     followSlug: null,
     lastPrinted: null,
-    lastWorkWithPdf: null,
     drawerOpen: false
   }
 };
@@ -301,6 +298,10 @@ function pauseAllAudio(exceptId) {
     const audio = document.getElementById('wc-a' + work.id);
     if (audio) audio.pause();
   }
+  const active = getActiveWork();
+  if (active && (exceptId == null || Number(active.id) !== Number(exceptId))) {
+    updateFooterAudioControl();
+  }
 }
 
 function updateHud(id, audio) {
@@ -308,6 +309,7 @@ function updateHud(id, audio) {
   if (!audio || audio.paused || audio.ended) {
     state.hudEl.textContent = '';
     state.hudEl.hidden = true;
+    updateFooterAudioControl(audio);
     return;
   }
   const record = findWorkById(id);
@@ -319,6 +321,7 @@ function updateHud(id, audio) {
   const rate = (audio.playbackRate || 1).toFixed(2);
   state.hudEl.textContent = `Now playing — ${title} ${current} / ${duration} · vol ${volume}% · ${rate}x`;
   state.hudEl.hidden = false;
+  updateFooterAudioControl(audio);
 }
 
 function bindAudioToHud(id, audio) {
@@ -422,8 +425,6 @@ function ensurePdfDom() {
   state.pdf.live = document.getElementById('tf-preview-live');
   state.pdf.toggle = document.getElementById('tf-preview-drawer-toggle');
   state.pdf.close = document.getElementById('tf-preview-close');
-  if (!(state.pdf.frames instanceof Map)) state.pdf.frames = new Map();
-  if (!(state.pdf.loaded instanceof Set)) state.pdf.loaded = new Set();
   if (state.pdf.toggle && state.pdf.toggle.dataset.bound !== '1') {
     state.pdf.toggle.addEventListener('click', (event) => {
       event.preventDefault();
@@ -524,55 +525,43 @@ function syncPreviewForViewport() {
 function ensurePreviewFrame(slug, work, viewerUrl) {
   const pdf = ensurePdfDom();
   if (!pdf.slot) return null;
-  if (!(state.pdf.frames instanceof Map)) state.pdf.frames = new Map();
-  if (!(state.pdf.loaded instanceof Set)) state.pdf.loaded = new Set();
-  let frame = state.pdf.frames.get(slug);
+  let frame = state.pdf.frame;
   if (!frame) {
     frame = document.createElement('iframe');
     frame.className = 'tf-preview-frame';
     frame.loading = 'lazy';
     frame.allow = 'autoplay; fullscreen';
     frame.referrerPolicy = 'no-referrer';
-    frame.dataset.slug = slug;
-    frame.title = `${work.title || work.slug || 'Score'} (PDF)`;
     frame.addEventListener('load', () => {
-      state.pdf.loaded.add(slug);
-      if (state.pdf.frame === frame && state.pdf.currentSlug === slug) {
-        state.pdf.viewerReady = true;
-        const pending = state.pdf.pendingGoto;
-        if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
-          gotoPdfPage(pending.pdfPage);
-          state.pdf.pendingGoto = null;
-        }
+      if (state.pdf.frame !== frame) return;
+      state.pdf.viewerReady = true;
+      const pending = state.pdf.pendingGoto;
+      if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
+        gotoPdfPage(pending.pdfPage);
+        state.pdf.pendingGoto = null;
       }
     });
     pdf.slot.appendChild(frame);
-    state.pdf.frames.set(slug, frame);
+    state.pdf.frame = frame;
   }
+  frame.dataset.slug = slug;
   frame.title = `${work.title || work.slug || 'Score'} (PDF)`;
-  state.pdf.frames.forEach((node) => {
-    if (node === frame) {
-      node.removeAttribute('hidden');
-    } else {
-      node.setAttribute('hidden', '');
-    }
-  });
-  state.pdf.frame = frame;
+  frame.removeAttribute('hidden');
   const currentSrc = frame.getAttribute('src') || '';
   if (currentSrc !== viewerUrl) {
     state.pdf.viewerReady = false;
-    requestAnimationFrame(() => {
-      frame.src = viewerUrl;
-    });
-  } else if (state.pdf.loaded.has(slug)) {
-    state.pdf.viewerReady = true;
-  } else {
-    state.pdf.viewerReady = false;
+    frame.src = viewerUrl;
+  } else if (state.pdf.viewerReady) {
+    const pending = state.pdf.pendingGoto;
+    if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
+      gotoPdfPage(pending.pdfPage);
+      state.pdf.pendingGoto = null;
+    }
   }
   return frame;
 }
 
-function showPdfForWork(work, { openDrawer = false } = {}) {
+function showPdfForWork(work, { openDrawer = false, announce = true } = {}) {
   const pdf = ensurePdfDom();
   if (!work || !pdf.root) return;
   const normalized = normalizePdfUrl(getPdfSourceFrom(work));
@@ -586,7 +575,6 @@ function showPdfForWork(work, { openDrawer = false } = {}) {
   setPreviewTitle(work.title || work.slug || 'Score');
   setPreviewLink(normalized, 'Open PDF');
   const slug = workKey(work) || `work-${work.id ?? Date.now()}`;
-  state.pdf.lastWorkWithPdf = work;
   detachPageFollow();
   const viewerUrl = choosePdfViewer(normalized);
   ensurePreviewFrame(slug, work, viewerUrl);
@@ -596,44 +584,41 @@ function showPdfForWork(work, { openDrawer = false } = {}) {
     const audio = document.getElementById('wc-a' + work.id);
     if (audio) attachPageFollow(work.slug, audio);
   }
-  announcePreview(`Previewing ${work.title || work.slug || 'score'}`);
+  if (announce) {
+    announcePreview(`Now viewing: ${work.title || work.slug || 'score'} PDF`);
+  }
   if (openDrawer && isDrawerMode()) {
     setPreviewDrawer(true);
   }
 }
 
-function showNoPdfForWork(work) {
+function showNoPdfForWork(work, { announce = true } = {}) {
   const pdf = ensurePdfDom();
   if (!pdf.root) return;
   const title = work?.title || work?.slug || 'this work';
-  const hasActivePdf = !!state.pdf.lastWorkWithPdf;
-  const message = hasActivePdf
-    ? `No PDF for “${title}”. Showing previous document.`
-    : `No PDF for “${title}”.`;
-  setPreviewNote(message);
-  if (hasActivePdf && state.pdf.lastWorkWithPdf) {
-    markPreviewEmpty(false);
-    if (pdf.empty) pdf.empty.hidden = true;
-    const previousUrl = normalizePdfUrl(getPdfSourceFrom(state.pdf.lastWorkWithPdf));
-    if (previousUrl) setPreviewLink(previousUrl, 'Open PDF');
-  } else {
-    markPreviewEmpty(true);
-    if (pdf.empty) {
-      pdf.empty.textContent = 'No PDFs available.';
-      pdf.empty.hidden = false;
-    }
-    const external = getWorkExternalUrl(work);
-    if (external) {
-      setPreviewLink(external, 'View work');
-    } else {
-      setPreviewLink('', '');
-    }
-    state.pdf.viewerReady = false;
-    state.pdf.currentSlug = state.pdf.lastWorkWithPdf?.slug || null;
-    detachPageFollow();
+  markPreviewEmpty(true);
+  if (pdf.empty) {
+    pdf.empty.textContent = 'No PDF available.';
+    pdf.empty.hidden = false;
   }
+  setPreviewTitle(title || 'Document preview');
+  setPreviewNote(`No PDF for “${title}”.`);
+  const external = getWorkExternalUrl(work);
+  if (external) {
+    setPreviewLink(external, 'View work');
+  } else {
+    setPreviewLink('', '');
+  }
+  if (state.pdf.frame) {
+    state.pdf.frame.setAttribute('hidden', '');
+  }
+  state.pdf.viewerReady = false;
+  state.pdf.currentSlug = null;
   state.pdf.pendingGoto = null;
-  announcePreview(message);
+  detachPageFollow();
+  if (announce) {
+    announcePreview(`Now viewing: ${title}. No PDF available.`);
+  }
 }
 
 function showPreviewPlaceholder() {
@@ -647,32 +632,36 @@ function showPreviewPlaceholder() {
     pdf.empty.hidden = false;
   }
   setPreviewLink('', '');
-  state.pdf.frame = null;
-  state.pdf.currentSlug = null;
-  state.pdf.lastWorkWithPdf = null;
-  state.pdf.viewerReady = false;
-  announcePreview('No PDFs available.');
-}
-
-function findFirstPdfWork() {
-  for (const work of works) {
-    const src = normalizePdfUrl(getPdfSourceFrom(work));
-    if (src) return work;
+  if (state.pdf.frame) {
+    state.pdf.frame.setAttribute('hidden', '');
   }
-  return null;
+  state.pdf.currentSlug = null;
+  state.pdf.viewerReady = false;
+  state.pdf.pendingGoto = null;
+  detachPageFollow();
+  announcePreview('Now viewing: Document preview. No PDF available.');
 }
 
 function initializePreview() {
-  const first = findFirstPdfWork();
-  if (first) {
-    showPdfForWork(first);
-  } else {
+  if (!works.length) {
+    state.activeWorkIndex = -1;
+    state.activeWorkKey = null;
+    state.activeHasPdf = false;
+    state.activeHasAudio = false;
     showPreviewPlaceholder();
+    updateFooterCounter();
+    updateFooterAudioControl();
+    updateHeaderCurrent(null);
+    return;
   }
+  setActiveWork(0, { force: true, announce: false });
 }
 
-function updatePreviewForWork(work) {
-  if (!work) return;
+function updatePreviewForWork(work, options = {}) {
+  if (!work) {
+    showPreviewPlaceholder();
+    return;
+  }
   const key = workKey(work);
   const normalized = normalizePdfUrl(getPdfSourceFrom(work));
   if (normalized) {
@@ -682,23 +671,10 @@ function updatePreviewForWork(work) {
       markPreviewEmpty(false);
       return;
     }
-    showPdfForWork(work);
+    showPdfForWork(work, options);
   } else {
-    showNoPdfForWork(work);
+    showNoPdfForWork(work, options);
   }
-}
-
-function setCurrentWork(work) {
-  if (!work) {
-    state.currentWork = null;
-    state.currentWorkKey = null;
-    return;
-  }
-  const key = workKey(work);
-  if (state.currentWorkKey === key) return;
-  state.currentWork = work;
-  state.currentWorkKey = key;
-  updatePreviewForWork(work);
 }
 
 function gotoPdfPage(pageNum) {
@@ -780,10 +756,17 @@ function openPdfFor(workOrId) {
     ? workOrId
     : findWorkById(workOrId)?.data;
   if (!work) return;
-  showPdfForWork(work, { openDrawer: true });
   const key = workKey(work);
-  state.currentWork = work;
-  state.currentWorkKey = key;
+  const index = works.findIndex((item, idx) => {
+    if (item === work) return true;
+    const itemKey = workKey(item);
+    return itemKey && key && itemKey === key;
+  });
+  if (index >= 0) {
+    setActiveWork(index, { force: true, announce: true, openDrawer: true, scroll: true });
+  } else {
+    showPdfForWork(work, { openDrawer: true, announce: true });
+  }
 }
 
 window.addEventListener('wc:pdf-goto', (event) => {
@@ -834,6 +817,24 @@ function createCueLink(work, cue) {
   return link;
 }
 
+function getWorkTimestamp(work) {
+  if (!work || typeof work !== 'object') return '';
+  const meta = work.meta || {};
+  const candidates = [
+    work.timestamp,
+    work.time,
+    work.date,
+    work.year,
+    meta.timestamp,
+    meta.time,
+    meta.date
+  ];
+  for (const value of candidates) {
+    if (value) return String(value);
+  }
+  return '';
+}
+
 function createWorkSection(work, index) {
   const section = document.createElement('section');
   section.className = 'tf-work';
@@ -842,6 +843,8 @@ function createWorkSection(work, index) {
   if (work.id != null) section.dataset.workId = String(work.id);
   if (work.title) section.dataset.workTitle = String(work.title);
   const pdfCandidate = normalizePdfUrl(getPdfSourceFrom(work));
+  const timestampText = getWorkTimestamp(work);
+  let activationTrigger = null;
   const title = document.createElement('h1');
   title.className = 'tf-title';
   title.textContent = work.title || work.slug || `Work ${index + 1}`;
@@ -853,6 +856,17 @@ function createWorkSection(work, index) {
     section.appendChild(slug);
   }
   const metaItems = [];
+  if (timestampText) {
+    const stamp = document.createElement('button');
+    stamp.type = 'button';
+    stamp.className = 'tf-timestamp';
+    stamp.textContent = timestampText;
+    stamp.setAttribute('data-timestamp', '1');
+    const label = work.title || work.slug || `Work ${index + 1}`;
+    stamp.setAttribute('aria-label', `Activate ${label} (${timestampText})`);
+    activationTrigger = stamp;
+    metaItems.push(stamp);
+  }
   if (pdfCandidate) {
     const score = document.createElement('a');
     score.href = '#';
@@ -926,7 +940,159 @@ function createWorkSection(work, index) {
     p.textContent = text;
     section.appendChild(p);
   });
-  return { section, heading: title };
+  return { section, heading: title, activationTrigger };
+}
+
+function bindSectionActivation(section, index) {
+  if (!section) return;
+  section.dataset.activatable = '1';
+  section.dataset.active = section.dataset.active || '0';
+  if (!section.hasAttribute('tabindex')) section.tabIndex = 0;
+  section.setAttribute('role', 'button');
+  section.setAttribute('aria-pressed', 'false');
+  const isInteractiveTarget = (target) => {
+    return !!target.closest('a, button, audio, video, input, textarea, select, label');
+  };
+  section.addEventListener('click', (event) => {
+    if (isInteractiveTarget(event.target) && event.target !== section) return;
+    setActiveWork(index, { announce: true });
+  });
+  section.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      if (isInteractiveTarget(event.target) && event.target !== section) return;
+      event.preventDefault();
+      setActiveWork(index, { announce: true });
+    }
+  });
+}
+
+function getActiveWork() {
+  if (state.activeWorkIndex < 0) return null;
+  return works[state.activeWorkIndex] || null;
+}
+
+function updateFooterCounter() {
+  const total = works.length;
+  if (state.pageTotalEl) state.pageTotalEl.textContent = String(total);
+  const current = state.activeWorkIndex >= 0 ? state.activeWorkIndex + 1 : 0;
+  if (state.pageNowEl) state.pageNowEl.textContent = String(current);
+}
+
+function updateActiveSectionHighlight() {
+  state.sections.forEach(({ section, trigger }, idx) => {
+    const active = idx === state.activeWorkIndex;
+    if (section) {
+      section.dataset.active = active ? '1' : '0';
+      if (section.dataset.activatable === '1') {
+        section.setAttribute('aria-pressed', active ? 'true' : 'false');
+      }
+    }
+    if (trigger) {
+      trigger.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+  });
+}
+
+function announceActiveWork(work) {
+  if (!work) {
+    announcePreview('No work selected.');
+    return;
+  }
+  const label = work.title || work.slug || `Work ${state.activeWorkIndex + 1}`;
+  if (state.activeHasPdf) {
+    announcePreview(`Now viewing: ${label} PDF`);
+  } else {
+    announcePreview(`Now viewing: ${label}. No PDF available.`);
+  }
+}
+
+function updateFooterAudioControl(activeAudio) {
+  const btn = state.footerPlayEl;
+  if (!btn) return;
+  const work = getActiveWork();
+  if (!work) {
+    btn.hidden = true;
+    btn.disabled = true;
+    btn.setAttribute('aria-pressed', 'false');
+    btn.textContent = 'Play ▷';
+    return;
+  }
+  const label = work.title || work.slug || `Work ${state.activeWorkIndex + 1}`;
+  const hasAudio = !!getAudioSourceFor(work);
+  state.activeHasAudio = hasAudio;
+  if (!hasAudio) {
+    btn.hidden = false;
+    btn.disabled = true;
+    btn.classList.add('tf-foot-play--disabled');
+    btn.textContent = 'Play ▷';
+    btn.setAttribute('aria-pressed', 'false');
+    btn.setAttribute('aria-label', `Audio not available for ${label}`);
+    return;
+  }
+  const audio = activeAudio || document.getElementById('wc-a' + work.id) || null;
+  const playing = audio ? !audio.paused && !audio.ended : false;
+  btn.hidden = false;
+  btn.disabled = false;
+  btn.classList.toggle('tf-foot-play--disabled', false);
+  btn.textContent = playing ? 'Pause Ⅱ' : 'Play ▷';
+  btn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+  btn.setAttribute('aria-label', playing ? `Pause audio for ${label}` : `Play audio for ${label}`);
+}
+
+function toggleActiveAudio() {
+  const work = getActiveWork();
+  if (!work) return;
+  const src = getAudioSourceFor(work);
+  if (!src) {
+    updateFooterAudioControl();
+    return;
+  }
+  let audio = document.getElementById('wc-a' + work.id);
+  if (!audio) audio = ensureAudioFor(work);
+  if (!audio) return;
+  if (!audio.src) {
+    const normalized = normalizeSrc(src);
+    if (normalized) {
+      audio.src = normalized;
+      audio.load();
+    }
+  }
+  if (audio.paused || audio.ended) {
+    const resumeAt = audio.currentTime || (state.hudState.last?.id === work.id ? state.hudState.last.at : 0) || 0;
+    playAt(work.id, resumeAt);
+  } else {
+    audio.pause();
+  }
+  updateFooterAudioControl(audio);
+}
+
+function setActiveWork(index, { force = false, scroll = false, announce = true, openDrawer = false } = {}) {
+  if (!works.length) return;
+  const clamped = Math.min(works.length - 1, Math.max(0, index));
+  if (!force && state.activeWorkIndex === clamped) {
+    if (openDrawer && state.activeHasPdf && isDrawerMode()) {
+      setPreviewDrawer(true);
+    }
+    updateFooterAudioControl();
+    return;
+  }
+  state.activeWorkIndex = clamped;
+  const work = works[clamped];
+  state.activeWorkKey = workKey(work);
+  state.activeHasPdf = !!normalizePdfUrl(getPdfSourceFrom(work));
+  state.activeHasAudio = !!getAudioSourceFor(work);
+  updateActiveSectionHighlight();
+  updateHeaderCurrent(work?.title || work?.slug || null);
+  updateFooterCounter();
+  updateFooterAudioControl();
+  updatePreviewForWork(work, { openDrawer, announce: false });
+  if (announce) announceActiveWork(work);
+  if (scroll && state.sections[clamped]?.section) {
+    const target = state.sections[clamped].section;
+    const behavior = state.reduceMotion ? 'auto' : 'smooth';
+    target.scrollIntoView({ behavior, block: 'start' });
+  }
 }
 
 function renderBook() {
@@ -940,9 +1106,19 @@ function renderBook() {
     return;
   }
   works.forEach((work, index) => {
-    const { section, heading } = createWorkSection(work, index);
+    const { section, heading, activationTrigger } = createWorkSection(work, index);
+    section.dataset.active = '0';
     state.flow.appendChild(section);
-    state.sections.push({ work, section, heading });
+    if (activationTrigger) {
+      activationTrigger.dataset.index = String(index);
+      activationTrigger.setAttribute('aria-pressed', 'false');
+      activationTrigger.addEventListener('click', () => {
+        setActiveWork(index, { announce: true });
+      });
+    } else {
+      bindSectionActivation(section, index);
+    }
+    state.sections.push({ work, section, heading, trigger: activationTrigger });
   });
 }
 
@@ -980,12 +1156,10 @@ function observeCurrentWork() {
     }
     if (candidate) {
       const owner = state.sections.find((item) => item.heading === candidate);
-      const work = owner?.work || null;
-      updateHeaderCurrent(work?.title || work?.slug || null);
-      setCurrentWork(work);
-    } else {
-      updateHeaderCurrent(null);
-      setCurrentWork(null);
+      const index = owner ? state.sections.indexOf(owner) : -1;
+      if (index >= 0) {
+        setActiveWork(index, { announce: false });
+      }
     }
   };
   state.observer = new IntersectionObserver(callback, {
@@ -995,74 +1169,6 @@ function observeCurrentWork() {
   state.sections.forEach(({ heading }) => {
     if (heading) state.observer.observe(heading);
   });
-}
-
-function updatePagination() {
-  if (!state.book || !state.flow) return;
-  const pageSize = state.book.clientHeight || 1;
-  const total = Math.max(1, Math.ceil(state.flow.scrollHeight / pageSize));
-  state.totalPages = total;
-  state.pageTotalEl && (state.pageTotalEl.textContent = String(total));
-  updatePageFromScroll();
-}
-
-function updatePageFromScroll() {
-  if (!state.book) return;
-  const pageSize = state.book.clientHeight || 1;
-  const rawIndex = Math.round(state.book.scrollTop / Math.max(1, pageSize));
-  const index = Math.min(state.totalPages - 1, Math.max(0, rawIndex));
-  state.pageIndex = index;
-  if (state.pageNowEl) state.pageNowEl.textContent = String(index + 1);
-  if (!state.updatingHash) updateHash();
-}
-
-function scrollToPage(index) {
-  if (!state.book) return;
-  const pageSize = state.book.clientHeight || 1;
-  const clamped = Math.min(state.totalPages - 1, Math.max(0, index));
-  const top = clamped * pageSize;
-  state.updatingHash = true;
-  state.book.scrollTo({
-    top,
-    behavior: state.reduceMotion ? 'auto' : 'smooth'
-  });
-  setTimeout(() => { state.updatingHash = false; updatePageFromScroll(); }, state.reduceMotion ? 0 : 300);
-}
-
-function turnPage(delta) {
-  const next = state.pageIndex + delta;
-  scrollToPage(next);
-}
-
-function updateHash() {
-  const params = new URLSearchParams();
-  params.set('p', String(state.pageIndex + 1));
-  const next = `#${params.toString()}`;
-  if (location.hash !== next) {
-    history.replaceState(null, '', next);
-  }
-}
-
-function hydrateFromHash() {
-  const hash = location.hash.replace(/^#/, '');
-  if (!hash) {
-    scrollToPage(0);
-    return;
-  }
-  if (!hash.includes('=')) {
-    return;
-  }
-  const params = new URLSearchParams(hash);
-  const pageVal = params.get('p');
-  const pageNum = pageVal ? Number(pageVal) : 1;
-  if (!Number.isNaN(pageNum)) {
-    scrollToPage(Math.max(0, pageNum - 1));
-  }
-}
-
-function onBookScroll() {
-  if (state.updatingHash) return;
-  updatePageFromScroll();
 }
 
 function onKeydown(event) {
@@ -1077,38 +1183,18 @@ function onKeydown(event) {
   if (event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.isContentEditable)) return;
   if (event.key === 'ArrowRight' || event.key === 'PageDown') {
     event.preventDefault();
-    turnPage(1);
+    setActiveWork(state.activeWorkIndex + 1, { scroll: true, announce: true });
   }
   if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
     event.preventDefault();
-    turnPage(-1);
-  }
-}
-
-function onBookClick(event) {
-  if (!state.book) return;
-  const link = event.target.closest('a');
-  if (link) return;
-  const rect = state.book.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const pct = x / Math.max(1, rect.width);
-  if (pct <= 0.1) {
-    turnPage(-1);
-  } else if (pct >= 0.9) {
-    turnPage(1);
+    setActiveWork(state.activeWorkIndex - 1, { scroll: true, announce: true });
   }
 }
 
 function bindEvents() {
-  if (state.book) {
-    state.book.addEventListener('scroll', onBookScroll, { passive: true });
-    state.book.addEventListener('click', onBookClick);
-  }
   window.addEventListener('resize', () => {
-    updatePagination();
     syncPreviewForViewport();
   }, { passive: true });
-  window.addEventListener('hashchange', () => hydrateFromHash());
   document.addEventListener('keydown', onKeydown);
 }
 
@@ -1123,17 +1209,24 @@ function init() {
   state.pageTotalEl = document.getElementById('tf-page-total');
   state.hudEl = document.getElementById('tf-hud');
   state.themeLink = document.getElementById('wc-theme-toggle');
+  state.footerPlayEl = document.getElementById('tf-foot-play');
   applySiteInfo();
   ensureAudioTags();
   renderBook();
   ensurePdfDom();
   initializePreview();
   observeCurrentWork();
-  updatePagination();
   syncPreviewForViewport();
-  hydrateFromHash();
   bindEvents();
-  updateHeaderCurrent(state.sections[0]?.work?.title || null);
+  updateFooterCounter();
+  updateActiveSectionHighlight();
+  if (state.footerPlayEl && !state.footerPlayEl.dataset.bound) {
+    state.footerPlayEl.addEventListener('click', (event) => {
+      event.preventDefault();
+      toggleActiveAudio();
+    });
+    state.footerPlayEl.dataset.bound = '1';
+  }
   praeApplyTheme(praeCurrentTheme(), { persist: false });
   state.themeLink?.addEventListener('click', (event) => {
     event.preventDefault();
