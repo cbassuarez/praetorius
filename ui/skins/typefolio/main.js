@@ -7,7 +7,7 @@ function praeNormalizeTheme(value) {
 
 function praeReadStoredTheme() {
   try {
-    let saved = localStorage.getItem(PRAE_THEME_STORAGE_KEY);
+    const saved = localStorage.getItem(PRAE_THEME_STORAGE_KEY);
     if (!saved) return 'light';
     if (saved.trim().charAt(0) === '{') {
       const parsed = JSON.parse(saved);
@@ -50,7 +50,7 @@ function praeApplyTheme(mode, opts) {
   if (btn) {
     btn.setAttribute('aria-checked', String(eff === 'dark'));
     btn.dataset.mode = eff;
-    btn.textContent = eff === 'dark' ? '🌙' : '☀️';
+    btn.textContent = eff === 'dark' ? 'Theme: Dark' : 'Theme: Light';
     btn.title = eff === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   }
   return eff;
@@ -63,7 +63,8 @@ function praeCurrentTheme() {
 }
 
 function praeCycleTheme() {
-  praeApplyTheme(praeCurrentTheme() === 'dark' ? 'light' : 'dark');
+  const next = praeCurrentTheme() === 'dark' ? 'light' : 'dark';
+  praeApplyTheme(next);
 }
 
 if (typeof window.praeApplyTheme !== 'function') window.praeApplyTheme = praeApplyTheme;
@@ -78,46 +79,6 @@ function ready(fn) {
   }
 }
 
-const PRAE = (window.PRAE = window.PRAE || {});
-const works = Array.isArray(PRAE.works) ? PRAE.works : [];
-const pfMap = PRAE.pageFollowMaps || {};
-
-const FONT_STEPS = [0.92, 1, 1.08, 1.18, 1.28];
-const MEASURE_STEPS = [56, 60, 66, 72, 80];
-const HASH_WORK_KEY = 'work';
-const HASH_VIEW_KEY = 'view';
-const HASH_TYPE_KEY = 't';
-const HASH_CONTRAST_KEY = 'c';
-
-const state = {
-  selectedId: works[0]?.id ?? null,
-  typeface: 'serif',
-  contrast: false,
-  sizeIndex: 1,
-  measureIndex: 2,
-  worksById: new Map(),
-  readerEl: null,
-  indexEl: null,
-  controlsEl: null,
-  hudRefs: null,
-  hudState: { last: { id: works[0]?.id ?? null, at: 0 } },
-  actionButtons: new Map(),
-  pdf: {
-    pane: null,
-    title: null,
-    close: null,
-    frame: null,
-    backdrop: null,
-    viewerReady: false,
-    currentSlug: null,
-    pendingGoto: null,
-    restoreFocus: null
-  }
-};
-
-let hudBox = null;
-let pageFollow = { audio: null, slug: null, lastPrinted: null, handler: null };
-
 function esc(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -127,13 +88,20 @@ function esc(value) {
     .replace(/'/g, '&#39;');
 }
 
-function excerpt(text, length = 140) {
-  if (!text) return '';
-  const trimmed = String(text).trim();
-  if (trimmed.length <= length) return trimmed;
-  const slice = trimmed.slice(0, length);
-  const lastSpace = slice.lastIndexOf(' ');
-  return (lastSpace > 40 ? slice.slice(0, lastSpace) : slice).trimEnd() + '…';
+function formatTime(sec) {
+  const clamped = Math.max(0, Math.floor(sec || 0));
+  const m = Math.floor(clamped / 60);
+  const s = (clamped % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function cueTime(value) {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  if (/^\d+$/.test(String(value))) return parseInt(value, 10);
+  const match = String(value).match(/^(\d+):(\d{2})$/);
+  if (!match) return 0;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
 }
 
 function normalizeSrc(url) {
@@ -156,12 +124,55 @@ function choosePdfViewer(url) {
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
 }
 
-function formatTime(sec) {
-  const clamped = Math.max(0, Math.floor(sec || 0));
-  const m = Math.floor(clamped / 60);
-  const s = String(clamped % 60).padStart(2, '0');
-  return `${m}:${s}`;
-}
+const PRAE = (window.PRAE = window.PRAE || {});
+const works = Array.isArray(PRAE.works) ? PRAE.works : [];
+const pfMap = (() => {
+  const provided = PRAE.pageFollowMaps || {};
+  if (Object.keys(provided).length) return provided;
+  const map = {};
+  for (const work of works) {
+    if (work?.slug && work.pageFollow) {
+      map[work.slug] = work.pageFollow;
+    }
+  }
+  return map;
+})();
+
+const SIZE_STEPS = [0.92, 1, 1.08, 1.18, 1.32];
+const MEASURE_STEPS = [52, 58, 66, 74, 82];
+const LEADING_STEPS = [1.42, 1.52, 1.62, 1.72, 1.82];
+const HASH_WORK_KEY = 'work';
+const HASH_PAGE_KEY = 'p';
+
+const state = {
+  reader: null,
+  toc: null,
+  controls: null,
+  actions: null,
+  footer: null,
+  currentTitleEl: null,
+  pageLabel: null,
+  totalLabel: null,
+  tocList: null,
+  tocPanel: null,
+  tocClose: null,
+  tocRestore: null,
+  columns: 2,
+  orientation: 'horizontal',
+  selectedId: works[0]?.id ?? null,
+  pageIndex: 0,
+  totalPages: 1,
+  prefs: { size: 1, measure: 2, leading: 2, contrast: false },
+  hudState: { last: { id: works[0]?.id ?? null, at: 0 } },
+  worksById: new Map(),
+  pdf: { pane: null, frame: null, title: null, close: null, backdrop: null, viewerReady: false, pendingGoto: null, currentSlug: null, restoreFocus: null, followAudio: null, followHandler: null, followSlug: null, lastPrinted: null },
+  scrollTimer: null,
+  resizeTimer: null,
+  ignoreHash: false,
+  prefersReducedMotion: typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  edgePrev: null,
+  edgeNext: null
+};
 
 function findWorkById(id) {
   const num = Number(id);
@@ -169,9 +180,24 @@ function findWorkById(id) {
   if (state.worksById.has(num)) return state.worksById.get(num);
   const data = works.find((item) => Number(item.id) === num);
   if (!data) return null;
-  const record = { data, el: null };
+  const record = { data, audio: null };
   state.worksById.set(num, record);
   return record;
+}
+
+function ensureAudioFor(work) {
+  if (!work) return null;
+  let el = document.getElementById('wc-a' + work.id);
+  if (!el) {
+    el = document.createElement('audio');
+    el.id = 'wc-a' + work.id;
+    el.preload = 'none';
+    el.playsInline = true;
+    const src = work.audioUrl || work.audio || '';
+    if (src) el.setAttribute('data-audio', src);
+    document.body.appendChild(el);
+  }
+  return el;
 }
 
 function ensureHudRoot() {
@@ -186,14 +212,15 @@ function ensureHudRoot() {
     root.classList.add('wc-hud');
   }
   root.setAttribute('data-component', 'prae-hud');
-  hudBox = root;
   return root;
 }
+
+let hudRefs = null;
 
 function ensureHudDom() {
   const root = ensureHudRoot();
   if (!root) return null;
-  if (root.dataset.hudBound === '1' && state.hudRefs) return state.hudRefs;
+  if (root.dataset.hudBound === '1' && hudRefs) return hudRefs;
   root.innerHTML = `
     <div class="hud-left">
       <div class="hud-title" data-part="title"></div>
@@ -201,16 +228,21 @@ function ensureHudDom() {
     </div>
     <div class="hud-meter" data-part="meter"><span></span></div>
     <div class="hud-actions">
-      <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" data-icon="play"></button>
+      <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play/Pause">Play</button>
     </div>`;
   const title = root.querySelector('[data-part="title"]');
   const sub = root.querySelector('[data-part="subtitle"]');
   const meter = root.querySelector('[data-part="meter"]');
-  const fill = meter?.querySelector('span') || null;
-  const btn = root.querySelector('[data-part="toggle"]');
-  state.hudRefs = { title, sub, meter, fill, btn, root };
+  const fill = meter?.querySelector('span');
+  const btn = root.querySelector('button[data-hud="toggle"]');
+  hudRefs = { title, sub, meter, fill, btn, root };
   root.dataset.hudBound = '1';
-  return state.hudRefs;
+  return hudRefs;
+}
+
+function hudSetTitle(text) {
+  const refs = ensureHudDom();
+  if (refs?.title) refs.title.textContent = String(text ?? '');
 }
 
 function hudSetSubtitle(text) {
@@ -220,16 +252,18 @@ function hudSetSubtitle(text) {
 
 function hudSetPlaying(on) {
   const refs = ensureHudDom();
-  if (!refs?.btn) return;
-  refs.btn.setAttribute('aria-label', on ? 'Pause' : 'Play');
-  refs.btn.dataset.icon = on ? 'pause' : 'play';
+  if (refs?.btn) {
+    refs.btn.textContent = on ? 'Pause' : 'Play';
+    refs.btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
 }
 
 function hudSetProgress(ratio) {
   const refs = ensureHudDom();
-  if (!refs?.fill) return;
-  const pct = Math.max(0, Math.min(1, Number(ratio) || 0));
-  refs.fill.style.width = `${pct * 100}%`;
+  if (refs?.fill) {
+    const clamped = Math.max(0, Math.min(1, ratio || 0));
+    refs.fill.style.width = `${clamped * 100}%`;
+  }
 }
 
 function hudEnsure() {
@@ -238,30 +272,14 @@ function hudEnsure() {
 }
 
 function hudGetRoot() {
-  ensureHudRoot();
-  return hudBox;
-}
-
-function hudSetTitle(text) {
-  const refs = ensureHudDom();
-  if (refs?.title) refs.title.textContent = text;
-}
-
-function getActiveAudioInfo() {
-  for (const work of works) {
-    const audio = document.getElementById('wc-a' + work.id);
-    if (audio && !audio.paused && !audio.ended) {
-      return { id: work.id, audio };
-    }
-  }
-  return { id: null, audio: null };
+  ensureHudDom();
+  return hudRefs?.root || ensureHudRoot();
 }
 
 function hudUpdate(id, audio) {
-  const refs = ensureHudDom();
-  if (!refs) return;
-  const work = findWorkById(id)?.data;
-  const name = work ? work.title : '—';
+  const record = findWorkById(id);
+  const work = record?.data;
+  const name = work?.title || work?.slug || 'Work';
   const duration = audio && Number.isFinite(audio.duration) ? formatTime(audio.duration | 0) : '--:--';
   const current = audio && Number.isFinite(audio.currentTime) ? formatTime(audio.currentTime | 0) : '0:00';
   const ratio = audio && audio.duration ? Math.max(0, Math.min(1, (audio.currentTime || 0) / Math.max(1, audio.duration))) : 0;
@@ -269,699 +287,133 @@ function hudUpdate(id, audio) {
   hudSetSubtitle(`${current} / ${duration}`);
   hudSetProgress(ratio);
   hudSetPlaying(!!(audio && !audio.paused));
-}
-
-function ensureAudioFor(work) {
-  if (!work) return null;
-  let el = document.getElementById('wc-a' + work.id);
-  if (!el) {
-    el = document.createElement('audio');
-    el.id = 'wc-a' + work.id;
-    el.preload = 'none';
-    el.playsInline = true;
-    if (work.audio) el.setAttribute('data-audio', work.audio);
-    document.body.appendChild(el);
+  const playBtn = state.actions?.querySelector('[data-action="play"]');
+  if (playBtn) {
+    playBtn.textContent = audio && !audio.paused ? 'Pause' : 'Play';
   }
-  return el;
 }
 
-function bindAudio(id) {
-  const audio = document.getElementById('wc-a' + id);
-  if (!audio || audio.dataset.typefolioBound === '1') return;
-  const update = () => {
-    hudUpdate(id, audio);
-    updatePlayButton(id);
-    markPlaying(id, !audio.paused && !audio.ended);
-  };
+function bindAudioToHud(id, audio) {
+  if (!audio || audio.dataset.typefolioHud === '1') return;
+  const update = () => hudUpdate(id, audio);
   audio.addEventListener('timeupdate', update, { passive: true });
   audio.addEventListener('ratechange', update, { passive: true });
   audio.addEventListener('volumechange', update, { passive: true });
   audio.addEventListener('loadedmetadata', update, { once: true, passive: true });
   audio.addEventListener('pause', update, { passive: true });
   audio.addEventListener('ended', update, { passive: true });
-  audio.dataset.typefolioBound = '1';
+  audio.dataset.typefolioHud = '1';
+}
+
+function getAudioSourceFor(work) {
+  return work?.audioUrl || work?.audio || '';
 }
 
 function detachPageFollow() {
-  if (pageFollow.audio && pageFollow.handler) {
-    pageFollow.audio.removeEventListener('timeupdate', pageFollow.handler);
-    pageFollow.audio.removeEventListener('seeking', pageFollow.handler);
+  if (state.pdf.followAudio && state.pdf.followHandler) {
+    state.pdf.followAudio.removeEventListener('timeupdate', state.pdf.followHandler);
+    state.pdf.followAudio.removeEventListener('seeking', state.pdf.followHandler);
   }
-  pageFollow = { audio: null, slug: null, lastPrinted: null, handler: null };
+  state.pdf.followAudio = null;
+  state.pdf.followHandler = null;
+  state.pdf.followSlug = null;
+  state.pdf.lastPrinted = null;
 }
 
-function printedPageForTime(cfg, sec) {
-  if (!cfg || !Array.isArray(cfg.pageMap)) return null;
-  const time = Math.max(0, Number(sec) || 0);
-  let current = cfg.pageMap[0]?.page ?? null;
-  for (const entry of cfg.pageMap) {
-    const t = Number(entry.at || 0);
-    if (time >= t) current = entry.page;
-    else break;
+function printedPageForTime(cfg, tSec) {
+  const time = (tSec || 0) + (cfg.mediaOffsetSec || 0);
+  let current = cfg.pageMap?.[0]?.page ?? 1;
+  for (const row of cfg.pageMap || []) {
+    const at = typeof row.at === 'number' ? row.at : cueTime(row.at);
+    if (time >= at) current = row.page; else break;
   }
   return current;
 }
 
-function computePdfPage(slug, time) {
-  const cfg = pfMap[slug];
+function computePdfPage(slug, tSec) {
+  const cfg = pfMap?.[slug];
   if (!cfg) return 1;
-  const printed = printedPageForTime(cfg, time);
-  if (printed == null) return cfg.pdfStartPage || 1;
+  const printed = printedPageForTime(cfg, tSec || 0);
   return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
 }
 
 function attachPageFollow(slug, audio) {
   detachPageFollow();
   if (!slug || !audio) return;
-  const cfg = pfMap[slug];
+  const cfg = pfMap?.[slug];
   if (!cfg) return;
-  const onTick = () => {
+  const handler = () => {
     const printed = printedPageForTime(cfg, audio.currentTime || 0);
-    if (printed !== pageFollow.lastPrinted) {
-      pageFollow.lastPrinted = printed;
+    if (printed !== state.pdf.lastPrinted) {
+      state.pdf.lastPrinted = printed;
       const pdfPage = computePdfPage(slug, audio.currentTime || 0);
       window.dispatchEvent(new CustomEvent('wc:pdf-goto', {
         detail: { slug, printedPage: printed, pdfPage }
       }));
     }
   };
-  pageFollow = { audio, slug, lastPrinted: null, handler: onTick };
-  audio.addEventListener('timeupdate', onTick, { passive: true });
-  audio.addEventListener('seeking', onTick, { passive: true });
-  onTick();
+  state.pdf.followAudio = audio;
+  state.pdf.followHandler = handler;
+  state.pdf.followSlug = slug;
+  state.pdf.lastPrinted = null;
+  audio.addEventListener('timeupdate', handler, { passive: true });
+  audio.addEventListener('seeking', handler, { passive: true });
+  handler();
 }
 
-function markPlaying(id, on) {
-  const record = findWorkById(id);
-  if (record?.el) record.el.classList.toggle('is-playing', !!on);
-}
-
-function playAt(id, t = 0) {
-  const record = findWorkById(id);
-  if (!record) return;
-  const work = record.data;
-  const audio = document.getElementById('wc-a' + id) || ensureAudioFor(work);
-  if (!audio) return;
-  if (!audio.src) {
-    const raw = audio.getAttribute('data-audio') || work.audio || '';
-    const src = normalizeSrc(raw);
-    if (src) {
-      audio.src = src;
-      audio.load();
-    }
+function ensurePdfDom() {
+  if (state.pdf.pane) return state.pdf;
+  let pane = document.querySelector('.tf-pdfpane');
+  let backdrop = document.querySelector('.tf-pdf-backdrop');
+  if (!pane) {
+    backdrop = document.createElement('div');
+    backdrop.className = 'tf-pdf-backdrop';
+    backdrop.setAttribute('hidden', '');
+    pane = document.createElement('aside');
+    pane.className = 'tf-pdfpane';
+    pane.setAttribute('role', 'dialog');
+    pane.setAttribute('aria-modal', 'true');
+    pane.setAttribute('aria-hidden', 'true');
+    pane.setAttribute('tabindex', '-1');
+    pane.setAttribute('hidden', '');
+    pane.innerHTML = `
+      <header class="tf-pdfbar">
+        <div class="tf-pdf-title" aria-live="polite"></div>
+        <button type="button" class="tf-pdf-close">Close</button>
+      </header>
+      <iframe class="tf-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>`;
+    document.body.append(backdrop, pane);
   }
-  const seekAndPlay = () => {
-    try { audio.currentTime = Math.max(0, Number(t) || 0); } catch (_) {}
-    const prom = audio.play();
-    if (prom && typeof prom.catch === 'function') {
-      prom.catch((err) => {
-        if (err && err.name === 'NotAllowedError') flashMessage('Autoplay blocked — press play again.');
-      });
-    }
-    markPlaying(id, true);
-    bindAudio(id);
-    hudUpdate(id, audio);
-    if (work.slug) attachPageFollow(work.slug, audio);
-  };
-  if (audio.readyState >= 1) seekAndPlay();
-  else audio.addEventListener('loadedmetadata', () => seekAndPlay(), { once: true });
-}
-
-function pauseWork(id) {
-  const audio = document.getElementById('wc-a' + id);
-  if (!audio) return;
-  audio.pause();
-}
-
-function togglePlay(work) {
-  if (!work || !work.id) return;
-  const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
-  if (!audio) return;
-  if (!audio.paused && !audio.ended) {
-    state.hudState.last = { id: work.id, at: audio.currentTime || 0 };
-    audio.pause();
-    hudUpdate(work.id, audio);
-  } else {
-    playAt(work.id, audio.currentTime || 0);
+  const frame = pane.querySelector('.tf-pdf-frame');
+  const title = pane.querySelector('.tf-pdf-title');
+  const close = pane.querySelector('.tf-pdf-close');
+  state.pdf = Object.assign(state.pdf, { pane, frame, title, close, backdrop, viewerReady: false, pendingGoto: null, currentSlug: null, restoreFocus: null });
+  if (backdrop && backdrop.dataset.typefolioPdf !== '1') {
+    backdrop.addEventListener('click', hidePdfPane);
+    backdrop.dataset.typefolioPdf = '1';
   }
-}
-
-function deepUrl(id) {
-  const params = new URLSearchParams();
-  params.set(HASH_WORK_KEY, String(id));
-  params.set(HASH_VIEW_KEY, 'read');
-  if (state.typeface === 'sans') params.set(HASH_TYPE_KEY, 'sans');
-  if (state.contrast) params.set(HASH_CONTRAST_KEY, 'hc');
-  return `${location.origin}${location.pathname}#${params.toString()}`;
-}
-
-function openPdfFor(id) {
-  const record = findWorkById(id);
-  if (!record) return;
-  const work = record.data;
-  if (!work.pdf) return;
-  const raw = normalizePdfUrl(work.pdf);
-  const viewerUrl = choosePdfViewer(raw);
-  const pane = state.pdf.pane;
-  const frame = state.pdf.frame;
-  const backdrop = state.pdf.backdrop;
-  const title = state.pdf.title;
-  if (!pane || !frame) {
-    window.open(viewerUrl, '_blank', 'noopener');
-    return;
+  if (close && close.dataset.typefolioPdf !== '1') {
+    close.addEventListener('click', hidePdfPane);
+    close.dataset.typefolioPdf = '1';
   }
-  state.pdf.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  state.pdf.currentSlug = work.slug || null;
-  let initPage = 1;
-  try {
-    if (pageFollow.slug && pageFollow.slug === state.pdf.currentSlug) {
-      initPage = computePdfPage(pageFollow.slug, pageFollow.audio?.currentTime || 0);
-    } else if (work.slug && pfMap[work.slug]) {
-      initPage = computePdfPage(work.slug, 0);
-    }
-  } catch (_) {}
-  if (title) title.textContent = String(work.title || 'Score');
-  pane.setAttribute('aria-hidden', 'false');
-  pane.removeAttribute('hidden');
-  frame.src = 'about:blank';
-  document.body.classList.add('tf-pdf-open');
-  backdrop?.removeAttribute('hidden');
-  requestAnimationFrame(() => {
-    state.pdf.viewerReady = false;
-    const base = viewerUrl.split('#')[0];
-    frame.src = `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`;
-    state.pdf.close?.focus({ preventScroll: true });
-  });
-}
-
-function hidePdfPane() {
-  state.pdf.pane?.setAttribute('aria-hidden', 'true');
-  state.pdf.pane?.setAttribute('hidden', '');
-  state.pdf.frame?.setAttribute('src', 'about:blank');
-  state.pdf.backdrop?.setAttribute('hidden', '');
-  document.body.classList.remove('tf-pdf-open');
-  state.pdf.viewerReady = false;
-  state.pdf.currentSlug = null;
-  const restore = state.pdf.restoreFocus;
-  state.pdf.restoreFocus = null;
-  if (restore && typeof restore.focus === 'function') {
-    requestAnimationFrame(() => restore.focus({ preventScroll: true }));
-  }
-}
-
-function flashMessage(message) {
-  const live = document.getElementById('tf-live') || (() => {
-    const el = document.createElement('div');
-    el.id = 'tf-live';
-    el.className = 'sr-only';
-    el.setAttribute('aria-live', 'polite');
-    document.body.appendChild(el);
-    return el;
-  })();
-  live.textContent = String(message || '');
-}
-
-function flashButton(btn, text, revert) {
-  if (!btn) return;
-  const original = revert ?? btn.textContent;
-  btn.textContent = text;
-  btn.disabled = true;
-  setTimeout(() => {
-    btn.textContent = original;
-    btn.disabled = false;
-  }, 1600);
-}
-
-function copyUrl(id, btn) {
-  const url = deepUrl(id);
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(url).then(() => {
-      flashButton(btn, 'Copied', 'Copy URL');
-      flashMessage('Copied work URL to clipboard.');
-    }).catch(() => {
-      flashButton(btn, url, 'Copy URL');
-    });
-  } else {
-    flashButton(btn, url, 'Copy URL');
-  }
-}
-
-function parseHash() {
-  const raw = String(location.hash || '').replace(/^#/, '');
-  const params = new URLSearchParams(raw);
-  const workId = Number(params.get(HASH_WORK_KEY) || '0') || null;
-  const view = params.get(HASH_VIEW_KEY) || '';
-  const type = params.get(HASH_TYPE_KEY) || '';
-  const contrast = params.get(HASH_CONTRAST_KEY) || '';
-  return { workId, view, type, contrast };
-}
-
-function syncHash() {
-  if (!state.selectedId) return;
-  const params = new URLSearchParams();
-  params.set(HASH_WORK_KEY, String(state.selectedId));
-  params.set(HASH_VIEW_KEY, 'read');
-  if (state.typeface === 'sans') params.set(HASH_TYPE_KEY, 'sans');
-  if (state.contrast) params.set(HASH_CONTRAST_KEY, 'hc');
-  const next = `#${params.toString()}`;
-  const target = `${location.pathname}${location.search}${next}`;
-  if (location.hash !== next) history.replaceState(null, '', target);
-}
-
-function hydrateFromHash() {
-  const { workId, type, contrast } = parseHash();
-  state.typeface = type === 'sans' ? 'sans' : 'serif';
-  state.contrast = contrast === 'hc';
-  if (workId && findWorkById(workId)) {
-    selectWork(workId, { skipHash: true, focusIndex: false });
-  } else if (works[0]) {
-    selectWork(works[0].id, { skipHash: true, focusIndex: false });
-  } else {
-    state.selectedId = null;
-    renderReader(null);
-  }
-  updateReaderTokens();
-  updateControlsState();
-  focusIndex();
-}
-
-function selectWork(id, opts = {}) {
-  const record = findWorkById(id);
-  if (!record) return;
-  state.selectedId = record.data.id;
-  state.hudState.last.id = record.data.id;
-  updateIndexSelection(record.data.id);
-  renderReader(record.data);
-  if (!opts.skipHash) syncHash();
-  if (opts.focusReader) focusReader();
-}
-
-function updateIndexSelection(id) {
-  const buttons = state.indexEl?.querySelectorAll('.tf-index-item');
-  if (!buttons) return;
-  buttons.forEach((btn) => {
-    const isActive = Number(btn.dataset.id) === Number(id);
-    btn.setAttribute('aria-current', String(isActive));
-    btn.classList.toggle('is-active', isActive);
-  });
-}
-
-function renderIndex() {
-  const host = state.indexEl;
-  if (!host) return;
-  host.innerHTML = '';
-  if (!works.length) {
-    const empty = document.createElement('p');
-    empty.className = 'tf-index-empty';
-    empty.textContent = 'No works yet. Run “prae add” to begin your catalogue.';
-    host.appendChild(empty);
-    return;
-  }
-  const list = document.createElement('ol');
-  list.className = 'tf-index-list';
-  works.forEach((work) => {
-    const item = document.createElement('li');
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'tf-index-item';
-    btn.dataset.id = String(work.id);
-    const slug = work.slug ? work.slug : '—';
-    const summary = excerpt(work.one || '');
-    const detail = summary ? `${slug} — ${summary}` : slug;
-    btn.innerHTML = `<strong>${esc(work.title || 'Untitled work')}</strong><span>${esc(detail)}</span>`;
-    btn.addEventListener('click', () => selectWork(work.id, { focusReader: true }));
-    btn.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        selectWork(work.id, { focusReader: true });
+  if (frame && frame.dataset.typefolioPdf !== '1') {
+    frame.addEventListener('load', () => {
+      state.pdf.viewerReady = true;
+      const pending = state.pdf.pendingGoto;
+      if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
+        gotoPdfPage(pending.pdfPage);
+        state.pdf.pendingGoto = null;
       }
     });
-    item.appendChild(btn);
-    list.appendChild(item);
-    const record = findWorkById(work.id);
-    if (record) record.el = btn;
-    if (work.audio) ensureAudioFor(work);
-  });
-  host.appendChild(list);
-  updateIndexSelection(state.selectedId);
-}
-
-function buildBodyParagraphs(work) {
-  const body = document.createElement('div');
-  body.className = 'tf-body';
-  const notes = Array.isArray(work.openNote)
-    ? work.openNote
-    : work.openNote
-    ? [work.openNote]
-    : Array.isArray(work.description)
-    ? work.description
-    : work.description
-    ? [work.description]
-    : [];
-  notes.forEach((entry) => {
-    if (!entry) return;
-    const p = document.createElement('p');
-    p.textContent = String(entry);
-    body.appendChild(p);
-  });
-  return body;
-}
-
-function renderReader(work) {
-  const host = state.readerEl;
-  if (!host) return;
-  host.innerHTML = '';
-  state.actionButtons.clear();
-  if (!work) {
-    host.dataset.state = 'empty';
-    return;
+    frame.dataset.typefolioPdf = '1';
   }
-  host.dataset.state = 'ready';
-  const article = document.createElement('article');
-  const slug = document.createElement('p');
-  slug.className = 'tf-slug';
-  slug.textContent = work.slug || '';
-  if (slug.textContent) article.appendChild(slug);
-  const heading = document.createElement('h1');
-  heading.textContent = work.title || 'Untitled work';
-  heading.tabIndex = -1;
-  const lede = document.createElement('p');
-  lede.className = 'tf-lede';
-  lede.textContent = work.one || '';
-  article.append(heading, lede);
-  const cues = Array.isArray(work.cues) ? work.cues : [];
-  if (cues.length) {
-    const cueWrap = document.createElement('div');
-    cueWrap.className = 'tf-cues';
-    cues.forEach((cue) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'tf-cue';
-      btn.dataset.id = String(work.id);
-      btn.dataset.t = String(Number(cue.t) || 0);
-      const label = cue.label && /^@?\d+:\d{2}$/.test(cue.label)
-        ? cue.label.replace(/^@?/, '@')
-        : `@${formatTime(Number(cue.t) || 0)}`;
-      btn.textContent = label;
-      btn.addEventListener('click', () => {
-        selectWork(work.id, { skipHash: false });
-        playAt(work.id, Number(cue.t) || 0);
-      });
-      cueWrap.appendChild(btn);
-    });
-    article.appendChild(cueWrap);
-  }
-  const body = buildBodyParagraphs(work);
-  if (body.childElementCount) article.appendChild(body);
-  const actions = document.createElement('div');
-  actions.className = 'tf-actions';
-
-  const playBtn = document.createElement('button');
-  playBtn.type = 'button';
-  playBtn.className = 'tf-action';
-  playBtn.dataset.action = 'play';
-  if (!work.audio) {
-    playBtn.textContent = 'Play unavailable';
-    playBtn.setAttribute('aria-disabled', 'true');
-    playBtn.disabled = true;
-  } else {
-    playBtn.textContent = 'Play';
-    playBtn.addEventListener('click', () => togglePlay(work));
-  }
-
-  const pdfBtn = document.createElement('button');
-  pdfBtn.type = 'button';
-  pdfBtn.className = 'tf-action';
-  pdfBtn.dataset.action = 'pdf';
-  if (!work.pdf) {
-    pdfBtn.textContent = 'Score unavailable';
-    pdfBtn.setAttribute('aria-disabled', 'true');
-    pdfBtn.disabled = true;
-  } else {
-    pdfBtn.textContent = 'Open Score';
-    pdfBtn.addEventListener('click', () => openPdfFor(work.id));
-  }
-
-  const copyBtn = document.createElement('button');
-  copyBtn.type = 'button';
-  copyBtn.className = 'tf-action';
-  copyBtn.dataset.action = 'copy';
-  copyBtn.textContent = 'Copy URL';
-  copyBtn.addEventListener('click', () => copyUrl(work.id, copyBtn));
-
-  const openBtn = document.createElement('button');
-  openBtn.type = 'button';
-  openBtn.className = 'tf-action';
-  openBtn.dataset.action = 'open';
-  openBtn.textContent = 'Open';
-  openBtn.addEventListener('click', () => focusReader());
-
-  actions.append(playBtn, pdfBtn, copyBtn, openBtn);
-  article.appendChild(actions);
-  host.appendChild(article);
-  state.actionButtons.set(work.id, { playBtn, pdfBtn, copyBtn, openBtn, heading });
-  updatePlayButton(work.id);
-  updateReaderTokens();
-}
-
-function updatePlayButton(id) {
-  const record = state.actionButtons.get(id);
-  if (!record?.playBtn) return;
-  if (record.playBtn.hasAttribute('aria-disabled')) return;
-  const audio = document.getElementById('wc-a' + id);
-  if (!audio || audio.paused || audio.ended) {
-    record.playBtn.textContent = 'Play';
-  } else {
-    record.playBtn.textContent = 'Pause';
-  }
-}
-
-function renderControls() {
-  const host = state.controlsEl;
-  if (!host) return;
-  host.innerHTML = '';
-  host.setAttribute('role', 'toolbar');
-  const controls = [
-    { id: 'face', label: 'Serif / Sans', action: 'typeface', toggle: true },
-    { id: 'size-dec', label: 'A−', action: 'size-dec' },
-    { id: 'size-inc', label: 'A+', action: 'size-inc' },
-    { id: 'measure-dec', label: 'Measure −', action: 'measure-dec' },
-    { id: 'measure-inc', label: 'Measure +', action: 'measure-inc' },
-    { id: 'contrast', label: 'Contrast', action: 'contrast', toggle: true },
-    { id: 'print', label: 'Print', action: 'print' }
-  ];
-  controls.forEach((meta) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'tf-control';
-    btn.dataset.action = meta.action;
-    btn.textContent = meta.label;
-    if (meta.toggle) {
-      btn.setAttribute('aria-pressed', 'false');
-    }
-    btn.setAttribute('title', shortcutHint(meta.action));
-    host.appendChild(btn);
-  });
-  host.addEventListener('click', (event) => {
-    const btn = event.target.closest('button.tf-control');
-    if (!btn) return;
-    const act = btn.dataset.action;
-    if (act === 'typeface') toggleTypeface();
-    if (act === 'size-dec') adjustFont(-1);
-    if (act === 'size-inc') adjustFont(1);
-    if (act === 'measure-dec') adjustMeasure(-1);
-    if (act === 'measure-inc') adjustMeasure(1);
-    if (act === 'contrast') toggleContrast();
-    if (act === 'print') window.print();
-    updateControlsState();
-    syncHash();
-  });
-  updateControlsState();
-}
-
-function shortcutHint(action) {
-  switch (action) {
-    case 'typeface': return 'Toggle serif/sans (S)';
-    case 'size-dec': return 'Decrease size ([)';
-    case 'size-inc': return 'Increase size (])';
-    case 'measure-dec': return 'Tighter measure (,)';
-    case 'measure-inc': return 'Wider measure (.)';
-    case 'contrast': return 'Toggle high contrast (C)';
-    case 'print': return 'Print reader';
-    default: return '';
-  }
-}
-
-function updateControlsState() {
-  const controls = state.controlsEl?.querySelectorAll('.tf-control') || [];
-  controls.forEach((btn) => {
-    const act = btn.dataset.action;
-    if (act === 'typeface') {
-      btn.setAttribute('aria-pressed', String(state.typeface === 'sans'));
-    }
-    if (act === 'contrast') {
-      btn.setAttribute('aria-pressed', String(state.contrast));
-    }
-    if (act === 'size-dec') {
-      btn.disabled = state.sizeIndex <= 0;
-    }
-    if (act === 'size-inc') {
-      btn.disabled = state.sizeIndex >= FONT_STEPS.length - 1;
-    }
-    if (act === 'measure-dec') {
-      btn.disabled = state.measureIndex <= 0;
-    }
-    if (act === 'measure-inc') {
-      btn.disabled = state.measureIndex >= MEASURE_STEPS.length - 1;
-    }
-  });
-}
-
-function updateReaderTokens() {
-  const host = state.readerEl;
-  if (!host) return;
-  const scale = FONT_STEPS[state.sizeIndex] || 1;
-  const measure = MEASURE_STEPS[state.measureIndex] || 66;
-  host.style.setProperty('--tf-scale', String(scale));
-  host.style.setProperty('--tf-measure', `${measure}ch`);
-  if (state.typeface === 'sans') host.setAttribute('data-face', 'sans');
-  else host.removeAttribute('data-face');
-  if (state.contrast) host.setAttribute('data-contrast', 'high');
-  else host.removeAttribute('data-contrast');
-}
-
-function toggleTypeface() {
-  state.typeface = state.typeface === 'serif' ? 'sans' : 'serif';
-  updateReaderTokens();
-}
-
-function toggleContrast() {
-  state.contrast = !state.contrast;
-  updateReaderTokens();
-}
-
-function adjustFont(delta) {
-  const next = Math.min(FONT_STEPS.length - 1, Math.max(0, state.sizeIndex + delta));
-  state.sizeIndex = next;
-  updateReaderTokens();
-}
-
-function adjustMeasure(delta) {
-  const next = Math.min(MEASURE_STEPS.length - 1, Math.max(0, state.measureIndex + delta));
-  state.measureIndex = next;
-  updateReaderTokens();
-}
-
-function focusReader() {
-  const record = state.actionButtons.get(state.selectedId);
-  if (!record?.heading) return;
-  const prefersReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  record.heading.focus({ preventScroll: false });
-  record.heading.scrollIntoView({ behavior: prefersReduce ? 'auto' : 'smooth', block: 'start' });
-}
-
-function focusIndex() {
-  const active = state.indexEl?.querySelector('.tf-index-item[aria-current="true"]');
-  if (active) active.focus({ preventScroll: false });
-}
-
-function applySiteChrome(site = {}) {
-  const nameEl = document.querySelector('[data-site-title]');
-  const subEl = document.querySelector('[data-site-subtitle]');
-  const navEl = document.getElementById('prae-nav');
-  const footer = document.getElementById('prae-footer');
-  const fullName = site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ');
-  if (nameEl && fullName) nameEl.textContent = fullName;
-  if (subEl) subEl.textContent = site.subtitle || 'Selected works';
-  if (navEl) {
-    if (Array.isArray(site.links)) {
-      navEl.innerHTML = site.links
-        .filter((link) => link && link.label)
-        .map((link) => {
-          const href = link.href || '#';
-          const target = link.external ? ' target="_blank" rel="noopener"' : '';
-          return `<a href="${esc(href)}"${target}>${esc(link.label)}</a>`;
-        }).join('');
-    } else {
-      navEl.innerHTML = '';
-    }
-  }
-  if (footer) {
-    const year = new Date().getFullYear();
-    const holder = site.copyrightName || fullName || '—';
-    const updated = site.updated && site.updated.mode === 'manual' ? site.updated.value : '';
-    const links = Array.isArray(site.links) ? site.links : [];
-    footer.innerHTML = `
-      <span>© ${esc(holder)} ${year}</span>
-      <span>${updated ? `Updated ${esc(updated)}` : ''}</span>
-      <span>
-        ${links.map((link) => `<a href="${esc(link.href || '#')}"${link.external ? ' target="_blank" rel="noopener"' : ''}>${esc(link.label || '')}</a>`).join(' ')}
-      </span>`;
-  }
-}
-
-function bindThemeToggle() {
-  const btn = document.getElementById('wc-theme-toggle');
-  if (!btn) return;
-  btn.addEventListener('click', () => window.praeCycleTheme?.());
-  btn.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      window.praeCycleTheme?.();
-    }
-  });
-}
-
-function bindHudToggle() {
-  const root = hudEnsure();
-  root?.addEventListener('click', (event) => {
-    const btn = event.target.closest('button[data-hud="toggle"]');
-    if (!btn) return;
-    const { id, audio } = getActiveAudioInfo();
-    if (audio && !audio.paused) {
-      state.hudState.last = { id, at: audio.currentTime || 0 };
-      audio.pause();
-      hudUpdate(id, audio);
-      return;
-    }
-    const resumeId = state.hudState.last.id || works[0]?.id;
-    if (resumeId) playAt(resumeId, state.hudState.last.at || 0);
-  });
-}
-
-function bindPdfEvents() {
-  state.pdf.close?.addEventListener('click', hidePdfPane);
-  state.pdf.backdrop?.addEventListener('click', hidePdfPane);
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      if (state.pdf.pane && state.pdf.pane.getAttribute('aria-hidden') === 'false') {
-        hidePdfPane();
-      } else if (document.activeElement && state.readerEl?.contains(document.activeElement)) {
-        focusIndex();
-      }
-    }
-  }, { passive: true });
-  state.pdf.frame?.addEventListener('load', () => {
-    state.pdf.viewerReady = true;
-    const pending = state.pdf.pendingGoto;
-    if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
-      gotoPdfPage(pending.pdfPage);
-      state.pdf.pendingGoto = null;
-    }
-  });
-  window.addEventListener('wc:pdf-goto', (event) => {
-    const detail = event?.detail || {};
-    if (!state.pdf.viewerReady || (detail.slug && detail.slug !== state.pdf.currentSlug)) {
-      state.pdf.pendingGoto = detail;
-      return;
-    }
-    gotoPdfPage(detail.pdfPage);
-  });
+  return state.pdf;
 }
 
 function gotoPdfPage(pageNum) {
-  const frame = state.pdf.frame;
-  if (!frame || !frame.contentWindow) return;
+  const { frame } = state.pdf;
+  if (!frame || !frame.src) return;
+  if (!/\/viewer\.html/i.test(frame.src)) return;
   try {
     const url = new URL(frame.src, location.href);
     const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
@@ -971,96 +423,926 @@ function gotoPdfPage(pageNum) {
     hash.set('page', String(next));
     if (!hash.has('zoom')) hash.set('zoom', 'page-width');
     if (!hash.has('sidebar')) hash.set('sidebar', '0');
-    url.hash = `#${hash.toString()}`;
+    url.hash = '#' + hash.toString();
+    state.pdf.viewerReady = false;
     frame.src = url.toString();
-  } catch (_) {}
+  } catch (err) {
+    console.warn('Failed to navigate PDF', err);
+  }
 }
 
-function bindGlobalKeys() {
-  document.addEventListener('keydown', (event) => {
-    if (event.defaultPrevented) return;
-    if (event.altKey || event.metaKey || event.ctrlKey) return;
-    const tag = event.target?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-    if (event.key === '[') {
-      event.preventDefault();
-      adjustFont(-1);
-      updateControlsState();
-      syncHash();
-    }
-    if (event.key === ']') {
-      event.preventDefault();
-      adjustFont(1);
-      updateControlsState();
-      syncHash();
-    }
-    if (event.key === ',') {
-      event.preventDefault();
-      adjustMeasure(-1);
-      updateControlsState();
-      syncHash();
-    }
-    if (event.key === '.') {
-      event.preventDefault();
-      adjustMeasure(1);
-      updateControlsState();
-      syncHash();
-    }
-    if (event.key === 's' || event.key === 'S') {
-      event.preventDefault();
-      toggleTypeface();
-      updateControlsState();
-      syncHash();
-    }
-    if (event.key === 'c' || event.key === 'C') {
-      event.preventDefault();
-      toggleContrast();
-      updateControlsState();
-      syncHash();
+function openPdfFor(id) {
+  const meta = findWorkById(id);
+  const work = meta?.data;
+  if (!work) return;
+  const raw = normalizePdfUrl(work.pdfUrl || work.pdf);
+  if (!raw) return;
+  const viewerUrl = choosePdfViewer(raw);
+  const { pane, frame, title, backdrop } = ensurePdfDom();
+  if (!pane || !frame) {
+    window.open(viewerUrl, '_blank', 'noopener');
+    return;
+  }
+  state.pdf.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  state.pdf.currentSlug = work.slug || null;
+  pane.removeAttribute('hidden');
+  pane.setAttribute('aria-hidden', 'false');
+  pane.focus?.({ preventScroll: true });
+  backdrop?.removeAttribute('hidden');
+  document.body.classList.add('tf-pdf-open');
+  if (title) title.textContent = String(work.title || 'Score');
+  frame.src = 'about:blank';
+  state.pdf.viewerReady = false;
+  requestAnimationFrame(() => {
+    frame.src = viewerUrl;
+    state.pdf.pendingGoto = null;
+  });
+  if (work.slug) {
+    const audio = document.getElementById('wc-a' + work.id);
+    if (audio) attachPageFollow(work.slug, audio);
+  }
+}
+
+function hidePdfPane() {
+  const { pane, frame, backdrop } = ensurePdfDom();
+  pane?.setAttribute('aria-hidden', 'true');
+  pane?.setAttribute('hidden', '');
+  backdrop?.setAttribute('hidden', '');
+  document.body.classList.remove('tf-pdf-open');
+  if (frame) frame.src = 'about:blank';
+  state.pdf.viewerReady = false;
+  state.pdf.pendingGoto = null;
+  state.pdf.currentSlug = null;
+  detachPageFollow();
+  const restore = state.pdf.restoreFocus;
+  state.pdf.restoreFocus = null;
+  if (restore && typeof restore.focus === 'function') {
+    requestAnimationFrame(() => restore.focus());
+  }
+}
+
+window.addEventListener('wc:pdf-goto', (event) => {
+  const detail = event?.detail || {};
+  ensurePdfDom();
+  if (!state.pdf.viewerReady || (detail.slug && detail.slug !== state.pdf.currentSlug)) {
+    state.pdf.pendingGoto = detail;
+    return;
+  }
+  if (detail.pdfPage) gotoPdfPage(detail.pdfPage);
+});
+
+function ensureHudBehaviour() {
+  const refs = ensureHudDom();
+  if (!refs?.root) return;
+  refs.root.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-hud="toggle"]');
+    if (!btn) return;
+    const now = getActiveAudioInfo();
+    if (now.audio && !now.audio.paused) {
+      state.hudState.last = { id: now.id, at: now.audio.currentTime || 0 };
+      now.audio.pause();
+      hudUpdate(now.id, now.audio);
+    } else {
+      const id = state.hudState.last.id || state.selectedId || works[0]?.id;
+      if (id != null) playAt(id, state.hudState.last.at || 0);
     }
   });
 }
 
-function bindHashChange() {
-  window.addEventListener('hashchange', () => hydrateFromHash());
+const hudApi = {
+  ensure: hudEnsure,
+  setSubtitle: hudSetSubtitle,
+  setPlaying: hudSetPlaying,
+  setProgress: hudSetProgress,
+  getRoot: hudGetRoot,
+  setTitle: hudSetTitle
+};
+
+PRAE.hud = Object.assign({}, PRAE.hud || {}, hudApi);
+PRAE.hud.ensure();
+
+function getActiveAudioInfo() {
+  if (!works.length) return { id: null, audio: null };
+  for (const work of works) {
+    const audio = document.getElementById('wc-a' + work.id);
+    if (audio && !audio.paused && !audio.ended) {
+      return { id: work.id, audio };
+    }
+  }
+  return { id: null, audio: null };
+}
+
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) {}
+  const temp = document.createElement('textarea');
+  temp.value = text;
+  temp.setAttribute('readonly', '');
+  temp.style.position = 'absolute';
+  temp.style.left = '-9999px';
+  document.body.appendChild(temp);
+  temp.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+  document.body.removeChild(temp);
+  return ok;
+}
+
+function updateHash() {
+  if (state.ignoreHash) return;
+  const id = state.selectedId;
+  if (id == null) return;
+  const params = new URLSearchParams();
+  params.set(HASH_WORK_KEY, String(id));
+  params.set(HASH_PAGE_KEY, String(state.pageIndex));
+  const hash = `#${params.toString()}`;
+  state.ignoreHash = true;
+  history.replaceState(null, '', hash);
+  setTimeout(() => { state.ignoreHash = false; }, 60);
+}
+
+function hydrateFromHash() {
+  const hash = location.hash.replace(/^#/, '');
+  if (!hash) return;
+  const params = new URLSearchParams(hash);
+  const workVal = params.get(HASH_WORK_KEY);
+  const pageVal = params.get(HASH_PAGE_KEY);
+  const id = Number(workVal);
+  const page = Number(pageVal);
+  if (!Number.isNaN(id)) state.selectedId = id;
+  if (!Number.isNaN(page)) state.pageIndex = Math.max(0, page);
+}
+
+function getColumnCount() {
+  if (!state.reader) return 1;
+  const style = getComputedStyle(state.reader);
+  const count = parseInt(style.columnCount || '1', 10);
+  return Number.isNaN(count) || count < 1 ? 1 : count;
+}
+
+function measurePages() {
+  if (!state.reader) return;
+  state.columns = getColumnCount();
+  const horizontal = state.reader.scrollWidth > state.reader.clientWidth + 1;
+  state.orientation = horizontal ? 'horizontal' : 'vertical';
+  let total = 1;
+  if (horizontal) {
+    total = Math.max(1, Math.ceil(state.reader.scrollWidth / Math.max(1, state.reader.clientWidth)));
+  } else {
+    total = Math.max(1, Math.ceil(state.reader.scrollHeight / Math.max(1, state.reader.clientHeight)));
+  }
+  state.totalPages = total;
+  state.reader.dataset.pages = String(total);
+  updateFooter();
+  updateEdgeZones();
+}
+
+function setPage(index, options = {}) {
+  if (!state.reader) return;
+  const total = Math.max(1, state.totalPages);
+  const target = Math.max(0, Math.min(total - 1, index));
+  state.pageIndex = target;
+  state.reader.dataset.index = String(target);
+  const behavior = options.behavior || (state.prefersReducedMotion ? 'auto' : 'smooth');
+  if (state.orientation === 'horizontal') {
+    const x = target * state.reader.clientWidth;
+    state.reader.scrollTo({ left: x, top: 0, behavior });
+  } else {
+    const y = target * state.reader.clientHeight;
+    state.reader.scrollTo({ top: y, left: 0, behavior });
+  }
+  updateFooter();
+  updateHash();
+}
+
+function updateFromScroll() {
+  if (!state.reader) return;
+  if (state.orientation === 'horizontal') {
+    const width = Math.max(1, state.reader.clientWidth);
+    const next = Math.round(state.reader.scrollLeft / width);
+    if (next !== state.pageIndex) {
+      state.pageIndex = Math.max(0, Math.min(state.totalPages - 1, next));
+      state.reader.dataset.index = String(state.pageIndex);
+      updateFooter();
+      updateHash();
+    }
+  } else {
+    const height = Math.max(1, state.reader.clientHeight);
+    const next = Math.round(state.reader.scrollTop / height);
+    if (next !== state.pageIndex) {
+      state.pageIndex = Math.max(0, Math.min(state.totalPages - 1, next));
+      state.reader.dataset.index = String(state.pageIndex);
+      updateFooter();
+      updateHash();
+    }
+  }
+}
+
+function scheduleMeasure() {
+  clearTimeout(state.resizeTimer);
+  state.resizeTimer = setTimeout(() => {
+    measurePages();
+    setPage(state.pageIndex, { behavior: 'auto' });
+  }, 80);
+}
+
+function handleReaderScroll() {
+  clearTimeout(state.scrollTimer);
+  state.scrollTimer = setTimeout(() => updateFromScroll(), 80);
+}
+
+function updateHeaderTitle(work) {
+  if (!state.currentTitleEl) return;
+  if (!work) {
+    state.currentTitleEl.textContent = 'No works available yet';
+  } else {
+    state.currentTitleEl.textContent = work.title || work.slug || `Work ${work.id}`;
+  }
+}
+
+function updateFooter() {
+  if (state.pageLabel) state.pageLabel.textContent = String(state.pageIndex + 1);
+  if (state.totalLabel) state.totalLabel.textContent = String(state.totalPages);
+  if (state.footer) {
+    const prevPage = state.footer.querySelector('[data-action="page-prev"]');
+    const nextPage = state.footer.querySelector('[data-action="page-next"]');
+    const prevWork = state.footer.querySelector('[data-action="work-prev"]');
+    const nextWork = state.footer.querySelector('[data-action="work-next"]');
+    const atStart = state.pageIndex <= 0;
+    const atEnd = state.pageIndex >= state.totalPages - 1;
+    if (prevPage) {
+      prevPage.disabled = atStart;
+      prevPage.setAttribute('aria-disabled', atStart ? 'true' : 'false');
+    }
+    if (nextPage) {
+      nextPage.disabled = atEnd;
+      nextPage.setAttribute('aria-disabled', atEnd ? 'true' : 'false');
+    }
+    const soloWork = works.length <= 1;
+    if (prevWork) {
+      prevWork.disabled = soloWork;
+      prevWork.setAttribute('aria-disabled', soloWork ? 'true' : 'false');
+    }
+    if (nextWork) {
+      nextWork.disabled = soloWork;
+      nextWork.setAttribute('aria-disabled', soloWork ? 'true' : 'false');
+    }
+  }
+}
+
+function updateEdgeZones() {
+  if (!state.edgePrev || !state.edgeNext) return;
+  if (state.columns <= 1) {
+    state.edgePrev.setAttribute('hidden', '');
+    state.edgeNext.setAttribute('hidden', '');
+  } else {
+    state.edgePrev.removeAttribute('hidden');
+    state.edgeNext.removeAttribute('hidden');
+  }
+}
+
+function getWorkFlow(work) {
+  const article = document.createElement('article');
+  article.className = 'tf-article';
+  const title = document.createElement('h1');
+  title.className = 'tf-title';
+  title.textContent = work.title || work.slug || `Work ${work.id}`;
+  article.appendChild(title);
+  if (work.slug) {
+    const slug = document.createElement('p');
+    slug.className = 'tf-slug';
+    slug.textContent = work.slug;
+    article.appendChild(slug);
+  }
+  if (work.one) {
+    const lead = document.createElement('p');
+    lead.className = 'tf-lead';
+    lead.textContent = work.one;
+    article.appendChild(lead);
+  }
+  const body = document.createElement('div');
+  body.className = 'tf-body';
+  const open = Array.isArray(work.openNote) ? work.openNote : (work.openNote ? [work.openNote] : []);
+  for (const raw of open) {
+    const text = typeof raw === 'string' ? raw.trim() : '';
+    if (!text) continue;
+    const p = document.createElement('p');
+    p.textContent = text;
+    body.appendChild(p);
+  }
+  if (!open.length) {
+    const p = document.createElement('p');
+    p.textContent = 'This work has no additional notes yet. Use the controls below to explore audio, score, and sharing options.';
+    body.appendChild(p);
+  }
+  article.appendChild(body);
+  if (Array.isArray(work.cues) && work.cues.length) {
+    const cues = document.createElement('div');
+    cues.className = 'tf-cues';
+    cues.setAttribute('aria-label', 'Audio cues');
+    for (const cue of work.cues) {
+      const t = cueTime(cue.at || cue.t);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.time = String(t);
+      const label = cue.label && /^@?\d+:\d{2}$/.test(cue.label)
+        ? cue.label.replace(/^@?/, '@')
+        : `@${formatTime(t)}`;
+      btn.textContent = label;
+      btn.addEventListener('click', () => playAt(work.id, t));
+      cues.appendChild(btn);
+    }
+    article.appendChild(cues);
+  }
+  return article;
+}
+
+function renderReader(work) {
+  if (!state.reader) return;
+  state.reader.innerHTML = '';
+  if (state.edgePrev) state.reader.appendChild(state.edgePrev);
+  if (state.edgeNext) state.reader.appendChild(state.edgeNext);
+  if (!work) {
+    const empty = document.createElement('article');
+    empty.className = 'tf-article';
+    const title = document.createElement('h1');
+    title.className = 'tf-title';
+    title.textContent = 'Awaiting works';
+    const p = document.createElement('p');
+    p.textContent = 'Add works to PRAE.works to begin. The reader will paginate your selected piece here.';
+    empty.append(title, p);
+    state.reader.appendChild(empty);
+    state.totalPages = 1;
+    state.reader.dataset.pages = '1';
+    state.reader.dataset.index = '0';
+    updateFooter();
+    updateEdgeZones();
+    return;
+  }
+  const flow = getWorkFlow(work);
+  if (state.edgeNext && state.edgeNext.parentNode === state.reader) {
+    state.reader.insertBefore(flow, state.edgeNext);
+  } else {
+    state.reader.appendChild(flow);
+  }
+  requestAnimationFrame(() => {
+    measurePages();
+    setPage(state.pageIndex, { behavior: 'auto' });
+  });
+}
+
+function renderTOCList() {
+  if (!state.tocList) return;
+  state.tocList.innerHTML = '';
+  if (!works.length) {
+    const item = document.createElement('li');
+    const msg = document.createElement('div');
+    msg.textContent = 'No works available yet.';
+    msg.setAttribute('aria-live', 'polite');
+    item.appendChild(msg);
+    state.tocList.appendChild(item);
+    return;
+  }
+  for (const work of works) {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.workId = String(work.id);
+    btn.innerHTML = `<span class="tf-toc-title">${esc(work.title || work.slug || `Work ${work.id}`)}</span><span class="tf-toc-slug">${esc(work.slug || '')}</span>`;
+    if (Number(work.id) === Number(state.selectedId)) {
+      btn.setAttribute('aria-current', 'true');
+    }
+    btn.addEventListener('click', () => {
+      closeToc();
+      selectWork(work.id, { pageIndex: 0, updateHash: true, focusReader: true });
+    });
+    li.appendChild(btn);
+    state.tocList.appendChild(li);
+  }
+}
+
+function openToc() {
+  if (!state.toc) return;
+  renderTOCList();
+  state.toc.removeAttribute('hidden');
+  state.toc.setAttribute('aria-hidden', 'false');
+  const first = state.tocList?.querySelector('button');
+  if (first) first.focus({ preventScroll: true });
+  else state.tocPanel?.focus({ preventScroll: true });
+  state.tocOpen = true;
+}
+
+function closeToc() {
+  if (!state.toc) return;
+  state.toc.setAttribute('aria-hidden', 'true');
+  state.toc.setAttribute('hidden', '');
+  state.tocOpen = false;
+  const toggle = document.querySelector('.tf-toc-toggle');
+  toggle?.setAttribute('aria-expanded', 'false');
+  const restore = state.tocRestore;
+  if (restore && typeof restore.focus === 'function') {
+    requestAnimationFrame(() => restore.focus());
+  }
+}
+
+function toggleToc(fromButton) {
+  if (!state.toc) return;
+  if (state.tocOpen) {
+    closeToc();
+    const toggle = document.querySelector('.tf-toc-toggle');
+    toggle?.setAttribute('aria-expanded', 'false');
+  } else {
+    state.tocRestore = fromButton || document.activeElement;
+    openToc();
+    const toggle = document.querySelector('.tf-toc-toggle');
+    toggle?.setAttribute('aria-expanded', 'true');
+  }
+}
+
+function applyPrefs() {
+  const size = SIZE_STEPS[state.prefs.size] || SIZE_STEPS[1];
+  const measure = MEASURE_STEPS[state.prefs.measure] || MEASURE_STEPS[2];
+  const leading = LEADING_STEPS[state.prefs.leading] || LEADING_STEPS[2];
+  document.documentElement.style.setProperty('--fs-base', `${size}rem`);
+  document.documentElement.style.setProperty('--measure', `${measure}ch`);
+  document.documentElement.style.setProperty('--max-width', `min(95vw, ${measure + 20}ch)`);
+  document.documentElement.style.setProperty('--lh-body', String(leading));
+  document.body.classList.toggle('tf-contrast', !!state.prefs.contrast);
+  requestAnimationFrame(() => {
+    measurePages();
+    setPage(state.pageIndex, { behavior: 'auto' });
+  });
+}
+
+function adjustPref(key, delta) {
+  if (key === 'size') {
+    state.prefs.size = Math.max(0, Math.min(SIZE_STEPS.length - 1, state.prefs.size + delta));
+  }
+  if (key === 'measure') {
+    state.prefs.measure = Math.max(0, Math.min(MEASURE_STEPS.length - 1, state.prefs.measure + delta));
+  }
+  if (key === 'leading') {
+    state.prefs.leading = Math.max(0, Math.min(LEADING_STEPS.length - 1, state.prefs.leading + delta));
+  }
+  applyPrefs();
+}
+
+function toggleContrast() {
+  state.prefs.contrast = !state.prefs.contrast;
+  applyPrefs();
+  updateContrastButton();
+}
+
+function updateContrastButton() {
+  const btn = state.controls?.contrast;
+  if (!btn) return;
+  const on = !!state.prefs.contrast;
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.textContent = on ? 'Contrast: On' : 'Contrast';
+}
+
+function updateFullscreenButton() {
+  const btn = state.controls?.fullscreen;
+  if (!btn) return;
+  const active = !!document.fullscreenElement;
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  btn.textContent = active ? 'Exit Fullscreen' : 'Fullscreen';
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  } else {
+    document.exitFullscreen?.();
+  }
+  setTimeout(updateFullscreenButton, 200);
+}
+
+function buildControls() {
+  const host = document.getElementById('tf-controls');
+  if (!host) return;
+  host.innerHTML = '';
+  const controls = [
+    { label: 'A−', action: 'size-dec', handler: () => adjustPref('size', -1) },
+    { label: 'A+', action: 'size-inc', handler: () => adjustPref('size', 1) },
+    { label: 'Measure −', action: 'measure-dec', handler: () => adjustPref('measure', -1) },
+    { label: 'Measure +', action: 'measure-inc', handler: () => adjustPref('measure', 1) },
+    { label: 'Leading −', action: 'leading-dec', handler: () => adjustPref('leading', -1) },
+    { label: 'Leading +', action: 'leading-inc', handler: () => adjustPref('leading', 1) },
+    { label: 'Contrast', action: 'contrast', handler: toggleContrast },
+    { label: 'Fullscreen', action: 'fullscreen', handler: toggleFullscreen },
+    { label: 'Print', action: 'print', handler: () => window.print() }
+  ];
+  const refs = {};
+  for (const ctl of controls) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.action = ctl.action;
+    btn.textContent = ctl.label;
+    btn.addEventListener('click', ctl.handler);
+    host.appendChild(btn);
+    if (ctl.action === 'contrast') refs.contrast = btn;
+    if (ctl.action === 'fullscreen') refs.fullscreen = btn;
+  }
+  state.controls = refs;
+  updateContrastButton();
+  updateFullscreenButton();
+}
+
+function updateActionButtons(work) {
+  if (!state.actions) return;
+  const playBtn = state.actions.querySelector('[data-action="play"]');
+  const pdfBtn = state.actions.querySelector('[data-action="pdf"]');
+  const copyBtn = state.actions.querySelector('[data-action="copy"]');
+  const openBtn = state.actions.querySelector('[data-action="open"]');
+  const tocBtn = state.actions.querySelector('[data-action="toc"]');
+  if (playBtn) {
+    playBtn.disabled = !work || !getAudioSourceFor(work);
+    playBtn.setAttribute('aria-disabled', playBtn.disabled ? 'true' : 'false');
+    playBtn.textContent = 'Play';
+  }
+  if (pdfBtn) {
+    const hasPdf = !!(work && (work.pdfUrl || work.pdf));
+    pdfBtn.disabled = !hasPdf;
+    pdfBtn.setAttribute('aria-disabled', hasPdf ? 'false' : 'true');
+  }
+  if (copyBtn) {
+    copyBtn.disabled = !work;
+    copyBtn.setAttribute('aria-disabled', copyBtn.disabled ? 'true' : 'false');
+    copyBtn.textContent = 'Copy URL';
+  }
+  if (openBtn) {
+    const url = work?.url || work?.href || work?.link;
+    if (url) {
+      openBtn.disabled = false;
+      openBtn.setAttribute('aria-disabled', 'false');
+      openBtn.textContent = 'Open';
+    } else {
+      openBtn.disabled = true;
+      openBtn.setAttribute('aria-disabled', 'true');
+      openBtn.textContent = 'Open';
+    }
+  }
+  if (tocBtn) {
+    const disabled = works.length === 0;
+    tocBtn.disabled = disabled;
+    tocBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+  }
+}
+
+function buildActions() {
+  const host = document.getElementById('tf-actions');
+  if (!host) return;
+  host.innerHTML = '';
+  const buttons = [
+    { label: 'Play', action: 'play' },
+    { label: 'Open Score', action: 'pdf' },
+    { label: 'Copy URL', action: 'copy' },
+    { label: 'Open', action: 'open' },
+    { label: 'Back to TOC', action: 'toc' }
+  ];
+  for (const meta of buttons) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.action = meta.action;
+    btn.textContent = meta.label;
+    host.appendChild(btn);
+  }
+  host.addEventListener('click', async (event) => {
+    const btn = event.target.closest('button[data-action]');
+    if (!btn) return;
+    const act = btn.dataset.action;
+    const record = findWorkById(state.selectedId);
+    const work = record?.data || null;
+    if (act === 'play') {
+      if (!work) return;
+      togglePlay(work, btn);
+    }
+    if (act === 'pdf') {
+      if (!work) return;
+      openPdfFor(work.id);
+    }
+    if (act === 'copy') {
+      if (!work) return;
+      const url = new URL(location.href);
+      url.hash = `#${HASH_WORK_KEY}=${encodeURIComponent(work.id)}&${HASH_PAGE_KEY}=${state.pageIndex}`;
+      const ok = await copyToClipboard(url.toString());
+      btn.textContent = ok ? 'Copied!' : 'Copy failed';
+      setTimeout(() => {
+        btn.textContent = 'Copy URL';
+      }, 1800);
+    }
+    if (act === 'open') {
+      if (!work) return;
+      const url = work.url || work.href || work.link;
+      if (url) window.open(url, '_blank', 'noopener');
+    }
+    if (act === 'toc') {
+      state.tocRestore = btn;
+      toggleToc(btn);
+    }
+  });
+  state.actions = host;
+  updateActionButtons(findWorkById(state.selectedId)?.data || null);
+}
+
+function buildFooter() {
+  const host = document.getElementById('tf-footer');
+  if (!host) return;
+  host.innerHTML = '';
+  const meta = document.createElement('div');
+  meta.className = 'tf-footer-meta';
+  meta.innerHTML = `<strong>Page <span data-current-page>1</span> of <span data-total-pages>1</span></strong>`;
+  const controls = document.createElement('div');
+  controls.className = 'tf-footer-actions';
+  const prevPage = document.createElement('button');
+  prevPage.type = 'button';
+  prevPage.dataset.action = 'page-prev';
+  prevPage.textContent = 'Prev Page';
+  const nextPage = document.createElement('button');
+  nextPage.type = 'button';
+  nextPage.dataset.action = 'page-next';
+  nextPage.textContent = 'Next Page';
+  const prevWork = document.createElement('button');
+  prevWork.type = 'button';
+  prevWork.dataset.action = 'work-prev';
+  prevWork.textContent = 'Prev Work';
+  const nextWork = document.createElement('button');
+  nextWork.type = 'button';
+  nextWork.dataset.action = 'work-next';
+  nextWork.textContent = 'Next Work';
+  controls.append(prevPage, nextPage, prevWork, nextWork);
+  const copyright = document.createElement('small');
+  const year = new Date().getFullYear();
+  copyright.innerHTML = `© <span data-site-title>Praetorius</span> ${year}`;
+  host.append(meta, controls, copyright);
+  host.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-action]');
+    if (!btn) return;
+    const act = btn.dataset.action;
+    if (act === 'page-prev') turnPage(-1);
+    if (act === 'page-next') turnPage(1);
+    if (act === 'work-prev') cycleWork(-1);
+    if (act === 'work-next') cycleWork(1);
+  });
+  state.footer = host;
+  state.pageLabel = host.querySelector('[data-current-page]');
+  state.totalLabel = host.querySelector('[data-total-pages]');
+  updateFooter();
+}
+
+function cycleWork(delta) {
+  if (!works.length) return;
+  const idx = works.findIndex((w) => Number(w.id) === Number(state.selectedId));
+  const next = (idx + delta + works.length) % works.length;
+  const id = works[next].id;
+  selectWork(id, { pageIndex: 0, updateHash: true, focusReader: true });
+}
+
+function turnPage(delta) {
+  setPage(state.pageIndex + delta);
+}
+
+function togglePlay(work, btn) {
+  const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
+  if (!audio) return;
+  const src = audio.getAttribute('data-audio') || getAudioSourceFor(work);
+  if (!audio.src && !src) return;
+  if (!audio.src && src) {
+    audio.src = normalizeSrc(src);
+    audio.load();
+  }
+  if (audio.paused || audio.ended) {
+    playAt(work.id, audio.ended ? 0 : audio.currentTime || 0, btn);
+  } else {
+    audio.pause();
+    btn.textContent = 'Play';
+    hudUpdate(work.id, audio);
+  }
+}
+
+function playAt(id, seconds, btn) {
+  const record = findWorkById(id);
+  const work = record?.data;
+  if (!work) return;
+  const audio = document.getElementById('wc-a' + id) || ensureAudioFor(work);
+  if (!audio) return;
+  const src = audio.getAttribute('data-audio') || getAudioSourceFor(work);
+  if (!audio.src && !src) return;
+  if (!audio.src && src) {
+    audio.src = normalizeSrc(src);
+    audio.load();
+  }
+  const seekAndPlay = () => {
+    try { audio.currentTime = Math.max(0, Number(seconds) || 0); } catch (_) {}
+    const prom = audio.play();
+    if (prom && typeof prom.catch === 'function') {
+      prom.catch(() => {});
+    }
+    state.hudState.last = { id: work.id, at: audio.currentTime || 0 };
+    hudUpdate(work.id, audio);
+    if (btn) btn.textContent = 'Pause';
+    else {
+      const playBtn = state.actions?.querySelector('[data-action="play"]');
+      if (playBtn) playBtn.textContent = 'Pause';
+    }
+    bindAudioToHud(work.id, audio);
+    if (work.slug) attachPageFollow(work.slug, audio);
+  };
+  if (audio.readyState >= 1) seekAndPlay();
+  else audio.addEventListener('loadedmetadata', () => seekAndPlay(), { once: true });
+}
+
+function pauseAllAudio() {
+  for (const work of works) {
+    const audio = document.getElementById('wc-a' + work.id);
+    if (audio && !audio.paused) {
+      state.hudState.last = { id: work.id, at: audio.currentTime || 0 };
+      audio.pause();
+      hudUpdate(work.id, audio);
+    }
+  }
+}
+
+function buildReader() {
+  state.reader = document.getElementById('tf-reader');
+  if (!state.reader) return;
+  state.reader.setAttribute('tabindex', '0');
+  const leftZone = document.createElement('div');
+  leftZone.className = 'tf-edge-zone tf-edge-zone--left';
+  const leftBtn = document.createElement('button');
+  leftBtn.type = 'button';
+  leftBtn.textContent = 'Previous Page';
+  leftBtn.addEventListener('click', () => turnPage(-1));
+  leftZone.appendChild(leftBtn);
+  const rightZone = document.createElement('div');
+  rightZone.className = 'tf-edge-zone tf-edge-zone--right';
+  const rightBtn = document.createElement('button');
+  rightBtn.type = 'button';
+  rightBtn.textContent = 'Next Page';
+  rightBtn.addEventListener('click', () => turnPage(1));
+  rightZone.appendChild(rightBtn);
+  state.reader.append(leftZone, rightZone);
+  state.edgePrev = leftZone;
+  state.edgeNext = rightZone;
+  state.reader.addEventListener('scroll', handleReaderScroll, { passive: true });
+  state.reader.addEventListener('click', (event) => {
+    const sel = typeof window.getSelection === 'function' ? window.getSelection() : null;
+    if (sel && String(sel).trim()) return;
+    if (event.target.closest('button, a')) return;
+    const rect = state.reader.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const pct = x / Math.max(1, rect.width);
+    if (pct < 0.15) {
+      turnPage(-1);
+    } else if (pct > 0.85) {
+      turnPage(1);
+    }
+  });
+}
+
+function buildToc() {
+  const aside = document.getElementById('tf-toc');
+  if (!aside) return;
+  aside.innerHTML = '';
+  const panel = document.createElement('div');
+  panel.className = 'tf-toc-panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('tabindex', '-1');
+  const header = document.createElement('div');
+  header.className = 'tf-toc-header';
+  const heading = document.createElement('h2');
+  heading.textContent = 'Table of Contents';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'tf-toc-close';
+  close.textContent = 'Close';
+  close.addEventListener('click', () => closeToc());
+  header.append(heading, close);
+  const list = document.createElement('ul');
+  list.className = 'tf-toc-list';
+  panel.append(header, list);
+  aside.appendChild(panel);
+  state.toc = aside;
+  state.tocPanel = panel;
+  state.tocList = list;
+  state.tocClose = close;
+}
+
+function selectWork(id, opts = {}) {
+  if (Number(id) !== Number(state.selectedId)) {
+    pauseAllAudio();
+  }
+  const record = findWorkById(id);
+  if (!record) {
+    if (works.length && id !== works[0].id) {
+      selectWork(works[0].id, opts);
+      return;
+    }
+    state.selectedId = null;
+    renderReader(null);
+    updateHeaderTitle(null);
+    updateActionButtons(null);
+    return;
+  }
+  state.selectedId = record.data.id;
+  state.pageIndex = Math.max(0, Number(opts.pageIndex) || 0);
+  updateHeaderTitle(record.data);
+  renderReader(record.data);
+  updateActionButtons(record.data);
+  if (opts.focusReader) {
+    requestAnimationFrame(() => state.reader?.focus({ preventScroll: true }));
+  }
+  if (opts.updateHash) updateHash();
+  renderTOCList();
+}
+
+function handleKeydown(event) {
+  if (event.key === 'Escape') {
+    if (state.pdf.pane && state.pdf.pane.getAttribute('aria-hidden') === 'false') {
+      event.preventDefault();
+      hidePdfPane();
+      return;
+    }
+  }
+  if (state.tocOpen && event.key === 'Escape') {
+    event.preventDefault();
+    closeToc();
+    return;
+  }
+  if (event.key === 'ArrowRight' || event.key === 'PageDown') {
+    event.preventDefault();
+    turnPage(1);
+  }
+  if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+    event.preventDefault();
+    turnPage(-1);
+  }
+  if (event.key === '[') {
+    event.preventDefault();
+    adjustPref('size', -1);
+  }
+  if (event.key === ']') {
+    event.preventDefault();
+    adjustPref('size', 1);
+  }
+  if (event.key === ',') {
+    event.preventDefault();
+    adjustPref('measure', -1);
+  }
+  if (event.key === '.') {
+    event.preventDefault();
+    adjustPref('measure', 1);
+  }
+  if (event.key === ';') {
+    event.preventDefault();
+    adjustPref('leading', -1);
+  }
+  if (event.key === "'") {
+    event.preventDefault();
+    adjustPref('leading', 1);
+  }
+  if (event.key === 't' || event.key === 'T') {
+    event.preventDefault();
+    toggleToc();
+  }
 }
 
 ready(() => {
   document.documentElement.dataset.skin = 'typefolio';
-  window.praeApplyTheme?.(window.praeCurrentTheme?.() ?? 'light', { persist: false });
-  bindThemeToggle();
-  if (typeof PRAE.ensureAudioTags === 'function') {
-    try { PRAE.ensureAudioTags(); } catch (_) {}
-  }
-  ensureHudRoot();
-  const site = (PRAE.config && PRAE.config.site) || {};
-  applySiteChrome(site);
-  PRAE.worksById = works.reduce((acc, work) => {
-    if (work && work.id != null) acc[work.id] = work;
-    return acc;
-  }, {});
-  state.readerEl = document.getElementById('tf-reader');
-  state.indexEl = document.getElementById('tf-index');
-  state.controlsEl = document.getElementById('tf-controls');
-  state.pdf.pane = document.querySelector('.tf-pdfpane');
-  state.pdf.title = document.querySelector('.tf-pdf-title');
-  state.pdf.close = document.querySelector('.tf-pdf-close');
-  state.pdf.frame = document.querySelector('.tf-pdf-frame');
-  state.pdf.backdrop = document.querySelector('.tf-backdrop');
-  hidePdfPane();
-  PRAE.hud = Object.assign({}, PRAE.hud || {}, {
-    ensure: hudEnsure,
-    setSubtitle: hudSetSubtitle,
-    setPlaying: hudSetPlaying,
-    setProgress: hudSetProgress,
-    getRoot: hudGetRoot
+  praeApplyTheme(praeCurrentTheme(), { persist: false });
+  document.getElementById('wc-theme-toggle')?.addEventListener('click', () => {
+    state.tocRestore = document.getElementById('wc-theme-toggle');
+    praeCycleTheme();
   });
-  PRAE.hud.ensure();
-  bindHudToggle();
-  renderIndex();
-  renderControls();
-  bindPdfEvents();
-  bindGlobalKeys();
-  bindHashChange();
+  state.currentTitleEl = document.querySelector('[data-current-work]');
+  buildToc();
+  buildControls();
+  buildActions();
+  buildFooter();
+  buildReader();
+  applyPrefs();
+  ensureHudBehaviour();
   hydrateFromHash();
+  selectWork(state.selectedId ?? works[0]?.id ?? null, { pageIndex: state.pageIndex, updateHash: true });
+  window.addEventListener('resize', scheduleMeasure, { passive: true });
+  document.addEventListener('keydown', handleKeydown);
+  document.addEventListener('fullscreenchange', updateFullscreenButton);
+  const tocBtn = document.querySelector('.tf-toc-toggle');
+  tocBtn?.addEventListener('click', () => {
+    state.tocRestore = tocBtn;
+    toggleToc(tocBtn);
+  });
+  window.addEventListener('hashchange', () => {
+    if (state.ignoreHash) return;
+    hydrateFromHash();
+    selectWork(state.selectedId ?? works[0]?.id ?? null, { pageIndex: state.pageIndex, updateHash: false });
+  });
 });
+
+export { praeApplyTheme, praeCurrentTheme, praeCycleTheme };
