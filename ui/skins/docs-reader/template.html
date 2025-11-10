@@ -1,27 +1,91 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <meta http-equiv="Content-Style-Type" content="text/css">
-  <title></title>
-  <meta name="Generator" content="Cocoa HTML Writer">
-  <meta name="CocoaVersion" content="2575.7">
-  <style type="text/css">
-    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
-  </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Praetorius — Docs Reader</title>
 </head>
-<body>
-<p class="p1">&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset="utf-8"/&gt;&lt;meta name="viewport" content="width=device-width,initial-scale=1"/&gt;</p>
-<p class="p1">&lt;title&gt;Praetorius — Docs&lt;/title&gt;&lt;/head&gt;</p>
-<p class="p1">&lt;body&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;aside class="dr-left"&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>&lt;div class="brand"&gt;Praetorius&lt;/div&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>&lt;nav id="dr-nav"&gt;&lt;/nav&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;/aside&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;main class="dr-doc"&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>&lt;article id="dr-article"&gt;&lt;/article&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>&lt;aside class="dr-toc" id="dr-toc"&gt;&lt;/aside&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;/main&gt;</p>
-<p class="p1">&lt;/body&gt;&lt;/html&gt;</p>
+<body data-theme="dark">
+  <div class="docs-app" data-skin="docs-reader">
+    <header class="docs-header" role="banner">
+      <div class="docs-header-left">
+        <button type="button" class="docs-drawer-btn" data-action="toggle-nav" aria-label="Toggle navigation" aria-expanded="false">
+          <span aria-hidden="true">☰</span>
+        </button>
+        <div class="docs-brand">
+          <div class="docs-title" data-site-title>Praetorius Docs</div>
+          <div class="docs-subtitle" data-site-subtitle>Scores · cues · context</div>
+        </div>
+      </div>
+      <div class="docs-header-right">
+        <div class="docs-search" role="search">
+          <label class="sr-only" for="docs-search-input">Search documentation</label>
+          <input id="docs-search-input" type="search" autocomplete="off" spellcheck="false" placeholder="Search docs (/)" aria-label="Search documentation"/>
+          <div class="docs-search-results" id="docs-search-results" role="listbox" aria-label="Search results" hidden></div>
+        </div>
+        <button id="wc-theme-toggle" class="docs-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme" title="Toggle theme"></button>
+        <button type="button" class="docs-drawer-btn" data-action="toggle-outline" aria-label="Toggle outline" aria-expanded="false">
+          <span aria-hidden="true">☰</span>
+        </button>
+      </div>
+    </header>
+    <div class="docs-drawer-overlay" aria-hidden="true"></div>
+
+    <div class="docs-shell">
+      <aside id="docs-nav" class="docs-pane docs-nav" aria-label="Documentation navigation"></aside>
+      <main id="docs-main" class="docs-pane docs-main" role="main">
+        <article class="docs-article">
+          <header class="docs-hero">
+            <p class="docs-kicker">Praetorius · 2026 Edition</p>
+            <h1>Meet the Docs Reader skin</h1>
+            <p class="docs-lede">A reader-first layout that keeps your portfolio narrative, audio HUD, and PDF hooks intact while presenting human-friendly documentation.</p>
+          </header>
+
+          <section id="overview" class="docs-section">
+            <h2>Why Docs Reader?</h2>
+            <p>The Docs Reader skin gives performers, commissioners, and students a familiar documentation environment. It keeps your <code>works</code> data, cues, and score integrations intact while presenting prose, callouts, and code samples with copy affordances.</p>
+            <p>Use the left navigation to jump between high-level areas, skim the outline on the right, and lean on instant search to surface topics. Every heading exposes a copyable deep link so you can share specific guidance with collaborators.</p>
+            <pre><code class="language-bash">prae generate --skin docs-reader
+prae preview --skin docs-reader</code></pre>
+          </section>
+
+          <section id="layout" class="docs-section">
+            <h2>Layout anatomy</h2>
+            <p>Docs Reader ships with a responsive three-pane layout. On large screens you get a persistent navigation rail, the main reading column, and a contextual outline. On mobile the panes collapse into drawers that are accessible via the menu buttons in the header.</p>
+            <h3>Navigation rail</h3>
+            <p>Groups collapse to keep things tidy. The component remembers open sections via <code>localStorage</code> so returning visitors land in a familiar state.</p>
+            <h3>Outline pane</h3>
+            <p>The outline reflects <code>&lt;h2&gt;</code> and <code>&lt;h3&gt;</code> headings that are visible in the viewport. An <code>IntersectionObserver</code> tracks the current section and highlights matching entries in both the outline and navigation.</p>
+          </section>
+
+          <section id="search" class="docs-section">
+            <h2>Search &amp; shortcuts</h2>
+            <p>Start typing in the search box to see instant suggestions powered by a mocked adapter. Use <kbd>/</kbd> to focus search from anywhere, <kbd>↑</kbd>/<kbd>↓</kbd> to walk results, and <kbd>Enter</kbd> to open the highlighted hit.</p>
+            <p>While reading, hover a heading to reveal its link icon. Pressing <kbd>c</kbd> while a code sample or copy button is focused copies the block to your clipboard.</p>
+            <pre><code class="language-js">import { praeApplyTheme } from 'praetorius/theme';
+
+const theme = praeCurrentTheme();
+praeApplyTheme(theme, { persist: false });</code></pre>
+          </section>
+
+          <section id="integration" class="docs-section">
+            <h2>Integrating with Works Console</h2>
+            <p>The skin keeps the <code>#works-console</code> host in the DOM so the audio HUD and PDF features can bind without modifications. If your project uses additional console hooks, they will continue to initialize safely.</p>
+            <p class="docs-callout">Tip: you can run <code>prae generate --skin docs-reader --minify</code> to emit a production bundle while keeping theme toggles and copy affordances.</p>
+          </section>
+        </article>
+      </main>
+      <aside id="docs-outline" class="docs-pane docs-outline" aria-label="On this page"></aside>
+    </div>
+
+    <section id="works-console" hidden aria-hidden="true"></section>
+
+    <footer id="prae-footer" class="docs-footer" role="contentinfo">
+      <div class="docs-footer-inner">
+        <span data-site-title>Praetorius</span>
+        <span data-site-subtitle>Docs Reader</span>
+      </div>
+    </footer>
+  </div>
 </body>
 </html>
