@@ -1047,7 +1047,7 @@ ready(() => {
   state.pdf.close = document.querySelector('.tf-pdf-close');
   state.pdf.frame = document.querySelector('.tf-pdf-frame');
   state.pdf.backdrop = document.querySelector('.tf-backdrop');
-  if (state.pdf.pane) state.pdf.pane.setAttribute('hidden', '');
+  hidePdfPane();
   PRAE.hud = Object.assign({}, PRAE.hud || {}, {
     ensure: hudEnsure,
     setSubtitle: hudSetSubtitle,
