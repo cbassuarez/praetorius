@@ -12,17 +12,38 @@
     <span class="tf-head-dash" aria-hidden="true">—</span>
     <span id="tf-current-title" class="tf-head-current"></span>
     <span class="tf-head-dot" aria-hidden="true">·</span>
-    <a id="wc-theme-toggle" class="tf-theme-link" href="#">Theme: Light</a>
+    <span class="tf-head-grow" aria-hidden="true"></span>
+    <button id="tf-preview-drawer-toggle" class="tf-preview-drawer-toggle" type="button" aria-controls="tf-preview" aria-expanded="false">Preview</button>
+    <button id="wc-theme-toggle" class="tf-theme-toggle" type="button" aria-label="Toggle theme">
+      <span class="tf-theme-icon" aria-hidden="true">☀︎</span>
+    </button>
   </header>
 
-  <main id="tf-book" class="tf-book" aria-label="Book">
-    <div id="tf-flow" class="tf-flow" lang="en"></div>
-  </main>
+  <div class="tf-stage">
+    <main id="tf-book" class="tf-book" aria-label="Book">
+      <div id="tf-flow" class="tf-flow" lang="en"></div>
+    </main>
+    <aside id="tf-preview" class="tf-preview" role="region" aria-label="Document preview" aria-hidden="false" data-empty="1">
+      <header class="tf-preview-bar">
+        <span id="tf-preview-title" class="tf-preview-title">Document preview</span>
+        <button id="tf-preview-close" class="tf-preview-close" type="button" aria-label="Close preview">Close</button>
+      </header>
+      <p id="tf-preview-note" class="tf-preview-note" hidden>No PDF for this work.</p>
+      <div class="tf-preview-framewrap" data-preview-slot></div>
+      <p id="tf-preview-empty" class="tf-preview-empty">No PDFs available.</p>
+      <p class="tf-preview-helper">If the preview is blank, use the Open PDF link.</p>
+      <div class="tf-preview-actions">
+        <a id="tf-preview-open" class="tf-preview-open" href="#" target="_blank" rel="noopener noreferrer" hidden>Open PDF</a>
+      </div>
+      <div id="tf-preview-live" class="tf-visually-hidden" aria-live="polite"></div>
+    </aside>
+  </div>
 
   <footer id="tf-foot" class="tf-foot" role="contentinfo">
     <span class="tf-foot-pages">Page <span id="tf-page-now">1</span> / <span id="tf-page-total">1</span></span>
     <span id="tf-hud" class="tf-hud" aria-live="polite" hidden></span>
     <span class="tf-foot-copy" data-site-footnote></span>
+    <a class="tf-foot-badge" href="https://www.npmjs.com/package/praetorius" target="_blank" rel="noopener">Praetorius</a>
   </footer>
 
   <script type="module" src="./main.js" defer></script>
