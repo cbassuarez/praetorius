@@ -201,3 +201,159 @@ a:hover{opacity:1}
   background:var(--chip-bg-h);
 }
 #wc-hud[data-component="prae-hud"]:empty{ display:none !important; }
+
+/* --- HUD visibility gating + liquid glass control (show only when playing) --- */
+#wc-hud,
+#vb-hud {
+  /* baseline from existing overrides remains; we only control visibility */
+  will-change: transform, opacity;
+  transition: opacity .25s ease, transform .25s ease, box-shadow .3s ease, background .3s ease;
+}
+
+/* Hidden state (no active playback) */
+#wc-hud:not(.is-active),
+#vb-hud:not(.is-active) {
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* Visible while playing */
+#wc-hud.is-active,
+#vb-hud.is-active {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  visibility: visible;
+}
+
+/* Liquid-glass round media button */
+#wc-hud .hud-actions .hud-btn,
+#vb-hud .hud-actions .hud-btn,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  background: radial-gradient(circle at 30% 28%, rgba(255,255,255,.22), rgba(255,255,255,.06));
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.45),
+    0 4px 12px rgba(0,0,0,.55);
+  transition: transform .16s ease, box-shadow .25s ease, background .25s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Light sheen ring */
+#wc-hud .hud-actions .hud-btn::after,
+#vb-hud .hud-actions .hud-btn::after,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn::after,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.25),
+    inset 0 10px 24px rgba(255,255,255,.15),
+    inset 0 -10px 24px rgba(0,0,0,.22);
+  pointer-events: none;
+}
+
+/* Flashy edge halo */
+#wc-hud .hud-actions .hud-btn::before,
+#vb-hud .hud-actions .hud-btn::before,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn::before,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  border: 1px solid rgba(255,255,255,.45);
+  opacity: 0;
+  transform: scale(.92);
+  transition: opacity .35s ease, transform .35s ease;
+  pointer-events: none;
+}
+
+@keyframes hud-btn-flash {
+  0% { opacity: .95; transform: scale(1.1); }
+  100% { opacity: .4; transform: scale(1.02); }
+}
+
+#wc-hud .hud-actions .hud-btn.is-playing::before,
+#vb-hud .hud-actions .hud-btn.is-playing::before,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn.is-playing::before,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn.is-playing::before,
+#wc-hud .hud-actions .hud-btn.flash-play::before,
+#vb-hud .hud-actions .hud-btn.flash-play::before,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn.flash-play::before,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn.flash-play::before {
+  opacity: .75;
+  transform: scale(1.05);
+}
+
+#wc-hud .hud-actions .hud-btn.flash-play::before,
+#vb-hud .hud-actions .hud-btn.flash-play::before,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn.flash-play::before,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn.flash-play::before {
+  animation: hud-btn-flash .6s ease;
+}
+
+/* Hover/press micro-motion */
+#wc-hud .hud-actions .hud-btn:hover,
+#vb-hud .hud-actions .hud-btn:hover,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn:hover,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn:hover {
+  transform: translateY(-1px) scale(1.04);
+}
+
+#wc-hud .hud-actions .hud-btn:active,
+#vb-hud .hud-actions .hud-btn:active,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn:active,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn:active {
+  transform: translateY(1px) scale(.97);
+}
+
+/* Icon sizing + glow */
+#wc-hud .hud-actions .hud-btn svg,
+#vb-hud .hud-actions .hud-btn svg,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn svg,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  filter: drop-shadow(0 0 2px rgba(255,255,255,.6));
+  opacity: .95;
+  transition: opacity .2s ease;
+}
+
+#wc-hud .hud-actions .hud-btn:hover svg,
+#vb-hud .hud-actions .hud-btn:hover svg,
+#wc-hud[data-component="prae-hud"] .hud-actions .hud-btn:hover svg,
+#vb-hud[data-component="prae-hud"] .hud-actions .hud-btn:hover svg {
+  opacity: 1;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  #wc-hud,
+  #vb-hud { transition: none; }
+  #wc-hud .hud-actions .hud-btn,
+  #vb-hud .hud-actions .hud-btn,
+  #wc-hud[data-component="prae-hud"] .hud-actions .hud-btn,
+  #vb-hud[data-component="prae-hud"] .hud-actions .hud-btn { transition: none; }
+  #wc-hud .hud-actions .hud-btn::before,
+  #vb-hud .hud-actions .hud-btn::before,
+  #wc-hud[data-component="prae-hud"] .hud-actions .hud-btn::before,
+  #vb-hud[data-component="prae-hud"] .hud-actions .hud-btn::before {
+    transition: none;
+    animation: none;
+  }
+}
