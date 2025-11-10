@@ -351,6 +351,40 @@ const DEFAULT_CONFIG = Object.freeze({
   }
 });
 
+const BUILTIN_SKINS = Object.freeze({
+  'console':      { label: 'Console (default)', aliases: [] },
+  'vite-breeze':  { label: 'Vite Breeze', aliases: [] },
+  'cards-tabs':   { label: 'Cards & Tabs', aliases: [] },
+  'docs-reader':  { label: 'Docs Reader', aliases: ['docs'] }
+});
+
+const SKIN_ALIAS_LOOKUP = (() => {
+  const map = new Map();
+  for (const [key, meta] of Object.entries(BUILTIN_SKINS)) {
+    map.set(key, key);
+    for (const alias of meta.aliases || []) {
+      map.set(alias, key);
+    }
+  }
+  return map;
+})();
+
+function resolveBuiltinSkinKey(input) {
+  if (!input) return null;
+  const key = String(input).trim().toLowerCase();
+  if (!key) return null;
+  return SKIN_ALIAS_LOOKUP.get(key) || null;
+}
+
+function builtinSkinList() {
+  return Object.entries(BUILTIN_SKINS).map(([key, meta]) => {
+    const aliases = (meta.aliases && meta.aliases.length)
+      ? ` (alias: ${meta.aliases.join(', ')})`
+      : '';
+    return `${key}${aliases}`;
+  });
+}
+
 const WORKS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -946,6 +980,10 @@ Squarespace single-embed:
 UI bundle (template.html + main.js + style.css → dist/):
   $ prae generate --ui-src ui --html template.html --app-js app.js --app-css app.css
 
+Skins:
+  • console (default) • vite-breeze • cards-tabs • docs-reader (alias: docs)
+  $ prae skin list
+
 Troubleshooting:
   • CSV imports need "csv-parse"   → npm i csv-parse
   • YAML imports need "yaml"       → npm i yaml
@@ -955,6 +993,15 @@ Troubleshooting:
 Testing internals (without running the CLI):
   $ PRAE_TEST_EXPORTS=1 node -e "import('./src/cli/index.js'); console.log(!!globalThis.__PRAE_TEST__)"
 `);
+
+const skinCmd = program.command('skin').description('Skin utilities');
+skinCmd
+  .command('list')
+  .description('List built-in UI skins and aliases')
+  .action(() => {
+    console.log(pc.bold('Built-in skins:'));
+    builtinSkinList().forEach(entry => console.log('  - ' + entry));
+  });
 
 /* ------------------ preview (tiny static server) ------------------ */
 function contentTypeFor(p) {
@@ -1045,7 +1092,7 @@ program
   .description('Serve a local preview (no Express): serves dist/ + HTML harness')
   .option('-p, --port <port>', 'port to listen on', (v)=>Number(v), 5173)
   .option('--no-open', 'do not open the browser automatically')
-  .action(async (opts) => {
+  .action(async function (opts) {
     const distDir = path.resolve(process.cwd(), 'dist');
     if (!fs.existsSync(distDir)) {
       console.log(pc.red('Missing dist/. Run ') + pc.cyan('prae generate') + pc.red(' first.'));
@@ -1082,7 +1129,8 @@ program
   .option('--dry-run', 'print actions without writing files', false)
   .option('-f, --force', 'overwrite if files exist', false)
     .option('--wizard', 'run site wizard after seeding', false)
-  .action(async (opts) => {
+  .action(async function (opts) {
+    const command = this;
     const outDir = path.resolve(process.cwd(), opts.out);
     const dry    = !!opts['dryRun'];
     const force  = !!opts.force;
@@ -1891,18 +1939,21 @@ program
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
   .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'ui')
-  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin)', '')
+  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Built-ins: console, vite-breeze, cards-tabs, docs-reader (alias: docs)', '')
   .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')
   .option('--no-ui',        'skip building UI (HTML/JS/CSS) even if present', false)
 
 
-  .action(async (opts) => {
+  .action(async function (opts) {
+    const command = this;
     const outDir = path.resolve(process.cwd(), opts.out);
     fs.mkdirSync(outDir, { recursive: true });
     const uiSrcDir = path.resolve(process.cwd(), opts.uiSrc || 'ui');
     const pkgUiDir = path.resolve(PKG_ROOT, 'ui'); // packaged starter UI (fallback)
+    const appJsSource = command?.getOptionValueSource?.('appJs') || 'default';
+    const appCssSource = command?.getOptionValueSource?.('appCss') || 'default';
 
     const buildOnce = async () => {
       const db = loadDb();
@@ -1956,21 +2007,37 @@ program
       if (!opts.noUi) {
         // Prefer project UI dir; fall back to packaged /ui
         const htmlName = opts.html || 'template.html';
-        const skinKey  = String(opts.skin || cfg.ui?.skin || 'console');
+        const requestedSkin = String(opts.skin || cfg.ui?.skin || 'console').trim();
+        const normalizedSkin = requestedSkin.toLowerCase();
+        const builtinSkin = resolveBuiltinSkinKey(normalizedSkin);
+        const candidateSkinKeys = [];
+        if (builtinSkin) candidateSkinKeys.push(builtinSkin);
+        else if (normalizedSkin) candidateSkinKeys.push(normalizedSkin);
+        if (!candidateSkinKeys.includes('console')) candidateSkinKeys.push('console');
 
-        // Allow URL override in preview by writing skin into index.html data attr (used by main.js)
-        const chosenSkin = skinKey;
+        let chosenSkin = null;
+        let uiRoot = null;
 
-        // Candidate search order:
-        //  1) project /ui/skins/<skin>, 2) packaged /ui/skins/<skin>,
-        //  3) project /ui (legacy),     4) packaged /ui (legacy)
-        const candidates = [
-          path.join(uiSrcDir, 'skins', chosenSkin),
-          path.join(pkgUiDir, 'skins', chosenSkin),
-          uiSrcDir,
-          pkgUiDir
-        ];
-        const uiRoot = candidates.find(d => existsFile(path.join(d, htmlName)));
+        for (const skinName of candidateSkinKeys) {
+          const skinRoots = [
+            path.join(uiSrcDir, 'skins', skinName),
+            path.join(pkgUiDir, 'skins', skinName)
+          ];
+          const found = skinRoots.find(d => existsFile(path.join(d, htmlName)));
+          if (found) {
+            chosenSkin = skinName;
+            uiRoot = found;
+            break;
+          }
+        }
+
+        if (!uiRoot) {
+          const legacyRoots = [uiSrcDir, pkgUiDir];
+          uiRoot = legacyRoots.find(d => existsFile(path.join(d, htmlName))) || null;
+          if (!chosenSkin) {
+            chosenSkin = candidateSkinKeys[0] || 'console';
+          }
+        }
 
         if (uiRoot) {
           const tplIn   = path.join(uiRoot, htmlName);
@@ -1982,29 +2049,33 @@ program
 
           // haveTpl is guaranteed true here, but keep the guard for safety
           if (haveTpl) {
-          // Copy/transform app.js + app.css if present
-          let appJsCode = '';
-          let appCssCode = '';
-          if (haveMain) {
-            appJsCode = fs.readFileSync(mainIn, 'utf8');
-            if (wantMin) {
-              const esb = await lazyEsbuild();
-              appJsCode = (await esb.transform(appJsCode, { loader:'js', minify:true, legalComments:'none' })).code;
+            const appJsFileName  = (appJsSource === 'default') ? 'app.js' : opts.appJs;
+            const appCssFileName = (appCssSource === 'default')
+              ? (chosenSkin === 'docs-reader' ? 'style.css' : 'app.css')
+              : opts.appCss;
+            // Copy/transform app.js + app.css if present
+            let appJsCode = '';
+            let appCssCode = '';
+            if (haveMain) {
+              appJsCode = fs.readFileSync(mainIn, 'utf8');
+              if (wantMin) {
+                const esb = await lazyEsbuild();
+                appJsCode = (await esb.transform(appJsCode, { loader:'js', minify:true, legalComments:'none' })).code;
+              }
+              const appJsOut = path.join(outDir, appJsFileName);
+              atomicWriteFile(appJsOut, appJsCode);
+              console.log(pc.green('write ') + pc.dim(cwdRel(appJsOut)));
             }
-            const appJsOut = path.join(outDir, opts.appJs || 'app.js');
-            atomicWriteFile(appJsOut, appJsCode);
-            console.log(pc.green('write ') + pc.dim(cwdRel(appJsOut)));
-          }
-          if (haveStyle) {
-            appCssCode = fs.readFileSync(styleIn, 'utf8');
-            if (wantMin) {
-              const esb = await lazyEsbuild();
-              appCssCode = (await esb.transform(appCssCode, { loader:'css', minify:true, legalComments:'none' })).code;
+            if (haveStyle) {
+              appCssCode = fs.readFileSync(styleIn, 'utf8');
+              if (wantMin) {
+                const esb = await lazyEsbuild();
+                appCssCode = (await esb.transform(appCssCode, { loader:'css', minify:true, legalComments:'none' })).code;
+              }
+              const appCssOut = path.join(outDir, appCssFileName);
+              atomicWriteFile(appCssOut, appCssCode);
+              console.log(pc.green('write ') + pc.dim(cwdRel(appCssOut)));
             }
-            const appCssOut = path.join(outDir, opts.appCss || 'app.css');
-            atomicWriteFile(appCssOut, appCssCode);
-            console.log(pc.green('write ') + pc.dim(cwdRel(appCssOut)));
-          }
 
           // Build dist/index.html by injecting links/scripts before </body>
           let html = fs.readFileSync(tplIn, 'utf8')
@@ -2014,9 +2085,9 @@ program
           html = upsertBodyTheme(html, cfg.theme);
           const inj = [
             `<link rel="stylesheet" href="./${cssFile}">`,
-            haveStyle ? `<link rel="stylesheet" href="./${opts.appCss || 'app.css'}">` : '',
+            haveStyle ? `<link rel="stylesheet" href="./${appCssFileName}">` : '',
             `<script src="./${jsFile}" defer></script>`,
-            haveMain ? `<script type="module" src="./${opts.appJs || 'app.js'}"></script>` : ''
+            haveMain ? `<script type="module" src="./${appJsFileName}" defer></script>` : ''
           ].filter(Boolean).join('\n');
           if (/<\/body>/i.test(html)) {
             html = html.replace(/<\/body>/i, `${inj}\n</body>`);
