@@ -238,9 +238,22 @@ function buildHeroElement(hero) {
       const label = document.createElement('strong');
       label.textContent = work.title || 'Untitled';
       li.appendChild(label);
-      if (work.summary) {
+      if (work.summary || work.snippet || work.description) {
         const p = document.createElement('p');
-        p.textContent = work.summary;
+        const summary = work.summary ?? work.snippet ?? work.description ?? '';
+        if (typeof summary === 'string') {
+          p.textContent = summary;
+        } else if (summary && typeof summary === 'object') {
+          if (typeof summary.text === 'string') {
+            p.textContent = summary.text;
+          } else if (typeof summary.html === 'string') {
+            p.innerHTML = summary.html;
+          } else {
+            p.textContent = String(summary);
+          }
+        } else {
+          p.textContent = String(summary || '');
+        }
         li.appendChild(p);
       }
       list.appendChild(li);
@@ -606,36 +619,86 @@ function setupDrawers() {
   const navBtn = document.querySelector('[data-action="toggle-nav"]');
   const outlineBtn = document.querySelector('[data-action="toggle-outline"]');
   const overlay = document.querySelector('.docs-drawer-overlay');
+  const mq = window.matchMedia('(max-width: 960px)');
 
-  function close() {
+  function closeMobile() {
     document.body.classList.remove('docs-nav-open', 'docs-outline-open');
-    navBtn?.setAttribute('aria-expanded', 'false');
-    outlineBtn?.setAttribute('aria-expanded', 'false');
+  }
+
+  function syncState() {
+    const isMobile = mq.matches;
+    if (navBtn) {
+      const expanded = isMobile
+        ? document.body.classList.contains('docs-nav-open')
+        : !document.body.classList.contains('docs-nav-collapsed');
+      navBtn.setAttribute('aria-expanded', String(expanded));
+    }
+    if (outlineBtn) {
+      const expanded = isMobile
+        ? document.body.classList.contains('docs-outline-open')
+        : !document.body.classList.contains('docs-outline-collapsed');
+      outlineBtn.setAttribute('aria-expanded', String(expanded));
+    }
   }
 
   navBtn?.addEventListener('click', () => {
-    const open = !document.body.classList.contains('docs-nav-open');
-    document.body.classList.toggle('docs-nav-open', open);
-    if (open) document.body.classList.remove('docs-outline-open');
-    navBtn.setAttribute('aria-expanded', String(open));
-    outlineBtn?.setAttribute('aria-expanded', 'false');
+    if (mq.matches) {
+      const open = !document.body.classList.contains('docs-nav-open');
+      document.body.classList.toggle('docs-nav-open', open);
+      if (open) document.body.classList.remove('docs-outline-open');
+    } else {
+      const collapsed = document.body.classList.toggle('docs-nav-collapsed');
+      if (!collapsed) document.body.classList.remove('docs-outline-collapsed');
+    }
+    syncState();
   });
 
   outlineBtn?.addEventListener('click', () => {
-    const open = !document.body.classList.contains('docs-outline-open');
-    document.body.classList.toggle('docs-outline-open', open);
-    if (open) document.body.classList.remove('docs-nav-open');
-    outlineBtn.setAttribute('aria-expanded', String(open));
-    navBtn?.setAttribute('aria-expanded', 'false');
+    if (mq.matches) {
+      const open = !document.body.classList.contains('docs-outline-open');
+      document.body.classList.toggle('docs-outline-open', open);
+      if (open) document.body.classList.remove('docs-nav-open');
+    } else {
+      const collapsed = document.body.classList.toggle('docs-outline-collapsed');
+      if (!collapsed) document.body.classList.remove('docs-nav-collapsed');
+    }
+    syncState();
   });
 
-  overlay?.addEventListener('click', () => close());
+  overlay?.addEventListener('click', () => {
+    closeMobile();
+    syncState();
+  });
 
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') close();
+    if (ev.key === 'Escape') {
+      closeMobile();
+      syncState();
+    }
   });
 
-  return { close };
+  const handleChange = () => {
+    closeMobile();
+    if (mq.matches) {
+      document.body.classList.remove('docs-nav-collapsed', 'docs-outline-collapsed');
+    }
+    syncState();
+  };
+
+  if (typeof mq.addEventListener === 'function') {
+    mq.addEventListener('change', handleChange);
+  } else if (typeof mq.addListener === 'function') {
+    mq.addListener(handleChange);
+  }
+
+  syncState();
+
+  return {
+    close: () => {
+      closeMobile();
+      syncState();
+    }
+  };
 }
 
 function attachCopyShortcut(root) {
