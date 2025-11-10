@@ -249,27 +249,51 @@ a:hover{opacity:1}
 #wc-hud .hud-actions .hud-btn:hover{background:var(--chip-bg-h)}
 
 //* Style the existing backend HUD as vite-breeze glass deck */
+/* --- Praetorius / Vite-Breeze HUD v2 --- */
 #wc-hud {
+  grid-column: 1;
   position: sticky;
   bottom: 0;
   z-index: 15;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--gap);
-  padding: 12px clamp(14px, 2.4vw, 24px);
-  background: var(--glass);
-  border-top: 1px solid var(--line);
-  border-radius: var(--radius) var(--radius) 0 0;
-  -webkit-backdrop-filter: saturate(120%) blur(12px);
-  backdrop-filter: saturate(120%) blur(12px);
-  box-shadow: inset 0 1px rgba(255,255,255,.05), 0 -8px 32px rgba(0,0,0,.45);
+  gap: clamp(10px, 2vw, 18px);
+  padding: 14px clamp(18px, 3vw, 28px);
+  background: var(--glass-hi);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: var(--radius);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.25),
+    inset 0 -1px rgba(255,255,255,.08),
+    0 8px 30px rgba(0,0,0,.55);
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  transition:
+    transform .25s ease,
+    box-shadow .3s ease,
+    background .3s ease;
 }
+#wc-hud:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.25),
+    inset 0 -1px rgba(255,255,255,.08),
+    0 16px 40px rgba(0,0,0,.65);
+  background: linear-gradient(180deg,
+    rgba(255,255,255,.18),
+    rgba(255,255,255,.04));
+}
+
+/* --- HUD text groups --- */
 #wc-hud .tag {
   font-weight: 600;
   font-size: 15px;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 #wc-hud .hud-time,
 #wc-hud .soft {
@@ -277,30 +301,245 @@ a:hover{opacity:1}
   color: var(--muted);
   opacity: .85;
 }
+
+/* --- Progress meter --- */
 #wc-hud .meter {
   flex: 1;
-  height: 5px;
-  background: var(--line);
+  height: 6px;
   border-radius: 999px;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,.08),
+    rgba(255,255,255,.02));
   overflow: hidden;
-  min-width: 120px;
+  position: relative;
 }
 #wc-hud .meter > span {
   display: block;
   height: 100%;
+  width: 0;
   background: var(--accent);
-  transition: width .25s linear;
-}
-#wc-hud .hud-actions .hud-btn {
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--chip-bd);
-  background: var(--chip-bg);
-  color: var(--text);
-  cursor: pointer;
-}
-#wc-hud .hud-actions .hud-btn:hover {
-  background: var(--chip-bg-h);
-  transform: translateY(-1px);
+  box-shadow:
+    0 0 8px rgba(255,255,255,.6),
+    0 0 16px rgba(255,255,255,.25);
+  transition: width .3s ease-out;
 }
 
+/* --- Buttons --- */
+#wc-hud .hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#wc-hud .hud-actions .hud-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.18);
+  background: radial-gradient(circle at 30% 30%,
+    rgba(255,255,255,.18),
+    rgba(255,255,255,.05));
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    transform .18s ease,
+    background .25s ease,
+    box-shadow .25s ease;
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.3),
+    0 3px 8px rgba(0,0,0,.45);
+}
+#wc-hud .hud-actions .hud-btn:hover {
+  transform: translateY(-1px) scale(1.05);
+  background: radial-gradient(circle at 30% 30%,
+    rgba(255,255,255,.22),
+    rgba(255,255,255,.06));
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.4),
+    0 6px 16px rgba(0,0,0,.6);
+}
+#wc-hud .hud-actions .hud-btn:active {
+  transform: translateY(1px) scale(.97);
+}
+
+/* --- Icon handling (SVG injection or emoji fallback) --- */
+#wc-hud .hud-actions .hud-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: var(--text);
+  opacity: .9;
+}
+#wc-hud .hud-actions .hud-btn:hover svg {
+  opacity: 1;
+}
+
+/* --- Responsive flatten --- */
+@media (max-width: 720px) {
+  #wc-hud { flex-wrap: wrap; row-gap: 10px; }
+  #wc-hud .meter { order: 3; width: 100%; }
+  #wc-hud .hud-actions { order: 2; margin-left: auto; }
+  #wc-hud .tag { flex: 1 1 100%; }
+}
+
+#wc-hud .hud-icon {
+  width: 18px;
+  height: 18px;
+  fill: var(--text);
+  filter: drop-shadow(0 0 2px rgba(255,255,255,.4));
+  transition: transform .15s ease, filter .2s ease;
+}
+#wc-hud:hover .hud-icon {
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 4px rgba(255,255,255,.7));
+}
+
+/* --- Praetorius Final HUD Override (Floating Glass Deck) --- */
+#wc-hud {
+  all: unset;
+  position: fixed !important;
+  bottom: 0; left: 0; right: 0;
+  z-index: 50 !important;
+
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(10px, 3vw, 24px);
+  padding: 16px clamp(24px, 5vw, 42px);
+
+  background: linear-gradient(180deg,
+    rgba(255,255,255,.18),
+    rgba(255,255,255,.05) 70%,
+    rgba(255,255,255,.02));
+  border-top: 1px solid rgba(255,255,255,.24);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  border-radius: 18px 18px 0 0;
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.25),
+    inset 0 -1px rgba(255,255,255,.08),
+    0 -8px 40px rgba(0,0,0,.65);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  line-height: 1.2;
+  transition:
+    transform .25s ease,
+    box-shadow .3s ease,
+    background .3s ease;
+}
+#wc-hud:hover {
+  transform: translateY(-6px);
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.25),
+    inset 0 -1px rgba(255,255,255,.08),
+    0 -16px 48px rgba(0,0,0,.75);
+}
+
+/* Text zones */
+#wc-hud .tag {
+  font-weight: 600;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#wc-hud .hud-time,
+#wc-hud .soft {
+  font-size: 13px;
+  color: var(--muted);
+  opacity: .85;
+}
+
+/* Progress bar */
+#wc-hud .meter {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,.10),
+    rgba(255,255,255,.03));
+  position: relative;
+}
+#wc-hud .meter > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent, #fff);
+  box-shadow:
+    0 0 6px rgba(255,255,255,.8),
+    0 0 18px rgba(255,255,255,.4),
+    0 0 36px rgba(255,255,255,.2);
+  transition: width .3s ease-out;
+}
+
+/* Buttons */
+#wc-hud .hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+#wc-hud .hud-actions .hud-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.2);
+  background: radial-gradient(circle at 30% 30%,
+    rgba(255,255,255,.22),
+    rgba(255,255,255,.05));
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    transform .18s ease,
+    background .25s ease,
+    box-shadow .25s ease;
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.4),
+    0 3px 8px rgba(0,0,0,.45);
+}
+#wc-hud .hud-actions .hud-btn:hover {
+  transform: translateY(-2px) scale(1.06);
+  background: radial-gradient(circle at 30% 30%,
+    rgba(255,255,255,.28),
+    rgba(255,255,255,.08));
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.5),
+    0 6px 18px rgba(0,0,0,.6);
+}
+#wc-hud .hud-actions .hud-btn:active {
+  transform: translateY(1px) scale(.95);
+}
+
+/* Icon light sheen */
+#wc-hud .hud-actions .hud-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--text);
+  filter: drop-shadow(0 0 2px rgba(255,255,255,.5));
+  transition: transform .15s ease, filter .2s ease;
+}
+#wc-hud:hover .hud-actions .hud-btn svg {
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 6px rgba(255,255,255,.8));
+}
+
+/* Responsive behavior */
+@media (max-width: 720px) {
+  #wc-hud {
+    flex-wrap: wrap;
+    row-gap: 10px;
+    padding: 12px 16px;
+  }
+  #wc-hud .meter { order: 3; width: 100%; }
+  #wc-hud .hud-actions { order: 2; margin-left: auto; }
+  #wc-hud .tag { flex: 1 1 100%; }
+}
