@@ -4,19 +4,26 @@
 (function bootTheme(){
   function setThemeClasses(eff){
     var host = document.getElementById('works-console');
+    var body = document.body;
     try {
       host?.classList.remove('prae-theme-light','prae-theme-dark');
       host?.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+      if (body){
+        body.classList.remove('prae-theme-light','prae-theme-dark');
+        body.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+        body.setAttribute('data-theme', eff);
+      }
     } catch(_) {}
   }
   function run(){
     try{
       var saved = localStorage.getItem('wc.theme');
       if (saved && saved.trim().charAt(0)==='{'){
-        try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
+        try { saved = (JSON.parse(saved)||{}).mode || 'light'; } catch(_){ saved = 'light'; }
       }
-      var eff = (saved === 'light') ? 'light' : 'dark';
+      var eff = (saved === 'dark') ? 'dark' : 'light';
       document.getElementById('works-console')?.setAttribute('data-theme', eff);
+      document.body?.setAttribute('data-theme', eff);
       setThemeClasses(eff);
       document.documentElement.style.colorScheme = (eff === 'dark' ? 'dark' : 'light');
     }catch(e){}
@@ -41,9 +48,15 @@
   (function bootTheme(){
     function setThemeClasses(eff){
       var host = document.getElementById('works-console');
+      var body = document.body;
       try {
         host?.classList.remove('prae-theme-light','prae-theme-dark');
         host?.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+        if (body){
+          body.classList.remove('prae-theme-light','prae-theme-dark');
+          body.classList.add(eff === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+          body.setAttribute('data-theme', eff);
+        }
       } catch(_){}
     }
     function run(){
@@ -51,13 +64,14 @@
         var con   = document.getElementById('works-console');
         var saved = localStorage.getItem('wc.theme');
         if (saved && saved.trim().charAt(0)==='{'){
-          try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
+          try { saved = (JSON.parse(saved)||{}).mode || 'light'; } catch(_){ saved = 'light'; }
         }
-        var eff = (saved === 'light') ? 'light' : 'dark';
+        var eff = (saved === 'dark') ? 'dark' : 'light';
         if (con){
           con.removeAttribute('data-theme-mode');
           con.setAttribute('data-theme', eff);
         }
+        document.body?.setAttribute('data-theme', eff);
         setThemeClasses(eff);
         document.documentElement.style.colorScheme = (eff === 'dark' ? 'dark' : 'light');
       } catch(e){}
