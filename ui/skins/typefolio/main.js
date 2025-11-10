@@ -49,7 +49,16 @@ function praeApplyTheme(mode, opts) {
   const btn = document.getElementById('wc-theme-toggle');
   if (btn) {
     btn.dataset.mode = eff;
-    btn.textContent = eff === 'dark' ? 'Theme: Dark' : 'Theme: Light';
+    const icon = eff === 'dark' ? '☾' : '☀︎';
+    const iconEl = btn.querySelector('.tf-theme-icon');
+    if (iconEl) {
+      iconEl.textContent = icon;
+    } else {
+      btn.textContent = icon;
+    }
+    btn.setAttribute('aria-label', 'Toggle theme');
+    btn.setAttribute('aria-pressed', eff === 'dark' ? 'true' : 'false');
+    btn.setAttribute('title', eff === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
   }
   return eff;
 }
@@ -121,6 +130,60 @@ function choosePdfViewer(url) {
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
 }
 
+const PDF_FIELD_CANDIDATES = [
+  'pdfUrl', 'pdfURL', 'pdf', 'pdf_url', 'scorePdf', 'scorePDF', 'score_url', 'scoreUrl', 'score'
+];
+
+function getPdfSourceFrom(work) {
+  if (!work || typeof work !== 'object') return '';
+  for (const key of PDF_FIELD_CANDIDATES) {
+    if (work[key]) return work[key];
+  }
+  const media = work.media || {};
+  if (media.pdfUrl || media.pdfURL) return media.pdfUrl || media.pdfURL;
+  if (media.pdf) return media.pdf;
+  const files = work.files || {};
+  if (files.pdfUrl || files.pdfURL) return files.pdfUrl || files.pdfURL;
+  if (files.pdf) return files.pdf;
+  const resources = Array.isArray(work.resources) ? work.resources : [];
+  for (const item of resources) {
+    if (!item) continue;
+    const type = String(item.type || '').toLowerCase();
+    if (type === 'pdf' && item.href) return item.href;
+  }
+  const links = Array.isArray(work.links) ? work.links : [];
+  for (const link of links) {
+    if (link?.href && /pdf/i.test(String(link.label || ''))) {
+      return link.href;
+    }
+  }
+  return '';
+}
+
+function getWorkExternalUrl(work) {
+  if (!work || typeof work !== 'object') return '';
+  const direct = work.externalUrl || work.externalURL || work.url || work.href || work.website;
+  if (direct) return direct;
+  if (work.meta?.href) return work.meta.href;
+  const links = Array.isArray(work.links) ? work.links : [];
+  for (const link of links) {
+    if (link?.href) return link.href;
+  }
+  return '';
+}
+
+function workKey(work) {
+  if (!work || typeof work !== 'object') return null;
+  if (work.slug) return String(work.slug);
+  if (work.id != null) return `id-${work.id}`;
+  return null;
+}
+
+function isDrawerMode() {
+  if (typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(max-width: 900px)').matches;
+}
+
 const PRAE = (window.PRAE = window.PRAE || {});
 const works = Array.isArray(PRAE.works) ? PRAE.works : [];
 const pageFollowMaps = (() => {
@@ -152,21 +215,30 @@ const state = {
   updatingHash: false,
   hudState: { last: { id: works[0]?.id ?? null, at: 0 } },
   currentAudioId: null,
+  currentWork: null,
+  currentWorkKey: null,
   pdf: {
     root: null,
-    pane: null,
     frame: null,
+    slot: null,
     title: null,
+    note: null,
+    empty: null,
+    openLink: null,
+    live: null,
+    toggle: null,
     close: null,
-    backdrop: null,
+    frames: new Map(),
+    loaded: new Set(),
     viewerReady: false,
     pendingGoto: null,
     currentSlug: null,
-    restoreFocus: null,
     followAudio: null,
     followHandler: null,
     followSlug: null,
-    lastPrinted: null
+    lastPrinted: null,
+    lastWorkWithPdf: null,
+    drawerOpen: false
   }
 };
 
@@ -336,57 +408,297 @@ function copyToClipboard(text) {
   });
 }
 
+
 function ensurePdfDom() {
   if (state.pdf.root) return state.pdf;
-  const root = document.createElement('div');
-  root.className = 'tf-pdf-root';
-  root.setAttribute('hidden', '');
-  const backdrop = document.createElement('div');
-  backdrop.className = 'tf-pdf-backdrop';
-  const pane = document.createElement('div');
-  pane.className = 'tf-pdf-overlay';
-  pane.setAttribute('role', 'dialog');
-  pane.setAttribute('aria-modal', 'true');
-  pane.setAttribute('aria-hidden', 'true');
-  pane.setAttribute('tabindex', '-1');
-  const bar = document.createElement('div');
-  bar.className = 'tf-pdf-bar';
-  const title = document.createElement('span');
-  title.className = 'tf-pdf-title';
-  const close = document.createElement('a');
-  close.href = '#';
-  close.className = 'tf-pdf-close';
-  close.textContent = 'Close';
-  bar.append(title, close);
-  const frame = document.createElement('iframe');
-  frame.className = 'tf-pdf-frame';
-  frame.title = 'Score PDF';
-  frame.loading = 'lazy';
-  frame.allow = 'autoplay; fullscreen';
-  frame.referrerPolicy = 'no-referrer';
-  pane.append(bar, frame);
-  root.append(backdrop, pane);
-  document.body.appendChild(root);
-  close.addEventListener('click', (event) => {
-    event.preventDefault();
-    hidePdfPane();
-  });
-  backdrop.addEventListener('click', () => hidePdfPane());
-  frame.addEventListener('load', () => {
-    state.pdf.viewerReady = true;
-    const pending = state.pdf.pendingGoto;
-    if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
-      gotoPdfPage(pending.pdfPage);
-      state.pdf.pendingGoto = null;
+  const root = document.getElementById('tf-preview');
+  if (!root) return state.pdf;
+  state.pdf.root = root;
+  state.pdf.slot = root.querySelector('[data-preview-slot]');
+  state.pdf.title = document.getElementById('tf-preview-title');
+  state.pdf.note = document.getElementById('tf-preview-note');
+  state.pdf.empty = document.getElementById('tf-preview-empty');
+  state.pdf.openLink = document.getElementById('tf-preview-open');
+  state.pdf.live = document.getElementById('tf-preview-live');
+  state.pdf.toggle = document.getElementById('tf-preview-drawer-toggle');
+  state.pdf.close = document.getElementById('tf-preview-close');
+  if (!(state.pdf.frames instanceof Map)) state.pdf.frames = new Map();
+  if (!(state.pdf.loaded instanceof Set)) state.pdf.loaded = new Set();
+  if (state.pdf.toggle && state.pdf.toggle.dataset.bound !== '1') {
+    state.pdf.toggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      const open = !document.body.classList.contains('tf-preview-open');
+      setPreviewDrawer(open);
+    });
+    state.pdf.toggle.dataset.bound = '1';
+  }
+  if (state.pdf.close && state.pdf.close.dataset.bound !== '1') {
+    state.pdf.close.addEventListener('click', (event) => {
+      event.preventDefault();
+      setPreviewDrawer(false);
+      state.pdf.toggle?.focus?.();
+    });
+    state.pdf.close.dataset.bound = '1';
+  }
+  return state.pdf;
+}
+
+function markPreviewEmpty(isEmpty) {
+  const pdf = ensurePdfDom();
+  if (pdf.root) pdf.root.dataset.empty = isEmpty ? '1' : '0';
+}
+
+function setPreviewTitle(text) {
+  const pdf = ensurePdfDom();
+  if (pdf.title) pdf.title.textContent = text ? String(text) : 'Document preview';
+}
+
+function setPreviewNote(text) {
+  const pdf = ensurePdfDom();
+  if (!pdf.note) return;
+  if (text) {
+    pdf.note.textContent = String(text);
+    pdf.note.hidden = false;
+  } else {
+    pdf.note.textContent = '';
+    pdf.note.hidden = true;
+  }
+}
+
+function setPreviewLink(url, label) {
+  const pdf = ensurePdfDom();
+  const link = pdf.openLink;
+  if (!link) return;
+  if (url) {
+    link.href = url;
+    link.textContent = label || 'Open PDF';
+    link.hidden = false;
+  } else {
+    link.hidden = true;
+  }
+}
+
+function announcePreview(text) {
+  const pdf = ensurePdfDom();
+  if (!pdf.live) return;
+  pdf.live.textContent = '';
+  if (text) pdf.live.textContent = String(text);
+}
+
+function setPreviewDrawer(open) {
+  const pdf = ensurePdfDom();
+  if (!pdf.root) return;
+  const body = document.body;
+  if (!isDrawerMode()) {
+    body?.classList.remove('tf-preview-open');
+    pdf.root.setAttribute('aria-hidden', 'false');
+    pdf.drawerOpen = false;
+    if (pdf.toggle) pdf.toggle.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  const next = !!open;
+  pdf.drawerOpen = next;
+  if (next) {
+    body?.classList.add('tf-preview-open');
+  } else {
+    body?.classList.remove('tf-preview-open');
+  }
+  if (pdf.toggle) pdf.toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
+  pdf.root.setAttribute('aria-hidden', next ? 'false' : 'true');
+}
+
+function syncPreviewForViewport() {
+  const pdf = ensurePdfDom();
+  if (!pdf.root) return;
+  if (isDrawerMode()) {
+    const open = document.body.classList.contains('tf-preview-open');
+    pdf.root.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (pdf.toggle) pdf.toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  } else {
+    pdf.root.setAttribute('aria-hidden', 'false');
+    document.body.classList.remove('tf-preview-open');
+    if (pdf.toggle) pdf.toggle.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function ensurePreviewFrame(slug, work, viewerUrl) {
+  const pdf = ensurePdfDom();
+  if (!pdf.slot) return null;
+  if (!(state.pdf.frames instanceof Map)) state.pdf.frames = new Map();
+  if (!(state.pdf.loaded instanceof Set)) state.pdf.loaded = new Set();
+  let frame = state.pdf.frames.get(slug);
+  if (!frame) {
+    frame = document.createElement('iframe');
+    frame.className = 'tf-preview-frame';
+    frame.loading = 'lazy';
+    frame.allow = 'autoplay; fullscreen';
+    frame.referrerPolicy = 'no-referrer';
+    frame.dataset.slug = slug;
+    frame.title = `${work.title || work.slug || 'Score'} (PDF)`;
+    frame.addEventListener('load', () => {
+      state.pdf.loaded.add(slug);
+      if (state.pdf.frame === frame && state.pdf.currentSlug === slug) {
+        state.pdf.viewerReady = true;
+        const pending = state.pdf.pendingGoto;
+        if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
+          gotoPdfPage(pending.pdfPage);
+          state.pdf.pendingGoto = null;
+        }
+      }
+    });
+    pdf.slot.appendChild(frame);
+    state.pdf.frames.set(slug, frame);
+  }
+  frame.title = `${work.title || work.slug || 'Score'} (PDF)`;
+  state.pdf.frames.forEach((node) => {
+    if (node === frame) {
+      node.removeAttribute('hidden');
+    } else {
+      node.setAttribute('hidden', '');
     }
   });
-  state.pdf.root = root;
-  state.pdf.pane = pane;
   state.pdf.frame = frame;
-  state.pdf.title = title;
-  state.pdf.close = close;
-  state.pdf.backdrop = backdrop;
-  return state.pdf;
+  const currentSrc = frame.getAttribute('src') || '';
+  if (currentSrc !== viewerUrl) {
+    state.pdf.viewerReady = false;
+    requestAnimationFrame(() => {
+      frame.src = viewerUrl;
+    });
+  } else if (state.pdf.loaded.has(slug)) {
+    state.pdf.viewerReady = true;
+  } else {
+    state.pdf.viewerReady = false;
+  }
+  return frame;
+}
+
+function showPdfForWork(work, { openDrawer = false } = {}) {
+  const pdf = ensurePdfDom();
+  if (!work || !pdf.root) return;
+  const normalized = normalizePdfUrl(getPdfSourceFrom(work));
+  if (!normalized) {
+    showNoPdfForWork(work);
+    return;
+  }
+  markPreviewEmpty(false);
+  if (pdf.empty) pdf.empty.hidden = true;
+  setPreviewNote('');
+  setPreviewTitle(work.title || work.slug || 'Score');
+  setPreviewLink(normalized, 'Open PDF');
+  const slug = workKey(work) || `work-${work.id ?? Date.now()}`;
+  state.pdf.lastWorkWithPdf = work;
+  detachPageFollow();
+  const viewerUrl = choosePdfViewer(normalized);
+  ensurePreviewFrame(slug, work, viewerUrl);
+  state.pdf.currentSlug = work.slug || slug;
+  state.pdf.pendingGoto = null;
+  if (work.slug) {
+    const audio = document.getElementById('wc-a' + work.id);
+    if (audio) attachPageFollow(work.slug, audio);
+  }
+  announcePreview(`Previewing ${work.title || work.slug || 'score'}`);
+  if (openDrawer && isDrawerMode()) {
+    setPreviewDrawer(true);
+  }
+}
+
+function showNoPdfForWork(work) {
+  const pdf = ensurePdfDom();
+  if (!pdf.root) return;
+  const title = work?.title || work?.slug || 'this work';
+  const hasActivePdf = !!state.pdf.lastWorkWithPdf;
+  const message = hasActivePdf
+    ? `No PDF for “${title}”. Showing previous document.`
+    : `No PDF for “${title}”.`;
+  setPreviewNote(message);
+  if (hasActivePdf && state.pdf.lastWorkWithPdf) {
+    markPreviewEmpty(false);
+    if (pdf.empty) pdf.empty.hidden = true;
+    const previousUrl = normalizePdfUrl(getPdfSourceFrom(state.pdf.lastWorkWithPdf));
+    if (previousUrl) setPreviewLink(previousUrl, 'Open PDF');
+  } else {
+    markPreviewEmpty(true);
+    if (pdf.empty) {
+      pdf.empty.textContent = 'No PDFs available.';
+      pdf.empty.hidden = false;
+    }
+    const external = getWorkExternalUrl(work);
+    if (external) {
+      setPreviewLink(external, 'View work');
+    } else {
+      setPreviewLink('', '');
+    }
+    state.pdf.viewerReady = false;
+    state.pdf.currentSlug = state.pdf.lastWorkWithPdf?.slug || null;
+    detachPageFollow();
+  }
+  state.pdf.pendingGoto = null;
+  announcePreview(message);
+}
+
+function showPreviewPlaceholder() {
+  const pdf = ensurePdfDom();
+  if (!pdf.root) return;
+  markPreviewEmpty(true);
+  setPreviewTitle('Document preview');
+  setPreviewNote('');
+  if (pdf.empty) {
+    pdf.empty.textContent = 'No PDFs available.';
+    pdf.empty.hidden = false;
+  }
+  setPreviewLink('', '');
+  state.pdf.frame = null;
+  state.pdf.currentSlug = null;
+  state.pdf.lastWorkWithPdf = null;
+  state.pdf.viewerReady = false;
+  announcePreview('No PDFs available.');
+}
+
+function findFirstPdfWork() {
+  for (const work of works) {
+    const src = normalizePdfUrl(getPdfSourceFrom(work));
+    if (src) return work;
+  }
+  return null;
+}
+
+function initializePreview() {
+  const first = findFirstPdfWork();
+  if (first) {
+    showPdfForWork(first);
+  } else {
+    showPreviewPlaceholder();
+  }
+}
+
+function updatePreviewForWork(work) {
+  if (!work) return;
+  const key = workKey(work);
+  const normalized = normalizePdfUrl(getPdfSourceFrom(work));
+  if (normalized) {
+    const slug = work.slug || key;
+    if (state.pdf.currentSlug === slug && state.pdf.frame) {
+      setPreviewNote('');
+      markPreviewEmpty(false);
+      return;
+    }
+    showPdfForWork(work);
+  } else {
+    showNoPdfForWork(work);
+  }
+}
+
+function setCurrentWork(work) {
+  if (!work) {
+    state.currentWork = null;
+    state.currentWorkKey = null;
+    return;
+  }
+  const key = workKey(work);
+  if (state.currentWorkKey === key) return;
+  state.currentWork = work;
+  state.currentWorkKey = key;
+  updatePreviewForWork(work);
 }
 
 function gotoPdfPage(pageNum) {
@@ -468,50 +780,10 @@ function openPdfFor(workOrId) {
     ? workOrId
     : findWorkById(workOrId)?.data;
   if (!work) return;
-  const raw = normalizePdfUrl(work.pdfUrl || work.pdf);
-  if (!raw) return;
-  const viewerUrl = choosePdfViewer(raw);
-  const pdf = ensurePdfDom();
-  if (!pdf.pane) {
-    window.open(viewerUrl, '_blank', 'noopener');
-    return;
-  }
-  pdf.root?.removeAttribute('hidden');
-  pdf.root?.setAttribute('aria-hidden', 'false');
-  pdf.pane.setAttribute('aria-hidden', 'false');
-  pdf.pane.focus?.({ preventScroll: true });
-  document.body.classList.add('tf-pdf-open');
-  if (pdf.title) pdf.title.textContent = String(work.title || 'Score');
-  pdf.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  pdf.currentSlug = work.slug || null;
-  pdf.viewerReady = false;
-  pdf.frame.src = 'about:blank';
-  requestAnimationFrame(() => {
-    pdf.frame.src = viewerUrl;
-    pdf.pendingGoto = null;
-  });
-  if (work.slug) {
-    const audio = document.getElementById('wc-a' + work.id);
-    if (audio) attachPageFollow(work.slug, audio);
-  }
-}
-
-function hidePdfPane() {
-  const pdf = ensurePdfDom();
-  pdf.pane?.setAttribute('aria-hidden', 'true');
-  pdf.root?.setAttribute('hidden', '');
-  pdf.root?.setAttribute('aria-hidden', 'true');
-  if (pdf.frame) pdf.frame.src = 'about:blank';
-  document.body.classList.remove('tf-pdf-open');
-  pdf.viewerReady = false;
-  pdf.pendingGoto = null;
-  pdf.currentSlug = null;
-  detachPageFollow();
-  const restore = pdf.restoreFocus;
-  pdf.restoreFocus = null;
-  if (restore && typeof restore.focus === 'function') {
-    requestAnimationFrame(() => restore.focus());
-  }
+  showPdfForWork(work, { openDrawer: true });
+  const key = workKey(work);
+  state.currentWork = work;
+  state.currentWorkKey = key;
 }
 
 window.addEventListener('wc:pdf-goto', (event) => {
@@ -523,6 +795,7 @@ window.addEventListener('wc:pdf-goto', (event) => {
   }
   if (detail.pdfPage) gotoPdfPage(detail.pdfPage);
 });
+
 
 function applySiteInfo() {
   const site = PRAE.config?.site || {};
@@ -568,6 +841,7 @@ function createWorkSection(work, index) {
   section.id = `work-${slugKey}`.replace(/[^a-z0-9\-]+/gi, '-');
   if (work.id != null) section.dataset.workId = String(work.id);
   if (work.title) section.dataset.workTitle = String(work.title);
+  const pdfCandidate = normalizePdfUrl(getPdfSourceFrom(work));
   const title = document.createElement('h1');
   title.className = 'tf-title';
   title.textContent = work.title || work.slug || `Work ${index + 1}`;
@@ -579,7 +853,7 @@ function createWorkSection(work, index) {
     section.appendChild(slug);
   }
   const metaItems = [];
-  if (work.pdfUrl || work.pdf) {
+  if (pdfCandidate) {
     const score = document.createElement('a');
     score.href = '#';
     score.textContent = 'Score';
@@ -706,9 +980,12 @@ function observeCurrentWork() {
     }
     if (candidate) {
       const owner = state.sections.find((item) => item.heading === candidate);
-      updateHeaderCurrent(owner?.work?.title || owner?.work?.slug || null);
+      const work = owner?.work || null;
+      updateHeaderCurrent(work?.title || work?.slug || null);
+      setCurrentWork(work);
     } else {
       updateHeaderCurrent(null);
+      setCurrentWork(null);
     }
   };
   state.observer = new IntersectionObserver(callback, {
@@ -791,9 +1068,8 @@ function onBookScroll() {
 function onKeydown(event) {
   if (event.defaultPrevented) return;
   if (event.key === 'Escape') {
-    const pdfOpen = state.pdf.root && !state.pdf.root.hasAttribute('hidden');
-    if (pdfOpen) {
-      hidePdfPane();
+    if (isDrawerMode() && document.body.classList.contains('tf-preview-open')) {
+      setPreviewDrawer(false);
       event.preventDefault();
       return;
     }
@@ -828,7 +1104,10 @@ function bindEvents() {
     state.book.addEventListener('scroll', onBookScroll, { passive: true });
     state.book.addEventListener('click', onBookClick);
   }
-  window.addEventListener('resize', () => updatePagination(), { passive: true });
+  window.addEventListener('resize', () => {
+    updatePagination();
+    syncPreviewForViewport();
+  }, { passive: true });
   window.addEventListener('hashchange', () => hydrateFromHash());
   document.addEventListener('keydown', onKeydown);
 }
@@ -847,8 +1126,11 @@ function init() {
   applySiteInfo();
   ensureAudioTags();
   renderBook();
+  ensurePdfDom();
+  initializePreview();
   observeCurrentWork();
   updatePagination();
+  syncPreviewForViewport();
   hydrateFromHash();
   bindEvents();
   updateHeaderCurrent(state.sections[0]?.work?.title || null);
