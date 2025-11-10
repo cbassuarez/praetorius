@@ -117,6 +117,9 @@ a:focus-visible {
   --prae-glass-sheen-angle: 130deg;
   --prae-glass-sheen-intensity: 0.45;
   --prae-glass-sheen-opacity: 0.42;
+  --prae-glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
+  --prae-glass-noise-strength: 0.22;
+  --prae-glass-noise-strength-hover: 0.48;
   --prae-shadow-ambient: 0 48px 96px -52px rgba(4, 9, 20, 0.78);
   --prae-shadow-key: 0 30px 70px -46px rgba(6, 14, 28, 0.68);
   --prae-shadow-lifted: 0 16px 38px -24px rgba(12, 20, 36, 0.6);
@@ -149,6 +152,8 @@ body.prae-theme-light {
   --prae-glass-fill-2: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(214, 230, 255, 0.52) 100%);
   --prae-glass-fallback: rgba(255, 255, 255, 0.92);
   --prae-glass-sheen-opacity: 0.5;
+  --prae-glass-noise-strength: 0.18;
+  --prae-glass-noise-strength-hover: 0.4;
   --prae-shadow-ambient: 0 38px 80px -40px rgba(46, 76, 132, 0.26);
   --prae-shadow-key: 0 24px 56px -32px rgba(46, 76, 132, 0.3);
   --prae-shadow-lifted: 0 16px 30px -22px rgba(46, 76, 132, 0.32);
@@ -427,19 +432,26 @@ main.vb-shell,
 .work::after {
   content: "";
   position: absolute;
-  inset: -55% -45% auto;
-  height: 140%;
+  inset: 0;
+  border-radius: inherit;
   pointer-events: none;
-  background: conic-gradient(from calc(var(--prae-glass-sheen-angle) - 20deg),
+  background-image:
+    var(--prae-glass-noise),
+    conic-gradient(from calc(var(--prae-glass-sheen-angle) - 20deg),
       rgba(255, 255, 255, var(--prae-glass-sheen-intensity)) 0deg,
       rgba(255, 255, 255, 0) 140deg,
       rgba(255, 255, 255, var(--prae-glass-sheen-intensity)) 260deg,
       rgba(255, 255, 255, 0) 360deg);
+  background-size: 220px 220px, 200% 200%;
+  background-repeat: repeat, no-repeat;
+  background-position: center center, 60% 40%;
+  background-blend-mode: soft-light, screen;
   mix-blend-mode: screen;
-  opacity: 0;
+  opacity: var(--prae-glass-noise-strength);
   transition: opacity var(--prae-motion-duration-md) var(--prae-motion-ease-fluid),
+              background-position var(--prae-motion-duration-lg) var(--prae-motion-ease-glide),
               transform var(--prae-motion-duration-lg) var(--prae-motion-ease-glide);
-  transform: translate3d(-18%, -10%, 0);
+  transform: translate3d(0, 0, 0);
 }
 
 .work:hover {
@@ -448,7 +460,19 @@ main.vb-shell,
   box-shadow: var(--prae-shadow-key);
 }
 
-.work:hover::after { opacity: var(--prae-glass-sheen-opacity); transform: translate3d(-8%, -4%, 0); }
+.work:hover::after {
+  opacity: var(--prae-glass-noise-strength-hover);
+  background-position: center center, 45% 55%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work::after {
+    transition: opacity var(--prae-motion-duration-md) var(--prae-motion-ease-fluid);
+  }
+  .work:hover::after {
+    background-position: center center, 60% 40%;
+  }
+}
 .work.playing { border-color: color-mix(in srgb, var(--prae-color-success) 45%, var(--prae-color-border)); }
 .work h2 {
   margin: 0 0 0.35rem;
@@ -878,6 +902,100 @@ main.vb-shell,
 }
 
 /* --- Console output harmonisation ------------------------------------ */
+#works-console {
+  background: none;
+  font-family: var(--prae-font-mono);
+  color: var(--prae-color-ink);
+  --aero-bg: linear-gradient(180deg,
+      color-mix(in srgb, var(--prae-color-surface-1) 82%, transparent) 0%,
+      color-mix(in srgb, var(--prae-color-surface-3) 96%, transparent) 100%);
+  --aero-stroke: color-mix(in srgb, var(--prae-color-border) 75%, transparent);
+  --aero-blur: var(--prae-glass-blur-md);
+  --aero-shadow: var(--prae-shadow-key);
+  --aero-glow: 0 0 0 1px color-mix(in srgb, var(--prae-color-border-highlight) 90%, transparent);
+  --title-fg: var(--prae-color-ink-strong);
+}
+
+#works-console .wc-frame {
+  position: relative;
+  border-radius: var(--prae-radius-xl);
+  box-shadow: var(--prae-shadow-key), inset 0 1px 0 color-mix(in srgb, var(--prae-color-glint) 32%, transparent);
+}
+
+#works-console .wc-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--prae-glass-noise);
+  background-size: 200px 200px;
+  mix-blend-mode: soft-light;
+  opacity: calc(var(--prae-glass-noise-strength) * 0.6);
+}
+
+#works-console .wc-output {
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--prae-color-surface-1) 78%, transparent) 0%,
+      color-mix(in srgb, var(--prae-color-surface-3) 95%, transparent) 100%);
+}
+
+#works-console .wc-input {
+  position: relative;
+  border-top: 1px solid color-mix(in srgb, var(--prae-color-border) 70%, transparent);
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--prae-color-surface-1) 88%, transparent) 0%,
+      color-mix(in srgb, var(--prae-color-surface-3) 96%, transparent) 100%);
+}
+
+#works-console .wc-input::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--prae-glass-noise);
+  background-size: 200px 200px;
+  mix-blend-mode: soft-light;
+  opacity: calc(var(--prae-glass-noise-strength) * 0.55);
+}
+
+#works-console .btn {
+  border-color: var(--prae-color-border-subtle);
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--prae-color-surface-1) 85%, transparent) 0%,
+      color-mix(in srgb, var(--prae-color-surface-2) 98%, transparent) 100%);
+  color: var(--prae-color-ink);
+}
+
+#works-console .btn:hover {
+  border-color: color-mix(in srgb, var(--prae-color-accent) 38%, var(--prae-color-border));
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--prae-color-surface-1) 92%, transparent) 0%,
+      color-mix(in srgb, var(--prae-color-surface-2) 100%, transparent) 100%);
+}
+
+#works-console .wc-hud {
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--prae-color-surface-1) 88%, transparent) 0%,
+      color-mix(in srgb, var(--prae-color-surface-2) 98%, transparent) 100%);
+  border: 1px solid color-mix(in srgb, var(--prae-color-border) 70%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--prae-color-glint) 35%, transparent);
+}
+
+#works-console .toast {
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--prae-color-surface-2) 88%, transparent) 0%,
+      color-mix(in srgb, var(--prae-color-surface-3) 98%, transparent) 100%);
+  border-color: color-mix(in srgb, var(--prae-color-border) 75%, transparent);
+  color: var(--prae-color-warn);
+}
+
+#works-console .meter > span {
+  background: linear-gradient(90deg,
+      color-mix(in srgb, var(--prae-color-accent) 75%, transparent) 0%,
+      color-mix(in srgb, var(--prae-color-ink-strong) 35%, transparent) 100%);
+}
+
 body, #works-console {
   --fg: var(--prae-color-ink);
   --muted: var(--prae-color-muted);
