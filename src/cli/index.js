@@ -361,6 +361,34 @@ const BUILTIN_SKINS = Object.freeze({
   'typescatter':  { label: 'TypeScatter', aliases: ['posterboard'] }
 });
 
+const GENERIC_STARTER_WORKS = Object.freeze([
+  {
+    id: 1,
+    slug: 'demo-satie-gymnopedie-1',
+    title: 'DEMO — Erik Satie: Gymnopédie No. 1',
+    one: 'Public-domain demo (Mutopia engraving + Wikimedia audio).',
+    cues: [{ label: '@0:00', t: 0 }],
+    audio: 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Gymnopedie_No._1..ogg',
+    pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf'
+  },
+  {
+    id: 2,
+    slug: 'demo-us-army-band-lo-how-a-rose',
+    title: 'DEMO — U.S. Army Band: “Lo, How a Rose”',
+    one: 'Public-domain recording (U.S. Army Band) with Mutopia PDF.',
+    cues: [{ label: '@0:00', t: 0 }],
+    audio: 'https://upload.wikimedia.org/wikipedia/commons/c/c9/U.S._Army_Band_-_Lo_How_a_Rose.ogg',
+    pdf: 'https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf'
+  }
+]);
+
+const GENERIC_STARTER_ASSETS = Object.freeze([
+  { file: 'starter/audio/demo-satie.ogg.url', url: 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Gymnopedie_No._1..ogg' },
+  { file: 'starter/pdf/demo-satie.pdf.url', url: 'https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf' },
+  { file: 'starter/audio/demo-army-band.ogg.url', url: 'https://upload.wikimedia.org/wikipedia/commons/c/c9/U.S._Army_Band_-_Lo_How_a_Rose.ogg' },
+  { file: 'starter/pdf/demo-army-band.pdf.url', url: 'https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf' }
+]);
+
 const DEFAULT_DOCS_CONFIG = Object.freeze({
   site: { title: '', subtitle: '', description: '', accent: '' },
   sources: { globs: ['docs/**/*.md'], includeReadme: true },
@@ -389,6 +417,152 @@ function resolveBuiltinSkinKey(input) {
   const key = String(input).trim().toLowerCase();
   if (!key) return null;
   return SKIN_ALIAS_LOOKUP.get(key) || null;
+}
+
+const WORK_FILE_REGEX = /\.work\.(json|ya?ml|md)$/i;
+
+function resolveWorksContentDir({ contentDir, config } = {}) {
+  const root = process.cwd();
+  const raw = [];
+  const cfgDir = config && typeof config.contentDir === 'string' ? config.contentDir.trim() : '';
+  if (cfgDir) raw.push(cfgDir);
+  if (typeof contentDir === 'string' && contentDir.trim()) raw.push(contentDir.trim());
+  raw.push('.prae');
+  raw.push('works');
+  raw.push(path.join('content', 'works'));
+  const seen = new Set();
+  const resolved = [];
+  for (const candidate of raw) {
+    const abs = path.isAbsolute(candidate) ? path.normalize(candidate) : path.resolve(root, candidate);
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    resolved.push(abs);
+  }
+  const resolvedDir = resolved[0] || path.resolve(root, '.prae');
+  return { resolvedDir, candidates: resolved };
+}
+
+async function countWorkFiles(dir) {
+  const stack = [dir];
+  let count = 0;
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = await fs.promises.readdir(current, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+    for (const entry of entries) {
+      const abs = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(abs);
+        continue;
+      }
+      if (WORK_FILE_REGEX.test(entry.name)) count += 1;
+    }
+  }
+  return count;
+}
+
+async function detectWorksState({ skin, contentDir, config } = {}) {
+  const skinKey = resolveBuiltinSkinKey(skin) || (skin ? String(skin).trim().toLowerCase() : '');
+  const { resolvedDir } = resolveWorksContentDir({ contentDir, config });
+  const displayDir = cwdRel(resolvedDir);
+  if (skinKey === 'docs-reader') {
+    const exists = fs.existsSync(resolvedDir) && fs.statSync(resolvedDir).isDirectory();
+    return {
+      decision: 'never',
+      worksCount: 0,
+      fileCount: 0,
+      manifestCount: 0,
+      manifestParseError: false,
+      resolvedDir,
+      displayDir,
+      dirExists: exists
+    };
+  }
+  let fileCount = 0;
+  let dirExists = false;
+  try {
+    dirExists = fs.existsSync(resolvedDir) && fs.statSync(resolvedDir).isDirectory();
+  } catch (_) {
+    dirExists = false;
+  }
+  if (dirExists) {
+    try {
+      fileCount = await countWorkFiles(resolvedDir);
+    } catch (_) {
+      fileCount = 0;
+    }
+  }
+  let manifestCount = 0;
+  let manifestParseError = false;
+  if (fs.existsSync(DB_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+      if (Array.isArray(data?.works)) {
+        manifestCount = data.works.length;
+      }
+    } catch (_) {
+      manifestParseError = true;
+    }
+  }
+  const totalWorks = manifestParseError ? 1 : Math.max(manifestCount, fileCount);
+  const decision = manifestParseError ? 'auto:skip' : (totalWorks > 0 ? 'auto:skip' : 'auto:seed');
+  return {
+    decision,
+    worksCount: totalWorks,
+    fileCount,
+    manifestCount,
+    manifestParseError,
+    resolvedDir,
+    displayDir,
+    dirExists
+  };
+}
+
+async function shouldSeed({ skin, contentDir, config }) {
+  const state = await detectWorksState({ skin, contentDir, config });
+  return state.decision === 'never' ? 'never' : state.decision;
+}
+
+async function runGenericStarterSeed({ targetDirs = {}, assets = {}, skin, config } = {}) {
+  const manifestPath = targetDirs.manifestPath
+    ? path.resolve(targetDirs.manifestPath)
+    : DB_PATH;
+  const worksDir = path.dirname(manifestPath);
+  const assetsDir = targetDirs.assetsDir ? path.resolve(targetDirs.assetsDir) : null;
+
+  fs.mkdirSync(worksDir, { recursive: true });
+  let existing = null;
+  if (fs.existsSync(manifestPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    } catch (_) {
+      return; // safety: do not overwrite uncertain manifests
+    }
+  }
+  const existingWorks = Array.isArray(existing?.works) ? existing.works : [];
+  if (existingWorks.length > 0) return;
+  const payload = {
+    version: existing?.version ?? 1,
+    works: GENERIC_STARTER_WORKS.map((entry, idx) => ({
+      ...entry,
+      id: entry.id,
+      cues: (entry.cues || []).map(c => ({ label: c.label, t: c.t }))
+    }))
+  };
+  fs.writeFileSync(manifestPath, JSON.stringify(payload, null, 2));
+
+  if (assetsDir) {
+    for (const asset of GENERIC_STARTER_ASSETS) {
+      const dest = path.join(assetsDir, asset.file);
+      if (fs.existsSync(dest)) continue;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, `${asset.url}\n`, 'utf8');
+    }
+  }
 }
 
 function builtinSkinList() {
@@ -3485,6 +3659,7 @@ program
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')
   .option('--no-ui',        'skip building UI (HTML/JS/CSS) even if present', false)
+  .option('--seed <mode>', 'starter content seeding (auto|always|never)', 'auto')
 
 
   .action(async function (opts) {
@@ -3495,10 +3670,59 @@ program
     const pkgUiDir = path.resolve(PKG_ROOT, 'ui'); // packaged starter UI (fallback)
     const appJsSource = command?.getOptionValueSource?.('appJs') || 'default';
     const appCssSource = command?.getOptionValueSource?.('appCss') || 'default';
+    const seedMode = String(opts.seed ?? 'auto').toLowerCase();
+    if (!['auto', 'always', 'never'].includes(seedMode)) {
+      console.log(pc.red(`Invalid --seed mode "${opts.seed}". Use auto, always, or never.`));
+      process.exit(1);
+    }
 
     const buildOnce = async () => {
-      const db = loadDb();
       const cfg = loadConfig();
+      const requestedSkinRaw = String(opts.skin || cfg.ui?.skin || 'console').trim();
+      const normalizedSkin = requestedSkinRaw.toLowerCase();
+      const builtinSkin = resolveBuiltinSkinKey(normalizedSkin);
+      const effectiveSkin = builtinSkin || (normalizedSkin || 'console');
+      const detection = await detectWorksState({ skin: effectiveSkin, config: cfg });
+      const shouldAutoSeed = await shouldSeed({ skin: effectiveSkin, contentDir: detection.resolvedDir, config: cfg });
+      let doSeed = false;
+      let seedWasApplied = false;
+      if (seedMode === 'always') {
+        if (shouldAutoSeed === 'never') {
+          console.log(pc.yellow('--seed=always ignored for skin "docs-reader" (uses its own documentation seed).'));
+        } else {
+          console.log(pc.yellow('--seed=always specified → seeding starter content (non-destructive).'));
+          doSeed = true;
+        }
+      } else if (seedMode === 'never') {
+        console.log(pc.gray('--seed=never specified → not seeding starter content.'));
+      } else {
+        if (shouldAutoSeed === 'never') {
+          // docs reader – stay silent to avoid extra noise unless watch prints summary later
+        } else if (detection.manifestParseError) {
+          console.log(pc.yellow(`Could not parse ${cwdRel(DB_PATH)} → skipping starter seed for safety.`));
+        } else if (detection.worksCount > 0) {
+          console.log(pc.gray(`Found ${detection.worksCount} works in ${detection.displayDir} → skipping starter seed.`));
+        } else {
+          console.log(pc.yellow(`No works found in ${detection.displayDir} → seeding starter content (Satie demo, PDF, audio).`));
+          doSeed = true;
+        }
+      }
+
+      if (doSeed) {
+        await runGenericStarterSeed({
+          targetDirs: { manifestPath: DB_PATH, assetsDir: null, contentDir: detection.resolvedDir },
+          skin: effectiveSkin,
+          config: cfg
+        });
+        seedWasApplied = true;
+      }
+
+      const db = loadDb();
+      const worksCount = Array.isArray(db.works) ? db.works.length : 0;
+      if (process.env.PRAE_TEST === '1') {
+        const tag = seedWasApplied ? 'APPLIED' : 'SKIPPED';
+        console.log(`PRAE_TEST: works=${worksCount}, seed=${tag}`);
+      }
       // Basic validation
       const ajv = new Ajv({ allErrors: true });
       const validate = ajv.compile(WORKS_SCHEMA);
@@ -3508,7 +3732,7 @@ program
         return false;
       }
       const wantMin = !!opts.minify || !!cfg.output.minify;
-            let js  = renderScriptFromDb(db, { minify: wantMin, theme: cfg.theme, site: cfg.site });
+      let js  = renderScriptFromDb(db, { minify: wantMin, theme: cfg.theme, site: cfg.site });
       let css = buildCssBundle();
       if (wantMin) {
         const esb = await lazyEsbuild();
@@ -3548,18 +3772,15 @@ program
       let docsData = null;
       let docsWarnings = [];
 
+      let chosenSkin = builtinSkin || (normalizedSkin || 'console');
       if (!opts.noUi) {
         // Prefer project UI dir; fall back to packaged /ui
         const htmlName = opts.html || 'template.html';
-        const requestedSkin = String(opts.skin || cfg.ui?.skin || 'console').trim();
-        const normalizedSkin = requestedSkin.toLowerCase();
-        const builtinSkin = resolveBuiltinSkinKey(normalizedSkin);
         const candidateSkinKeys = [];
         if (builtinSkin) candidateSkinKeys.push(builtinSkin);
         else if (normalizedSkin) candidateSkinKeys.push(normalizedSkin);
         if (!candidateSkinKeys.includes('console')) candidateSkinKeys.push('console');
 
-        let chosenSkin = null;
         let uiRoot = null;
 
         for (const skinName of candidateSkinKeys) {
@@ -3688,7 +3909,8 @@ program
           );
         }
       }
-return true; // end buildOnce success
+      console.log(pc.bold(`Generated ${chosenSkin} to ${cwdRel(outDir)} (works: ${worksCount}, seeded: ${seedWasApplied ? 'yes' : 'no'})`));
+      return true; // end buildOnce success
     }; // <-- end buildOnce
 
     const ok = await buildOnce();
