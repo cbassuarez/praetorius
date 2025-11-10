@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Praetorius — Kiosk / Presentation</title>
+  <link rel="stylesheet" href="./style.css"/>
+</head>
+<body class="prae-theme-dark" data-theme="dark">
+  <header class="kiosk-header" role="banner">
+    <div class="kiosk-header-left">
+      <div class="kiosk-brand">
+        <span class="kiosk-title" data-site-title>Praetorius</span>
+        <span class="kiosk-subtitle" data-site-subtitle>Presentation</span>
+      </div>
+      <nav id="prae-nav" class="kiosk-nav" aria-label="Site"></nav>
+    </div>
+    <div class="kiosk-header-right">
+      <button id="wc-theme-toggle" class="kiosk-theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Toggle theme" title="Toggle theme"></button>
+    </div>
+  </header>
+
+  <main class="kiosk-shell" role="main">
+    <section id="kiosk-grid" class="kiosk-grid" aria-label="Works grid"></section>
+    <aside id="kiosk-ctl" class="kiosk-controls" aria-label="Kiosk controls"></aside>
+    <section id="kiosk-detail" class="kiosk-detail" aria-label="Work detail" hidden></section>
+    <section id="works-console" hidden></section>
+    <div class="kiosk-backdrop" data-pdf-backdrop hidden></div>
+    <aside class="kiosk-pdfpane vb-pdfpane" aria-label="Score PDF" aria-hidden="true" role="dialog" aria-modal="true" hidden>
+      <header class="kiosk-pdfbar">
+        <div class="kiosk-pdf-title vb-pdf-title" aria-live="polite"></div>
+        <button type="button" class="kiosk-pdf-close vb-pdf-close" aria-label="Close PDF">✕</button>
+      </header>
+      <iframe class="kiosk-pdf-frame vb-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    </aside>
+  </main>
+
+  <footer id="prae-footer" class="kiosk-footer" role="contentinfo"></footer>
+
+  <script type="module" src="./main.js" defer></script>
+</body>
+</html>
