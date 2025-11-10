@@ -161,7 +161,6 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   // Create HUD as a SIBLING before #works-console so list renders never remove it
   // HUD already exists from early bootstrap; just ensure internals + styles
 ensureHudDom();
-injectHudCssOnce();
 
   works.forEach(w => {
     const cues = Array.isArray(w.cues) ? w.cues : [];
@@ -507,40 +506,36 @@ pdfViewerReady = false;
   function ensureHudDom(){
     if (!hudBox) return null;
     if (hudRefs) return hudRefs;
-    hudBox.innerHTML = '';
-    const wrap  = document.createElement('div'); wrap.className = 'wc-hud-row';
-    const tag   = document.createElement('span'); tag.className  = 'tag';
-    const time  = document.createElement('span'); time.className = 'hud-time';
-    const vol   = document.createElement('span'); vol.className  = 'soft hud-vol';
-    const spd   = document.createElement('span'); spd.className  = 'soft hud-speed';
-    const meter = document.createElement('div');  meter.className= 'meter';
-    const fill  = document.createElement('span'); meter.appendChild(fill);
-    const acts  = document.createElement('div');  acts.className = 'hud-actions';
-    const btn   = document.createElement('button');
-    btn.type='button'; btn.className='btn hud-btn'; btn.setAttribute('data-hud','toggle'); btn.textContent='Play ▷';
-    acts.appendChild(btn);
-    tag.textContent = 'Now playing —';
-    wrap.append(tag, time, vol, spd, meter, acts);
-    hudBox.appendChild(wrap);
-    hudRefs = { tag, time, vol, spd, fill, btn };
+    hudBox.innerHTML = `
+      <div class="hud-left">
+        <div class="hud-title"></div>
+        <div class="hud-sub"></div>
+      </div>
+      <div class="hud-meter"><span></span></div>
+      <div class="hud-actions">
+        <button class="hud-btn" type="button" data-hud="toggle" aria-label="Play" data-icon="play"></button>
+      </div>`;
+    const title = hudBox.querySelector('.hud-title');
+    const sub   = hudBox.querySelector('.hud-sub');
+    const fill  = hudBox.querySelector('.hud-meter > span');
+    const btn   = hudBox.querySelector('.hud-btn');
+    hudRefs = { title, sub, fill, btn };
     return hudRefs;
   }
 
   function hudUpdate(id, a){
     const r = ensureHudDom(); if (!r) return;
-    const w = findWorkById(id)?.data;
-    const title = w ? w.title : '—';
-    // Ensure HUD always visible
-    if (hudBox) hudBox.style.display = 'flex';
+    const w   = findWorkById(id)?.data;
+    const name= w ? w.title : '—';
     const dur = (a && Number.isFinite(a.duration)) ? formatTime(a.duration|0) : '--:--';
     const cur = (a && Number.isFinite(a.currentTime)) ? formatTime(a.currentTime|0) : '0:00';
     const pct = (a && a.duration) ? Math.max(0, Math.min(100, (a.currentTime/a.duration)*100)) : 0;
-    r.tag.textContent  = `Now playing — ${title}`;
-    r.time.textContent = `${cur} / ${dur}`;
-    r.vol.textContent  = `vol:${Math.round(((a ? a.volume : 1)*100))}`;
-    r.spd.textContent  = `speed:${(a ? a.playbackRate : 1).toFixed(2)}x`;
-    r.fill.style.width = `${pct}%`;
-    r.btn.textContent  = (a && !a.paused) ? 'Pause ❚❚' : 'Play ▷';
+    r.title.textContent = `Now playing — ${name}`;
+    r.sub.textContent   = `${cur} / ${dur} · vol:${Math.round(((a ? a.volume : 1)*100))} · speed:${(a ? a.playbackRate : 1).toFixed(2)}x`;
+    r.fill.style.width  = `${pct}%`;
+    const playing = (a && !a.paused);
+    r.btn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    r.btn.dataset.icon = playing ? 'pause' : 'play';
   }
 
   function bindAudio(id){
@@ -588,3 +583,4 @@ pdfViewerReady = false;
     return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 })();
+
