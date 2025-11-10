@@ -354,7 +354,7 @@ const DEFAULT_CONFIG = Object.freeze({
 const BUILTIN_SKINS = Object.freeze({
   'console':      { label: 'Console (default)', aliases: [] },
   'vite-breeze':  { label: 'Vite Breeze', aliases: [] },
-  'cards-tabs':   { label: 'Cards & Tabs', aliases: [] },
+  'cards-tabs':   { label: 'Cards & Tabs', aliases: ['dashboard'] },
   'docs-reader':  { label: 'Docs Reader', aliases: ['docs'] }
 });
 
@@ -981,7 +981,7 @@ UI bundle (template.html + main.js + style.css → dist/):
   $ prae generate --ui-src ui --html template.html --app-js app.js --app-css app.css
 
 Skins:
-  • console (default) • vite-breeze • cards-tabs • docs-reader (alias: docs)
+  • console (default) • vite-breeze • cards-tabs (alias: dashboard) • docs-reader (alias: docs)
   $ prae skin list
 
 Troubleshooting:
@@ -1939,7 +1939,7 @@ program
   .option('--no-css', 'skip writing CSS when not using --embed')
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
   .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'ui')
-  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Built-ins: console, vite-breeze, cards-tabs, docs-reader (alias: docs)', '')
+  .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Built-ins: console, vite-breeze, cards-tabs (alias: dashboard), docs-reader (alias: docs)', '')
   .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')
@@ -2050,8 +2050,9 @@ program
           // haveTpl is guaranteed true here, but keep the guard for safety
           if (haveTpl) {
             const appJsFileName  = (appJsSource === 'default') ? 'app.js' : opts.appJs;
+            const wantsStyleCss = chosenSkin === 'docs-reader' || chosenSkin === 'cards-tabs';
             const appCssFileName = (appCssSource === 'default')
-              ? (chosenSkin === 'docs-reader' ? 'style.css' : 'app.css')
+              ? (wantsStyleCss ? 'style.css' : 'app.css')
               : opts.appCss;
             // Copy/transform app.js + app.css if present
             let appJsCode = '';
