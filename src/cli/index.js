@@ -3353,6 +3353,884 @@ program
     }
   });
 
+
+async function runDocsWizard(opts = {}, meta = {}) {
+  const { autoTriggered = false } = (meta || {});
+  const parseList = (input) => {
+    if (!input) return [];
+    return String(input)
+      .split(/[,;]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  };
+  const abort = (reason) => { const err = new Error('abort'); if (reason) err.reason = reason; throw err; };
+
+  const nonInteractive = !!opts.yes;
+  const docsConfig = loadDocsConfig();
+  const siteConfig = loadConfig();
+  let docsRoot = ensureDocsRoot(opts.docsRoot || docsConfig.paths.root || 'docs/');
+  let detection = detectDocsEnvironment({ docsRoot });
+  const forcedHome = String(opts.docsHome || '').trim();
+
+  if (autoTriggered) {
+    console.log(pc.yellow('Docs Reader skin selected but no docs configuration found.'));
+    console.log(pc.gray('Launching Docs Reader wizard…'));
+  }
+
+  console.log(pc.bold('Docs Reader wizard'));
+  console.log(
+    pc.gray('Docs root: ') +
+    pc.cyan(docsRoot) +
+    pc.gray(detection.docsExists ? ' (found)' : ' (will create)')
+  );
+  console.log(
+    pc.gray(
+      `Markdown detected → ${detection.docsFiles.length} in ${docsRoot}, ` +
+      `README sections: ${detection.readme.sections.length}, extra markdown: ${detection.otherMarkdown.length}`
+    )
+  );
+  if (detection.assetDirs.length) {
+    console.log(pc.gray('Assets folders: ') + pc.cyan(detection.assetDirs.join(', ')));
+  }
+  if (detection.works.count) {
+    const sample = detection.works.titles.join(', ');
+    console.log(pc.gray(`Works data found (${detection.works.count})`) + (sample ? pc.gray(` — e.g., ${sample}`) : ''));
+  }
+
+  const ensureStarterIfEmpty = async () => {
+    const nothingFound =
+      !detection.docsFiles.length &&
+      !detection.readme.sections.length &&
+      !detection.otherMarkdown.length;
+    if (!nothingFound) return [];
+    if (nonInteractive) {
+      console.log(pc.yellow('No markdown sources found. Scaffolding starter docs…'));
+      const created = scaffoldDocsSkeleton(detection.docsDir);
+      created.forEach((file) => console.log(pc.green('create ') + pc.dim(cwdRel(file))));
+      detection = detectDocsEnvironment({ docsRoot });
+      return created;
+    }
+    const ans = await prompt({
+      type: 'confirm',
+      name: 'scaffold',
+      message: 'No docs found. Scaffold a starter docs set?',
+      initial: true
+    });
+    if (ans.scaffold) {
+      const created = scaffoldDocsSkeleton(detection.docsDir);
+      created.forEach((file) => console.log(pc.green('create ') + pc.dim(cwdRel(file))));
+      detection = detectDocsEnvironment({ docsRoot });
+      return created;
+    }
+    console.log(pc.red('Docs wizard cancelled — supply markdown sources or allow scaffolding.'));
+    abort('no-sources');
+  };
+
+  let createdFiles = [];
+  createdFiles = await ensureStarterIfEmpty();
+
+  const fallbackTitle =
+    docsConfig.site.title ||
+    siteConfig.site.fullName ||
+    [siteConfig.site.firstName, siteConfig.site.lastName].filter(Boolean).join(' ') ||
+    path.basename(process.cwd());
+  const identityDefaults = {
+    title: docsConfig.site.title || fallbackTitle,
+    subtitle: docsConfig.site.subtitle || siteConfig.site.subtitle || '',
+    description:
+      docsConfig.site.description ||
+      (siteConfig.site.subtitle ? siteConfig.site.subtitle : `Documentation hub for ${fallbackTitle}`),
+    accent: docsConfig.site.accent || ''
+  };
+
+  const identityAnswers = nonInteractive
+    ? identityDefaults
+    : await prompt([
+        { type: 'input', name: 'title', message: 'Site title?', initial: identityDefaults.title },
+        { type: 'input', name: 'subtitle', message: 'Subtitle (optional)', initial: identityDefaults.subtitle },
+        {
+          type: 'input',
+          name: 'description',
+          message: 'Short description (≈140 chars)?',
+          initial: identityDefaults.description,
+          validate: (v) => (String(v).length <= 200 ? true : 'Keep under 200 characters')
+        },
+        { type: 'input', name: 'accent', message: 'Accent color (hex or CSS var, optional)', initial: identityDefaults.accent }
+      ]);
+
+  const forcedGlobs = parseList(opts.docsScan);
+  let includeReadme = docsConfig.sources.includeReadme && detection.readme.sections.length > 0;
+  let globs = forcedGlobs.length ? forcedGlobs.slice() : [...docsConfig.sources.globs];
+
+  const chooseSourcesInteractively = async () => {
+    const choices = [
+      {
+        name: `Scan ${docsRoot}**/*.md (${detection.docsFiles.length} file${detection.docsFiles.length === 1 ? '' : 's'})`,
+        value: 'scan-docs',
+        disabled: detection.docsFiles.length === 0,
+        initial: detection.docsFiles.length > 0 && (!globs.length || globs.some((g) => g.includes(docsRoot)))
+      },
+      {
+        name: `Import top-level sections from README.md (${detection.readme.sections.length})`,
+        value: 'readme',
+        disabled: detection.readme.sections.length === 0,
+        initial: includeReadme
+      }
+    ];
+    if (detection.otherMarkdown.length) {
+      choices.push({
+        name: `Pick extra markdown (found ${detection.otherMarkdown.length})`,
+        value: 'other',
+        initial: false
+      });
+    }
+    choices.push({ name: 'Add another folder or glob…', value: 'extra' });
+    choices.push({ name: 'Create starter pages (Getting Started, Concepts, Tutorials, API, FAQ, Changelog)', value: 'starter' });
+
+    const answer = await prompt({
+      type: 'multiselect',
+      name: 'sources',
+      message: 'Pick content sources',
+      choices,
+      hint: 'Space to toggle · Enter to accept'
+    });
+
+    const picks = new Set(answer.sources || []);
+    const resultGlobs = [];
+    if (picks.has('scan-docs')) {
+      resultGlobs.push(`${docsRoot}**/*.md`);
+    }
+    if (picks.has('readme')) includeReadme = detection.readme.sections.length > 0;
+    else includeReadme = false;
+
+    if (picks.has('other') && detection.otherMarkdown.length) {
+      const otherChoices = detection.otherMarkdown.map((file) => ({
+        name: file.rel,
+        value: file.rel
+      }));
+      const otherAns = await prompt({
+        type: 'multiselect',
+        name: 'extra',
+        message: 'Select extra markdown files to include',
+        choices: otherChoices
+      });
+      (otherAns.extra || []).forEach((rel) => resultGlobs.push(rel));
+    }
+
+    if (picks.has('extra')) {
+      let more = true;
+      while (more) {
+        const { pattern } = await prompt({
+          type: 'input',
+          name: 'pattern',
+          message: 'Glob or path to include (leave blank to stop)',
+          initial: ''
+        });
+        if (!pattern || !pattern.trim()) break;
+        resultGlobs.push(pattern.trim());
+        const again = await prompt({
+          type: 'confirm',
+          name: 'again',
+          message: 'Add another glob?',
+          initial: false
+        });
+        more = again.again;
+      }
+    }
+
+    if (picks.has('starter')) {
+      const created = scaffoldDocsSkeleton(detection.docsDir);
+      if (created.length) {
+        created.forEach((file) => console.log(pc.green('create ') + pc.dim(cwdRel(file))));
+        createdFiles.push(...created);
+        detection = detectDocsEnvironment({ docsRoot });
+        // ensure docs glob covers new files
+        if (!resultGlobs.length) resultGlobs.push(`${docsRoot}**/*.md`);
+      }
+    }
+
+    return resultGlobs;
+  };
+
+  if (!forcedGlobs.length) {
+    if (!nonInteractive) {
+      const selectedGlobs = await chooseSourcesInteractively();
+      if (selectedGlobs.length) globs = selectedGlobs;
+    } else {
+      if (!globs.length && detection.docsFiles.length) {
+        globs = [`${docsRoot}**/*.md`];
+      }
+      if (includeReadme && !detection.readme.sections.length) includeReadme = false;
+    }
+  }
+
+  if (!globs.length && detection.docsFiles.length) {
+    globs = [`${docsRoot}**/*.md`];
+  }
+  globs = Array.from(new Set(globs.filter(Boolean)));
+
+  const usedSectionIds = new Set();
+  const usedPageSlugs = new Set();
+
+  const uniqueId = (base, prefix) => {
+    const safeBase = slugify(base || '') || `${prefix}-${usedSectionIds.size + 1}`;
+    let candidate = safeBase;
+    let n = 2;
+    while (usedSectionIds.has(candidate)) {
+      candidate = `${safeBase}-${n++}`;
+    }
+    usedSectionIds.add(candidate);
+    return candidate;
+  };
+
+  const uniqueSlug = (base, fallback) => {
+    const safeBase = slugify(base || '') || slugify(fallback || '') || 'page';
+    let candidate = safeBase;
+    let n = 2;
+    while (usedPageSlugs.has(candidate)) {
+      candidate = `${safeBase}-${n++}`;
+    }
+    usedPageSlugs.add(candidate);
+    return candidate;
+  };
+
+  const buildSections = () => {
+    const map = new Map();
+    const sections = [];
+    const ensureSection = (label) => {
+      const key = label || 'General';
+      if (map.has(key)) return map.get(key);
+      const section = {
+        id: uniqueId(key, 'section'),
+        title: label || 'General',
+        order: sections.length,
+        hidden: false,
+        pages: []
+      };
+      map.set(key, section);
+      sections.push(section);
+      return section;
+    };
+
+    const considerFile = (info, opts = {}) => {
+      const patterns = globs.length ? globs : [`${docsRoot}**/*.md`];
+      const relPath = opts.relOverride || info.rel;
+      const candidates = [relPath];
+      if (info.relWithin) candidates.push(info.relWithin);
+      const matches = patterns.some((pattern) => candidates.some((candidate) => matchesGlob(pattern, candidate)));
+      if (!matches) return;
+      const sectionLabel = sectionLabelFromSegment(opts.sectionSegment || info.section || (relPath.includes('/') ? relPath.split('/')[0] : ''));
+      const section = ensureSection(sectionLabel);
+      const slug = uniqueSlug(info.title || path.basename(relPath, path.extname(relPath)), relPath);
+      section.pages.push({
+        source: relPath,
+        title: info.title || path.basename(relPath),
+        slug,
+        summary: info.snippet || '',
+        tags: [],
+        hidden: false
+      });
+    };
+
+    detection.docsFiles.forEach((file) => considerFile(file, { relOverride: file.rel, sectionSegment: file.relWithin ? file.relWithin.split('/')[0] : file.section }));
+    detection.otherMarkdown.forEach((file) => considerFile(file));
+
+    if (includeReadme && detection.readme.sections.length) {
+      const section = ensureSection('README Highlights');
+      detection.readme.sections.forEach((item) => {
+        const slug = uniqueSlug(item.title, item.slug);
+        section.pages.push({
+          source: `README.md#${item.slug}`,
+          title: item.title,
+          slug,
+          summary: item.snippet || '',
+          tags: [],
+          hidden: false
+        });
+      });
+    }
+
+    sections.forEach((section, idx) => {
+      section.order = idx;
+    });
+
+    return sections;
+  };
+
+  let sections = buildSections();
+
+  const existingById = new Map((docsConfig.ia || []).map((section) => [section.id, section]));
+  sections = sections.map((section) => {
+    const prev = existingById.get(section.id);
+    if (!prev) return section;
+    section.title = prev.title || section.title;
+    section.hidden = !!prev.hidden;
+    section.order = Number.isFinite(prev.order) ? prev.order : section.order;
+    const prevPages = new Map((prev.pages || []).map((page) => [page.source || page.slug, page]));
+    section.pages = section.pages.map((page) => {
+      const key = page.source || page.slug;
+      const prevPage = prevPages.get(key) || prevPages.get(page.slug);
+      if (!prevPage) return page;
+      page.hidden = !!prevPage.hidden;
+      page.summary = prevPage.summary || page.summary;
+      page.tags = Array.isArray(prevPage.tags) ? prevPage.tags.slice() : page.tags;
+      page.slug = prevPage.slug || page.slug;
+      return page;
+    });
+    return section;
+  });
+
+  sections.sort((a, b) => a.order - b.order);
+  sections.forEach((section, idx) => (section.order = idx));
+
+  const refreshSlugSet = () => {
+    usedPageSlugs.clear();
+    sections.forEach((section) => section.pages.forEach((page) => usedPageSlugs.add(page.slug)));
+  };
+  refreshSlugSet();
+
+  const previewSections = () => {
+    console.log('');
+    console.log(pc.bold('Information architecture preview')); 
+    sections
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .forEach((section, idx) => {
+        const status = section.hidden ? pc.dim(' (hidden)') : '';
+        console.log(`  ${idx + 1}. ${section.title}${status}`);
+        section.pages.forEach((page) => {
+          const pst = page.hidden ? pc.dim(' (hidden)') : '';
+          console.log(pc.gray(`       • ${page.title} ${pst} → ${page.source}`));
+        });
+      });
+    console.log('');
+  };
+
+  const selectSection = async (message) => {
+    if (!sections.length) return null;
+    const sorted = sections.slice().sort((a, b) => a.order - b.order);
+    const ans = await prompt({
+      type: 'select',
+      name: 'section',
+      message,
+      choices: sorted.map((section) => ({
+        name: `${section.title}${section.hidden ? ' (hidden)' : ''}`,
+        value: section.id
+      }))
+    });
+    return sections.find((section) => section.id === ans.section) || null;
+  };
+
+  const selectPage = async (message) => {
+    const choices = [];
+    sections
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .forEach((section) => {
+        section.pages.forEach((page) => {
+          choices.push({
+            name: `${section.title} → ${page.title}${page.hidden ? ' (hidden)' : ''}`,
+            value: `${section.id}::${page.slug}`
+          });
+        });
+      });
+    if (!choices.length) return null;
+    const ans = await prompt({ type: 'select', name: 'page', message, choices });
+    const [sectionId, slug] = String(ans.page || '').split('::');
+    const section = sections.find((s) => s.id === sectionId);
+    if (!section) return null;
+    const page = section.pages.find((p) => p.slug === slug);
+    return { section, page };
+  };
+
+  if (!nonInteractive) {
+    let editing = true;
+    while (editing) {
+      previewSections();
+      const ans = await prompt({
+        type: 'select',
+        name: 'action',
+        message: 'IA adjustments?',
+        choices: [
+          { name: 'Continue', value: 'continue' },
+          { name: 'Reorder sections', value: 'reorder', disabled: sections.length < 2 },
+          { name: 'Rename section', value: 'rename', disabled: !sections.length },
+          { name: 'Hide/show section', value: 'toggle', disabled: !sections.length },
+          { name: 'Create new section', value: 'create' },
+          { name: 'Rename page', value: 'page-rename', disabled: !sections.some((s) => s.pages.length) },
+          { name: 'Hide/show page', value: 'page-toggle', disabled: !sections.some((s) => s.pages.length) }
+        ]
+      });
+
+      if (ans.action === 'continue') {
+        editing = false;
+        break;
+      }
+
+      if (ans.action === 'reorder') {
+        const section = await selectSection('Reorder which section?');
+        if (section) {
+          const sorted = sections.slice().sort((a, b) => a.order - b.order);
+          const currentIdx = sorted.findIndex((s) => s.id === section.id);
+          const moveAns = await prompt({
+            type: 'input',
+            name: 'idx',
+            message: `Move “${section.title}” to position (1-${sorted.length})`,
+            initial: currentIdx + 1,
+            validate: (v) => {
+              const num = Number(v);
+              return num >= 1 && num <= sorted.length ? true : `Enter 1-${sorted.length}`;
+            }
+          });
+          const targetIdx = Number(moveAns.idx) - 1;
+          const reordered = moveInArray(sorted, currentIdx, targetIdx);
+          reordered.forEach((sec, idx) => (sec.order = idx));
+          sections = reordered;
+        }
+      } else if (ans.action === 'rename') {
+        const section = await selectSection('Rename which section?');
+        if (section) {
+          const nameAns = await prompt({
+            type: 'input',
+            name: 'title',
+            message: 'New section title',
+            initial: section.title,
+            validate: (v) => (v && v.trim().length ? true : 'Required')
+          });
+          section.title = nameAns.title.trim();
+        }
+      } else if (ans.action === 'toggle') {
+        const section = await selectSection('Toggle which section?');
+        if (section) section.hidden = !section.hidden;
+      } else if (ans.action === 'create') {
+        const newAns = await prompt([
+          { type: 'input', name: 'title', message: 'New section title', validate: (v) => (v && v.trim().length ? true : 'Required') }
+        ]);
+        const newSection = {
+          id: uniqueId(newAns.title, 'section'),
+          title: newAns.title.trim(),
+          order: sections.length,
+          hidden: false,
+          pages: []
+        };
+        sections.push(newSection);
+      } else if (ans.action === 'page-rename') {
+        const pick = await selectPage('Rename which page?');
+        if (pick && pick.page) {
+          const renameAns = await prompt({
+            type: 'input',
+            name: 'title',
+            message: 'New page title',
+            initial: pick.page.title,
+            validate: (v) => (v && v.trim().length ? true : 'Required')
+          });
+          usedPageSlugs.delete(pick.page.slug);
+          pick.page.title = renameAns.title.trim();
+          pick.page.slug = uniqueSlug(pick.page.title, pick.page.slug);
+          refreshSlugSet();
+        }
+      } else if (ans.action === 'page-toggle') {
+        const pick = await selectPage('Toggle which page?');
+        if (pick && pick.page) pick.page.hidden = !pick.page.hidden;
+      }
+    }
+  }
+
+  sections.sort((a, b) => a.order - b.order);
+  sections.forEach((section, idx) => (section.order = idx));
+
+  const homepageChoice = async () => {
+    const pageChoices = [];
+    if (detection.readme.exists) {
+      pageChoices.push({ name: 'Use README.md as homepage', value: 'README.md' });
+    }
+    sections
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .forEach((section) => {
+        section.pages.forEach((page) => {
+          pageChoices.push({
+            name: `${section.title} → ${page.title}`,
+            value: page.source
+          });
+        });
+      });
+    pageChoices.push({ name: 'Generate a new intro page…', value: '__new__' });
+
+    if (!pageChoices.length) return '';
+
+    const ans = await prompt({ type: 'select', name: 'home', message: 'Choose homepage source', choices: pageChoices });
+    return ans.home;
+  };
+
+  let homepage = docsConfig.paths.homepage || '';
+  let homepageSource = forcedHome;
+  if (!homepageSource) {
+    if (nonInteractive) {
+      homepageSource = homepage || (detection.readme.exists ? 'README.md' : (sections[0]?.pages[0]?.source || ''));
+    } else {
+      homepageSource = await homepageChoice();
+    }
+  }
+
+  if (homepageSource === '__new__') {
+    const introAnswers = nonInteractive
+      ? { section: 'Welcome', title: 'Introduction', filename: 'index.md' }
+      : await prompt([
+          { type: 'input', name: 'section', message: 'Section name for homepage', initial: 'Welcome' },
+          { type: 'input', name: 'title', message: 'Homepage title', initial: 'Introduction', validate: (v) => (v && v.trim().length ? true : 'Required') },
+          { type: 'input', name: 'filename', message: 'Markdown filename (relative to docs root)', initial: 'index.md', validate: (v) => (v && v.trim().endsWith('.md') ? true : 'Use a .md filename') }
+        ]);
+    const filename = introAnswers.filename.trim().replace(/\\/g, '/');
+    const abs = path.join(detection.docsDir, filename);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    if (!fs.existsSync(abs)) {
+      fs.writeFileSync(abs, `# ${introAnswers.title.trim()}\n\nWelcome to your Docs Reader homepage.\n`, 'utf8');
+      createdFiles.push(abs);
+      console.log(pc.green('create ') + pc.dim(cwdRel(abs)));
+    }
+    const sectionTitle = introAnswers.section.trim() || 'Welcome';
+    const section = {
+      id: uniqueId(sectionTitle, 'section'),
+      title: sectionTitle,
+      order: 0,
+      hidden: false,
+      pages: [
+        {
+          source: toPosix(path.join(docsRoot.replace(/\/$/, ''), filename)),
+          title: introAnswers.title.trim(),
+          slug: uniqueSlug(introAnswers.title.trim(), filename),
+          summary: 'Auto-generated homepage placeholder.',
+          tags: [],
+          hidden: false
+        }
+      ]
+    };
+    sections.unshift(section);
+    sections.forEach((sec, idx) => (sec.order = idx));
+    homepageSource = section.pages[0].source;
+    refreshSlugSet();
+  }
+
+  homepage = homepageSource;
+
+  const frontDefaults = {
+    addIfMissing: docsConfig.frontMatter.addIfMissing,
+    tocDepth: docsConfig.frontMatter.tocDepth,
+    autoSummary: docsConfig.frontMatter.autoSummary
+  };
+
+  const frontAnswers = nonInteractive
+    ? frontDefaults
+    : await prompt([
+        { type: 'confirm', name: 'addIfMissing', message: 'Add front matter when missing?', initial: frontDefaults.addIfMissing },
+        { type: 'confirm', name: 'autoSummary', message: 'Auto-generate summary from first paragraph?', initial: frontDefaults.autoSummary },
+        {
+          type: 'select',
+          name: 'tocDepth',
+          message: 'Default table-of-contents depth',
+          choices: [{ name: '2' }, { name: '3' }, { name: '4' }],
+          initial: String(frontDefaults.tocDepth ?? 2)
+        }
+      ]);
+
+  const forcedTabs = String(opts.docsTabs || '').toLowerCase();
+  let codeTabs = { ...docsConfig.codeTabs };
+  if (forcedTabs) {
+    if (forcedTabs === 'off') codeTabs = { enabled: false, strategy: 'fence', order: docsConfig.codeTabs.order };
+    else if (forcedTabs === 'snippets') codeTabs = { enabled: true, strategy: 'snippets', order: docsConfig.codeTabs.order };
+    else codeTabs = { enabled: true, strategy: 'fence', order: docsConfig.codeTabs.order };
+  } else if (!nonInteractive) {
+    const tabAns = await prompt({ type: 'confirm', name: 'enabled', message: 'Enable language tabs for code fences?', initial: codeTabs.enabled });
+    codeTabs.enabled = tabAns.enabled;
+    if (codeTabs.enabled) {
+      const strategyAns = await prompt({
+        type: 'select',
+        name: 'strategy',
+        message: 'Group tabs by…',
+        choices: [
+          { name: 'Fence info string (```ts group=install)' , value: 'fence' },
+          { name: 'Snippets folder mapping', value: 'snippets' }
+        ],
+        initial: codeTabs.strategy === 'snippets' ? 'snippets' : 'fence'
+      });
+      codeTabs.strategy = strategyAns.strategy;
+      const orderAns = await prompt({
+        type: 'input',
+        name: 'order',
+        message: 'Default language order (comma-separated, e.g., js,ts,bash,python)',
+        initial: (codeTabs.order || []).join(',') || 'js,ts,bash'
+      });
+      const parsedOrder = parseList(orderAns.order);
+      if (parsedOrder.length) codeTabs.order = parsedOrder;
+    } else {
+      codeTabs.strategy = 'fence';
+    }
+  }
+
+  const forcedSearch = String(opts.docsSearch || '').toLowerCase();
+  const forcedFields = parseList(opts.docsFields);
+  let search = { ...docsConfig.search };
+  if (forcedSearch) {
+    if (forcedSearch === 'none') search = { ...search, enabled: false, engine: 'none' };
+    else search = { ...search, enabled: true, engine: forcedSearch === 'fuse' ? 'fuse' : 'light' };
+  }
+  if (forcedFields.length) {
+    search.fields = forcedFields;
+  }
+
+  if (!nonInteractive && !forcedSearch) {
+    const searchAns = await prompt({ type: 'confirm', name: 'enabled', message: 'Enable search?', initial: search.enabled });
+    search.enabled = searchAns.enabled;
+    if (search.enabled) {
+      const engineAns = await prompt({
+        type: 'select',
+        name: 'engine',
+        message: 'Search indexer',
+        choices: [
+          { name: 'Lightweight keywords', value: 'light' },
+          { name: 'Fuse.js (fuzzy)', value: 'fuse' }
+        ],
+        initial: search.engine === 'fuse' ? 'fuse' : 'light'
+      });
+      search.engine = engineAns.engine;
+      const fieldAns = await prompt({
+        type: 'multiselect',
+        name: 'fields',
+        message: 'Fields to index',
+        choices: [
+          { name: 'Title', value: 'title', initial: search.fields.includes('title') },
+          { name: 'Headings', value: 'headings', initial: search.fields.includes('headings') },
+          { name: 'Body', value: 'body', initial: search.fields.includes('body') },
+          { name: 'Summary', value: 'summary', initial: search.fields.includes('summary') },
+          { name: 'Tags', value: 'tags', initial: search.fields.includes('tags') }
+        ]
+      });
+      search.fields = fieldAns.fields && fieldAns.fields.length ? fieldAns.fields : search.fields;
+      const excludeChoices = sections.map((section) => ({
+        name: section.title,
+        value: section.id,
+        initial: search.excludeSections?.includes(section.id)
+      }));
+      if (excludeChoices.length) {
+        const excludeAns = await prompt({ type: 'multiselect', name: 'exclude', message: 'Exclude sections from search?', choices: excludeChoices });
+        search.excludeSections = excludeAns.exclude || [];
+      }
+    } else {
+      search.engine = 'none';
+    }
+  }
+
+  const forcedAlt = String(opts.docsAltPolicy || '').toLowerCase();
+  let assets = { ...docsConfig.assets };
+  if (forcedAlt) {
+    if (['require', 'warn', 'auto'].includes(forcedAlt)) assets.altPolicy = forcedAlt;
+  }
+
+  if (!nonInteractive) {
+    const assetAns = await prompt({ type: 'confirm', name: 'optimize', message: 'Optimize images during generation?', initial: assets.optimize });
+    assets.optimize = assetAns.optimize;
+    if (assets.optimize) {
+      const sizeAns = await prompt({
+        type: 'multiselect',
+        name: 'sizes',
+        message: 'Image renditions',
+        choices: [
+          { name: '1x', value: '1x', initial: assets.sizes.includes('1x') },
+          { name: '2x', value: '2x', initial: assets.sizes.includes('2x') },
+          { name: 'webp', value: 'webp', initial: assets.sizes.includes('webp') }
+        ]
+      });
+      assets.sizes = sizeAns.sizes && sizeAns.sizes.length ? sizeAns.sizes : assets.sizes;
+    }
+    const altAns = await prompt({
+      type: 'select',
+      name: 'policy',
+      message: 'Alt text policy',
+      choices: [
+        { name: 'Require alt text (block missing)', value: 'require' },
+        { name: 'Warn when missing', value: 'warn' },
+        { name: 'Auto from filename when missing', value: 'auto' }
+      ],
+      initial: assets.altPolicy
+    });
+    assets.altPolicy = altAns.policy;
+  } else if (forcedAlt) {
+    assets.altPolicy = forcedAlt;
+  }
+
+  const worksModes = new Set(parseList(opts.docsWorks).map((v) => v.toLowerCase()));
+  const worksConfig = { ...docsConfig.works };
+  if (worksModes.has('skip')) {
+    worksConfig.includeInNav = false;
+    worksConfig.includeOnHome = false;
+  }
+  if (worksModes.has('nav')) worksConfig.includeInNav = true;
+  if (worksModes.has('home')) worksConfig.includeOnHome = true;
+  if (worksModes.has('internal')) worksConfig.linkMode = 'internal';
+  if (worksModes.has('external')) worksConfig.linkMode = 'external';
+  if (worksModes.has('auto')) worksConfig.linkMode = 'auto';
+
+  if (!nonInteractive && !worksModes.size) {
+    if (detection.works.count) {
+      const worksAns = await prompt({ type: 'confirm', name: 'nav', message: 'Add Works section to left nav?', initial: worksConfig.includeInNav });
+      worksConfig.includeInNav = worksAns.nav;
+      const homeAns = await prompt({ type: 'confirm', name: 'home', message: 'Show Works highlights on homepage hero?', initial: worksConfig.includeOnHome });
+      worksConfig.includeOnHome = homeAns.home;
+      const modeAns = await prompt({
+        type: 'select',
+        name: 'mode',
+        message: 'Works links should open…',
+        choices: [
+          { name: 'Auto (prefer internal pages)', value: 'auto' },
+          { name: 'Internal docs pages', value: 'internal' },
+          { name: 'External URLs', value: 'external' }
+        ],
+        initial: worksConfig.linkMode || 'auto'
+      });
+      worksConfig.linkMode = modeAns.mode;
+    } else {
+      const linkAns = await prompt({ type: 'confirm', name: 'link', message: 'Link an existing works JSON later?', initial: false });
+      if (!linkAns.link) {
+        worksConfig.includeInNav = false;
+        worksConfig.includeOnHome = false;
+      }
+    }
+  }
+
+  if (worksConfig.includeInNav) {
+    const existingWorksSection = sections.find((section) => section.id === 'works');
+    if (!existingWorksSection) {
+      sections.push({
+        id: 'works',
+        title: 'Works',
+        order: sections.length,
+        hidden: false,
+        pages: [
+          {
+            source: 'works::auto',
+            title: 'Works',
+            slug: uniqueSlug('works', 'works'),
+            summary: 'Auto-generated works listing.',
+            tags: [],
+            hidden: false
+          }
+        ]
+      });
+      refreshSlugSet();
+    }
+  } else {
+    sections = sections.filter((section) => section.id !== 'works');
+    refreshSlugSet();
+  }
+
+  sections.sort((a, b) => a.order - b.order);
+  sections.forEach((section, idx) => (section.order = idx));
+
+  const pathAnswer = nonInteractive
+    ? { root: docsRoot }
+    : await prompt({ type: 'input', name: 'root', message: 'Content root (relative path)', initial: docsRoot });
+
+  docsRoot = ensureDocsRoot(pathAnswer.root || docsRoot);
+
+  const summary = {
+    site: identityAnswers,
+    sources: { globs, includeReadme },
+    frontMatter: {
+      addIfMissing: frontAnswers.addIfMissing,
+      tocDepth: Number(frontAnswers.tocDepth || frontDefaults.tocDepth || 2),
+      autoSummary: frontAnswers.autoSummary
+    },
+    codeTabs,
+    assets,
+    search,
+    works: worksConfig,
+    paths: { root: docsRoot, homepage }
+  };
+
+  console.log('');
+  console.log(pc.bold('Summary'));
+  console.log(`  • Root: ${pc.cyan(summary.paths.root)}`);
+  console.log(`  • Homepage: ${summary.paths.homepage || '(auto)'}`);
+  console.log(`  • Sources: ${summary.sources.globs.join(', ') || '(none)'}`);
+  console.log(`  • Include README sections: ${summary.sources.includeReadme ? 'yes' : 'no'}`);
+  console.log(`  • Sections: ${sections.length}`);
+  console.log(`  • Search: ${summary.search.enabled ? summary.search.engine : 'disabled'}`);
+  console.log(`  • Works in nav: ${summary.works.includeInNav ? 'yes' : 'no'}, homepage hero: ${summary.works.includeOnHome ? 'yes' : 'no'}`);
+  console.log('');
+
+  if (!nonInteractive) {
+    const confirm = await prompt({ type: 'confirm', name: 'write', message: 'Write settings to .prae/docs.json?', initial: true });
+    if (!confirm.write) {
+      console.log(pc.yellow('Docs wizard cancelled — nothing written.'));
+      abort('cancelled');
+    }
+  } else {
+    console.log(pc.gray('--yes flag detected → writing configuration without prompt.'));
+  }
+
+  const configToSave = {
+    site: {
+      title: identityAnswers.title,
+      subtitle: identityAnswers.subtitle,
+      description: identityAnswers.description,
+      accent: identityAnswers.accent
+    },
+    sources: summary.sources,
+    ia: sections.map((section) => ({
+      id: section.id,
+      title: section.title,
+      order: section.order,
+      hidden: !!section.hidden,
+      pages: section.pages.map((page) => ({
+        source: page.source,
+        title: page.title,
+        slug: page.slug,
+        summary: page.summary,
+        tags: Array.isArray(page.tags) ? page.tags : [],
+        hidden: !!page.hidden
+      }))
+    })),
+    frontMatter: summary.frontMatter,
+    codeTabs: summary.codeTabs,
+    assets: summary.assets,
+    search: summary.search,
+    works: summary.works,
+    paths: summary.paths
+  };
+
+  saveDocsConfig(configToSave);
+  console.log(pc.green('write ') + pc.dim(cwdRel(DOCS_CONFIG_PATH)));
+  if (createdFiles.length) {
+    console.log(pc.gray(`Created ${createdFiles.length} starter file${createdFiles.length === 1 ? '' : 's'}.`));
+  }
+
+  return { config: configToSave, createdFiles };
+}
+
+if (!program.commands.some(cmd => cmd.name() === 'docs')) {
+  program
+    .command('docs')
+    .description('Docs Reader wizard (content IA, search, assets, and Works integration)')
+    .option('--docs-root <dir>', 'Docs content root (default docs/)', '')
+    .option('--docs-scan <globs>', 'Comma-separated markdown globs to include', '')
+    .option('--docs-home <source>', 'Homepage source (README.md, file path, or section slug)', '')
+    .option('--docs-works <modes>', 'Works integration (nav,home,skip,auto,internal,external)', '')
+    .option('--docs-search <engine>', 'Search engine (light|fuse|none)', '')
+    .option('--docs-fields <fields>', 'Comma-separated search fields', '')
+    .option('--docs-alt-policy <policy>', 'Alt text policy (require|warn|auto)', '')
+    .option('--docs-tabs <mode>', 'Code tabs mode (off|fence|snippets)', '')
+    .option('--yes', 'Accept defaults and write config without prompts', false)
+    .action(async (opts) => {
+      try {
+        await runDocsWizard(opts, { autoTriggered: false });
+      } catch (err) {
+        if (err && err.message === 'abort') return;
+        throw err;
+      }
+    });
+}
+
 /* ------------------ add / wizard ------------------ */
 program
   .command('add')
