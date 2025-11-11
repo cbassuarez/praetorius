@@ -1,5 +1,16 @@
 import { normalizeWork } from './work-model.js';
 
+(function ensureFavicon(){
+  if (typeof document === 'undefined') return;
+  const head = document.head || document.querySelector('head');
+  if (!head || head.querySelector('link[rel="icon"]')) return;
+  const link = document.createElement('link');
+  link.setAttribute('rel', 'icon');
+  link.setAttribute('type', 'image/svg+xml');
+  link.setAttribute('href', 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Ccircle cx="8" cy="8" r="7" fill="%23f97316"/%3E%3C/svg%3E');
+  head.appendChild(link);
+})();
+
 // --- Theme preboot (moved from template.html) -------------------------------
 // Applies saved light/dark theme ASAP and sets color-scheme to avoid FOUC.
 // Safe alongside the later applyTheme(readTheme()) in initWorksConsole.
@@ -46,7 +57,7 @@ export function initWorksConsole() {
     1: {
       id: 1, slug: 'soundnoisemusic',
       title: 'WORK 1 — String Quartet No. 2 “SOUNDNOISEMUSIC”',
-      one: 'A through-composed/indeterminate quartet that alternates fixed score, structured mischief, and noise permissions.',
+      oneliner: 'A through-composed/indeterminate quartet that alternates fixed score, structured mischief, and noise permissions.',
       cues: [{ label:'@10:30', t: time('10:30') }],
       audioId: 'wc-a1',
       pdf: 'https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/STRING%20QUARTET%20NO.%202%20_soundnoisemusic_%20-%20Score-min.pdf',
@@ -67,7 +78,7 @@ export function initWorksConsole() {
     2: {
       id: 2, slug: 'lux-nova',
       title: 'WORK 2 — Organum Quadruplum “Lux Nova”',
-      one: 'A stained-glass acoustics study: bowed dalle-de-verre slab transduced into a ring of pianos—polyphony by distance rather than shared air.',
+      oneliner: 'A stained-glass acoustics study: bowed dalle-de-verre slab transduced into a ring of pianos—polyphony by distance rather than shared air.',
       cues: [{ label:'@7:45', t: time('7:45') }, { label:'@9:15', t: time('9:15') }],
       audioId: 'wc-a2',
       pdf: null,
@@ -83,7 +94,7 @@ export function initWorksConsole() {
     3: {
       id: 3, slug: 'amplifications-marimbaideefixe',
       title: 'WORK 3 — AMPLIFICATIONS I · MARIMBAideefixe',
-      one: 'Two prepared pianos as resonators for a 5.0-octave marimba: sympathetic “ghost ensemble” via transduction.',
+      oneliner: 'Two prepared pianos as resonators for a 5.0-octave marimba: sympathetic “ghost ensemble” via transduction.',
       cues: [{ label:'@5:49', t: time('5:49') }],
       audioId: 'wc-a3',
       pdf: 'https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/AMPLIFICATIONS%201.%20MARIMBAideefixe.pdf',

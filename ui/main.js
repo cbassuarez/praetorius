@@ -1,4 +1,15 @@
-import { normalizeWork } from '../src/work-model.js';
+import { normalizeWork } from './lib/work-normalize.js';
+
+(function ensureFavicon(){
+  if (typeof document === 'undefined') return;
+  const head = document.head || document.querySelector('head');
+  if (!head || head.querySelector('link[rel="icon"]')) return;
+  const link = document.createElement('link');
+  link.setAttribute('rel', 'icon');
+  link.setAttribute('type', 'image/svg+xml');
+  link.setAttribute('href', 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Ccircle cx="8" cy="8" r="7" fill="%23f97316"/%3E%3C/svg%3E');
+  head.appendChild(link);
+})();
 
 // --- Theme preboot (moved from template.html) -------------------------------
 // Applies saved light/dark theme ASAP and sets color-scheme to avoid FOUC.
