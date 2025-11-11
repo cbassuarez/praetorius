@@ -34,6 +34,7 @@ export function initWorksConsole() {
   const out = $('#works-console .wc-output');
   const input = $('#wc-cmd');
   const form = $('#works-console .wc-input');
+  const consoleRoot = $('#works-console');
 
   /* ===========================
      Hard-coded works (inline)
@@ -92,6 +93,14 @@ export function initWorksConsole() {
       ]
     }
   };
+
+  Object.values(works).forEach((work) => {
+    if (!Array.isArray(work.cues)) {
+      work.cues = [];
+      return;
+    }
+    work.cues = work.cues.map(normalizeCue);
+  });
 
 // === PageFollow maps (printed page numbers) ===
 // Tip: if you later want page 1 to start at audio 0:00 (for W1), set mediaOffsetSec to -30.
@@ -200,14 +209,31 @@ window.addEventListener('load', ()=>{ out.scrollTop = 0; }, { once:true });
   });
 
   /* Click-to-run actions */
-  out.addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-cmd]');
-  if(!b) return;
-  bootDone = true;            // <— add this line
-  const cmd = b.getAttribute('data-cmd');
-  echo(cmd, true);
-  run(cmd);
-});
+  if (consoleRoot) {
+    consoleRoot.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button || !consoleRoot.contains(button)) return;
+
+      if (button.classList.contains('js-play')) {
+        const index = getWorkIndexForButton(button);
+        if (index == null) return;
+        runCommand(`play ${index}`);
+        return;
+      }
+
+      if (button.classList.contains('js-playat')) {
+        const index = getWorkIndexForButton(button);
+        if (index == null) return;
+        const seconds = ensureCueSeconds(button);
+        runCommand(`play ${index} ${seconds}`);
+        return;
+      }
+
+      const cmd = button.getAttribute('data-cmd');
+      if (!cmd) return;
+      runCommand(cmd);
+    });
+  }
 
 
   /* ===== Command router ===== */
@@ -321,18 +347,21 @@ function attachPageFollow(slug, audio){
 
   function list(isBoot=false){
     section(' ');
-    const rows = Object.values(works).map(w => {
-      const row = document.createElement('div'); row.className='row';
+    const rows = Object.values(works).map((w, idx) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const workIndex = workIndexNumber(w, idx);
+      row.dataset.workIndex = String(workIndex);
       row.appendChild(block([
         bold(`[${w.id}] ${w.title}`),
         span(w.one,'one'),
         actRow([
           btn(`open ${w.id}`,'Open'),
-          ...w.cues.map(c => btn(`play ${w.id} ${formatTime(c.t)}`, `Play ${c.label}`)),
+          ...createPlayButtons(w, workIndex),
           btn(`copy ${w.id}`,'Copy URL'),
           ...(w.pdf ? [btn(`pdf ${w.id}`,'PDF')] : [])
-        ])
-      ]));
+        ], workIndex)
+      ], workIndex));
       return row;
     });
 
@@ -347,10 +376,10 @@ function attachPageFollow(slug, audio){
     section(w.title);
     w.openNote.forEach((p,i)=> setTimeout(()=> appendLine(p,'',true), i*18));
     const acts = actRow([
-      ...w.cues.map(c => btn(`play ${w.id} ${formatTime(c.t)}`, `Play ${c.label}`)),
+      ...createPlayButtons(w, w.id),
       btn(`copy ${w.id}`,'Copy URL'),
       ...(w.pdf ? [btn(`pdf ${w.id}`,'PDF')] : [])
-    ]);
+    ], w.id);
     out.appendChild(acts); reveal(acts); scrollBottom();
   }
 
@@ -738,25 +767,210 @@ function normalizePdfUrl(u){
 
   function divider(){ const d = el('div','divider'); out.appendChild(d); }
 
-  function btn(cmd, label){
+  function btn(cmd, label, options = {}){
     const b = document.createElement('button');
-    b.type='button'; b.className = 'btn';
-    b.setAttribute('data-cmd', cmd);
-    b.setAttribute('aria-label', `${label} (${cmd})`);
+    b.type = 'button';
+    const extra = options.className ? ` ${options.className}` : '';
+    b.className = `btn${extra}`;
+    if (cmd) {
+      b.setAttribute('data-cmd', cmd);
+    }
+    const aria = options.ariaLabel || (cmd ? `${label} (${cmd})` : label);
+    if (aria) b.setAttribute('aria-label', aria);
     b.textContent = label;
+    const data = options.dataset || {};
+    Object.entries(data).forEach(([key, value]) => {
+      if (value == null) return;
+      b.dataset[key] = String(value);
+    });
     return b;
   }
 
-  function actRow(children){
+  function actRow(children, workIndex){
     const r = el('div','actions');
+    if (workIndex != null) r.dataset.workIndex = String(workIndex);
     children.forEach(c => r.appendChild(c));
     return r;
   }
 
-  function block(nodes){
+  function block(nodes, workIndex){
     const b = el('div','blk');
+    if (workIndex != null) b.dataset.workIndex = String(workIndex);
     nodes.forEach(n => b.appendChild(n));
     return b;
+  }
+
+  function workIndexNumber(work, fallbackIdx){
+    const raw = Number(work?.id);
+    if (Number.isInteger(raw) && raw >= 1) return raw;
+    return Number.isInteger(fallbackIdx) ? (fallbackIdx + 1) : 1;
+  }
+
+  function createPlayButtons(work, workIndex){
+    const buttons = [createPlayButton(workIndex)];
+    const cues = Array.isArray(work?.cues) ? work.cues : [];
+    cues.forEach((cue) => {
+      buttons.push(createCueButton(cue, workIndex));
+    });
+    return buttons;
+  }
+
+  function createPlayButton(workIndex){
+    return btn(null, 'Play', {
+      className: 'js-play',
+      ariaLabel: `Play work ${workIndex}`,
+      dataset: { workIndex, seconds: 0 }
+    });
+  }
+
+  function createCueButton(cue, workIndex){
+    const dataset = { workIndex };
+    Object.assign(dataset, cueDatasetForButton(cue));
+    if (dataset.seconds != null) {
+      const coerced = Math.max(0, Math.floor(Number(dataset.seconds)));
+      dataset.seconds = coerced;
+    }
+    const seconds = Number(dataset.seconds);
+    const safeSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : null;
+    const labelSuffix = (typeof cue?.label === 'string' && cue.label.trim())
+      ? cue.label.trim()
+      : (safeSeconds != null ? `@${formatTime(Math.floor(safeSeconds))}` : '@0:00');
+    return btn(null, `Play ${labelSuffix}`, {
+      className: 'js-playat',
+      ariaLabel: `Play ${labelSuffix}`,
+      dataset
+    });
+  }
+
+  function cueDatasetForButton(cue){
+    const dataset = {};
+    const sources = [cue?.t, cue?.seconds, cue?.at, cue?.time];
+    let mmssCandidate = '';
+    for (const value of sources){
+      if (value == null || value === '') continue;
+      const secs = parseCueSecondsValue(value);
+      if (Number.isFinite(secs)){
+        dataset.seconds = Math.max(0, Math.floor(secs));
+        return dataset;
+      }
+      if (!mmssCandidate){
+        const mmss = canonicalMmss(value);
+        if (mmss) mmssCandidate = mmss;
+      }
+    }
+    if (mmssCandidate) dataset.mmss = mmssCandidate;
+    return dataset;
+  }
+
+  function normalizeCue(input){
+    const cue = (typeof input === 'object' && input !== null) ? { ...input } : { at: input };
+    const candidates = [cue.t, cue.seconds, cue.at, cue.time];
+    let seconds = NaN;
+    for (const value of candidates){
+      seconds = parseCueSecondsValue(value);
+      if (Number.isFinite(seconds)) break;
+    }
+    if (Number.isFinite(seconds)){
+      const safe = Math.max(0, seconds);
+      cue.t = safe;
+      cue.seconds = safe;
+      if (!cue.label || !String(cue.label).trim()){
+        cue.label = `@${formatTime(Math.floor(safe))}`;
+      }
+    }
+    return cue;
+  }
+
+  function parseCueSecondsValue(value){
+    if (value == null || value === '') return NaN;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+    const str = String(value).trim();
+    if (!str) return NaN;
+    if (/^-?\d+$/.test(str)) return Number(str);
+    const match = str.match(/^(-?\d+):([0-5]?\d)$/);
+    if (!match) return NaN;
+    const minutes = Number(match[1]);
+    const seconds = Number(match[2]);
+    if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) return NaN;
+    return minutes * 60 + seconds;
+  }
+
+  function canonicalMmss(value){
+    if (value == null || value === '') return '';
+    const str = String(value).trim();
+    const match = str.match(/^(\d+):([0-5]?\d)$/);
+    if (!match) return '';
+    const minutes = String(Number(match[1]));
+    const seconds = match[2].padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  }
+
+  function getWorkIndexForButton(button){
+    if (!button) return null;
+    if (button.dataset.workIndex != null){
+      const parsed = Number(button.dataset.workIndex);
+      if (Number.isInteger(parsed) && parsed >= 1) return parsed;
+      console.warn('Invalid data-work-index on console action', button);
+      return null;
+    }
+    const owner = button.closest('[data-work-index]');
+    if (owner?.dataset?.workIndex != null){
+      const parsed = Number(owner.dataset.workIndex);
+      if (Number.isInteger(parsed) && parsed >= 1) return parsed;
+      console.warn('Invalid data-work-index on console action', owner);
+      return null;
+    }
+    console.error('Missing data-work-index on console action', button);
+    return null;
+  }
+
+  function secondsFromButton(button){
+    if (!button) return NaN;
+    const rawSeconds = button.dataset.seconds;
+    if (rawSeconds != null && rawSeconds !== ''){
+      const parsed = Number(rawSeconds);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    const mmss = button.dataset.mmss;
+    if (mmss != null && mmss !== ''){
+      return parseMmss(mmss);
+    }
+    return NaN;
+  }
+
+  function parseMmss(value){
+    if (value == null || value === '') return NaN;
+    const str = String(value).trim();
+    const match = str.match(/^(-?\d+):([0-5]?\d)$/);
+    if (!match) return NaN;
+    const minutes = Number(match[1]);
+    const seconds = Number(match[2]);
+    if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) return NaN;
+    return minutes * 60 + seconds;
+  }
+
+  function ensureCueSeconds(button){
+    const raw = secondsFromButton(button);
+    let seconds = Number.isFinite(raw) ? raw : NaN;
+    if (!Number.isFinite(seconds) || seconds < 0){
+      if (!button.dataset.warnedInvalid){
+        console.warn('Invalid cue time on Play@ button; defaulting to 0.', button);
+        button.dataset.warnedInvalid = '1';
+      }
+      seconds = 0;
+    }
+    const safe = Math.max(0, Math.floor(seconds));
+    button.dataset.seconds = String(safe);
+    delete button.dataset.mmss;
+    return safe;
+  }
+
+  function runCommand(raw){
+    const command = String(raw || '').trim();
+    if (!command) return;
+    bootDone = true;
+    echo(command, true);
+    run(command);
   }
 
   function bold(text){
