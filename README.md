@@ -1,172 +1,217 @@
-# Praetorius — portfolio-first SPA generator
+# Praetorius — Interactive Works Console
 
-Praetorius — portfolio-first SPA generator. Render your works list, pick a skin, ship.
+![npm](https://img.shields.io/npm/v/praetorius?label=praetorius\&logo=npm)
+![license](https://img.shields.io/badge/license-MIT-black)
+![install](https://img.shields.io/badge/install-npm%20i%20-g%20praetorius)
 
-## Table of contents
-- [Key principles](#key-principles)
-- [Quick Start](#quick-start)
-- [Skins overview](#skins-overview)
-- [Works list contract (PRAEworks)](#works-list-contract-praeworks)
-- [Theming & Tokens](#theming--tokens)
-- [PDF + HUD](#pdf--hud)
-- [Accessibility](#accessibility)
-- [CLI reference (concise)](#cli-reference-concise)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
+<!-- (Optional) add a Node badge if you want to declare a minimum runtime -->
 
-## Key principles
-- **Single source of truth:** `window.PRAE.works` drives every skin. No mock data.
-- **Skins are views:** each skin renders the same works list and HUD/PDF primitives.
-- **PDF + HUD glue:** the global HUD and PDF pane stay wired across skins.
-- **Theming:** light/dark via CSS tokens; ESM + `defer`; no WAAPI claims.
-- **Accessibility:** keyboard/touch parity, ≥44px targets, reduced-motion respected.
+**An interactive, artist-made composition portfolio with robust PDF and playback support.**
 
-## Quick Start
-### Requirements
-- Node.js ≥ 18.17 (per [`package.json`](package.json)).
+Praetorius is a small, disciplined toolchain for composers, artists, educators, festivals, and universities to publish “score-centric” works pages: synchronized audio, score PDFs with **page-follow** (auto-snapping to the current printed page), deep links, and clean UIs that drop into Squarespace (or any site builder) via a single code block. 
 
-### Install
+> the score PDF *snaps* to the correct printed page while audio plays, so evaluators aren’t lost—and you aren’t judged on secondary characteristics.
+
+---
+
+## Why it exists
+
+Presenting—or judging—score-based works on the web often collapses into: (1) the evaluator doesn’t know the score; (2) they get lost between time and page; (3) judgments drift to secondary aesthetics. Praetorius restores primary evidence: *the work as score + sound*, tightly synchronized.
+
+---
+
+## What it does
+
+* **PDF page-follow**: printed page ↔︎ media-time mapping.
+* **Works set authoring**: a wizard writes your DB; a generator emits paste-ready assets.
+* **Squarespace-friendly**: paste one snippet or host the assets—no theme collisions. 
+* **Deep links**: link straight to a work, with an optional start time.
+* **Light/Dark**: strict tokens for predictable contrast.
+
+**Non-goals:** hosting your media, analytics, auth. You own your assets; Praetorius orchestrates them.
+
+---
+
+## Quick start
+
+### 1) Install
+
 ```bash
+# Global (recommended for authoring)
 npm i -g praetorius
+
+# Or one-off
+npx praetorius@latest --help
 ```
 
-### Generate
+### 2) Initialize a project
+
 ```bash
-prae generate
-prae generate --skin vite-breeze
-prae generate --skin docs-reader
-prae generate --skin cards-tabs
-prae generate --skin kiosk
+mkdir my-portfolio && cd my-portfolio
+prae init --out dist
 ```
 
-### Outputs
-- `dist/script.js` and `dist/styles.css` mirror your `window.PRAE.works` data.
-- UI bundles land beside them: `dist/app.js` plus `dist/app.css` (or `dist/style.css` for `docs-reader`).
-- `dist/index.html` (or your specified template) links the generated assets.
-- Toggle light/dark from the shared button `#wc-theme-toggle` embedded in each skin.
+This seeds `.prae/works.json` (if missing) and a minimal `dist/` scaffold you can paste or host.
 
-## Skins overview
-All skins expose Play / PDF / Copy / Open actions that update the global HUD and PDF pane consistently.
+### 3) Add works (guided)
 
-### [vite-breeze](ui/skins/vite-breeze/)
-- Liquid Glass split layout with works on the left and a PDF pane on the right.
-- HUD stays pinned at the top with transport + now playing metadata.
-- Works cards emphasize imagery, cues, and quick actions.
-- Built-in PDF pane follows playback using your page maps.
-- Use for: elegant web portfolios with on-page score viewing.
-
-### [docs-reader](ui/skins/docs-reader/) (alias: `docs`)
-- Spacious documentation shell with left navigation and right outline.
-- Search focuses the input on `/` and highlights matches inline.
-- Code fences include copy affordances and optional language tabs.
-- Outline syncs to scroll and the works hero surfaces featured projects.
-- Use for: tutorials and "how it works" narratives about your works.
-
-### [cards-tabs](ui/skins/cards-tabs/) (alias: `dashboard`)
-- Dashboard skin: cards summarize works; tabs reveal cues, playback, and score panes.
-- Right-side detail rail keeps media controls and PDF together.
-- Global HUD + PDF toggles mirror the card selection.
-- Supports deep-linking tabs for quick sharing of focus views.
-- Use for: at-a-glance browsing with focused detail panels.
-
-### [kiosk](ui/skins/kiosk/) (alias: `presentation`)
-- Oversized tiles and buttons tuned for touch screens and gallery installs.
-- Minimal chrome keeps attention on works imagery and cues.
-- One-tap fullscreen toggle and swipe-friendly controls.
-- HUD and PDF buttons stretch to ≥44px for kiosks.
-- Use for: live demos, touch-first presentations, and installations.
-
-## Works list contract (PRAE.works)
-Skins read the works array seeded via `window.PRAE.works`. Common fields:
-- `id` (integer identifier).
-- `slug` (stable string used for hashes and lookup).
-- `title` (display name).
-- `one` (legacy single-line summary alias; kept in sync for compatibility).
-- `oneliner` (optional) — single-line (~160 char) blurb for compact/tile views. Markdown is stripped; newlines collapse. Legacy `one` is accepted on ingest and normalized to this field.
-- `description` (optional) — Markdown body for program notes, shown in detailed views.
-- `cues` (optional) — array of `{ t, label }` where `t` is seconds.
-- `audio` (optional) — URL or `null` for playback.
-- `pdf` (optional) — URL or `null` for score viewing.
-- `score` (optional) — include `pdfStartPage`, `mediaOffsetSec`, `pageMap[]`, and optional
-  `pdfDelta` for page-follow.
-
-Praetorius normalizes each work via `normalizeWork` to expose `onelinerEffective` and `descriptionEffective`.
-Supplying both `oneliner` and `one` is tolerated; the newer field wins and a warning is emitted so you can clean up legacy data.
-Skins always read these computed fields, so legacy projects that only provide `description` render identically to earlier releases.
-
-Run `prae validate` anytime to confirm schema compliance and catch narrative warnings (e.g., long
-oneliners or accidental line breaks).
-
-Deep links: some skins sync selection and tabs into the URL hash (e.g.,
-`#work=<id>&tab=playback`). The exact keys are skin-specific—inspect each skin template when you
-need to wire custom routing.
-
-## Theming & Tokens
-- `praeApplyTheme(mode, opts)` and `praeCurrentTheme()` are exposed globally by the skins.
-- Body/theme tokens live on `body[data-theme]` or the equivalent class; generated CSS
-  (`dist/app.css` or `dist/style.css`) applies light/dark palettes.
-- Toggle via the shared `#wc-theme-toggle` control; skins call into the helpers so theme changes
-  propagate consistently.
-- Animations rely on CSS transitions only. Reduced-motion preferences short-circuit transitions.
-- ESM bundles ship with `<script type="module" defer>`; no Web Animations API assumptions.
-
-## PDF + HUD
-- The global HUD (`#wc-hud`) announces the current work, progress bar, and transport state.
-- The PDF pane reuses a single viewer element so skins avoid duplicating embeds.
-- Mozilla's PDF.js viewer is supported when you supply a compatible URL; fallback iframes
-  respect the same IDs.
-- Skins wire the HUD buttons to the shared playback APIs exposed in `window.PRAE`.
-- Page-follow maps derived from your works JSON drive automatic page jumps.
-
-## Accessibility
-- Keyboard support covers navigation, playback controls, and dialog toggles across skins.
-- Tabs and accordions expose proper ARIA attributes (e.g., `role="tablist"`, `aria-selected`).
-- Touch targets meet or exceed 44px sizing—including kiosk HUD buttons.
-- Contrast tokens are tuned for light and dark variants; check your accent colors for WCAG compliance.
-- Motion-sensitive flows respect `prefers-reduced-motion` and disable nonessential transitions.
-
-## CLI reference (concise)
 ```bash
-prae generate
-prae generate --skin <name>
-prae skin list
-prae validate
+prae add
+# Answer prompts for title, one-liner, audio, pdf, cues, and (optionally) page-follow mapping
 ```
 
-Supported skin flags: `vite-breeze`, `docs-reader` (`docs`), `cards-tabs` (`dashboard`),
-`kiosk` (`presentation`).
+### 4) Generate assets
 
-Examples:
 ```bash
-# Generate with default skin
-prae generate
+# default skin = console
+prae generate --out dist
 
-# Generate with a specific skin
-prae generate --skin vite-breeze
-prae generate --skin docs-reader
-prae generate --skin cards-tabs
-prae generate --skin kiosk
+# pick a specific skin
+prae generate --skin console       --out dist
+prae generate --skin vite-breeze   --out dist
+prae generate --skin docs-reader   --out dist
+prae generate --skin cards-tabs    --out dist
+prae generate --skin kiosk         --out dist
+prae generate --skin typefolio     --out dist
+prae generate --skin typescatter   --out dist
 
-# Tip: deep-link a work or tab in supported skins by URL hash
-# (actual hash keys depend on the skin; see README)
+# single pasteable snippet (for a Code block)
+prae generate --embed > embed.html
 ```
+
+### 5) Integrate in your site
+
+* **Squarespace (and similar):** add a Code block and paste the embed *or* include the generated JS/CSS you’re hosting. This is the intended workflow; it avoids theme collisions. 
+* **Static/JAMStack (any host):** copy `dist/*` and reference in your template.
+* **PDF viewing:** use the PDF.js viewer (`?file=<url>`) for reliable page navigation; Drive “preview” iframes don’t expose page control—see PDF Page-Follow below. 
+
+---
+
+## Data model (`.prae/works.json`)
+
+Minimal, human-readable schema:
+
+```json
+{
+  "version": 1,
+  "works": [
+    {
+      "id": 1,
+      "slug": "soundnoisemusic",
+      "title": "String Quartet No. 2 — SOUNDNOISEMUSIC",
+      "one": "A through-composed/indeterminate quartet…",
+      "audio": "https://…/audio.mp3",
+      "pdf": "https://…/score.pdf",
+      "cues": [ { "label": "@10:30", "t": 630 } ],
+      "score": {
+        "pdfStartPage": 11,
+        "mediaOffsetSec": 0,
+        "pageMap": [
+          { "at": "0:30", "page": 1 },
+          { "at": "1:00", "page": 2 }
+        ],
+        "pdfDelta": 0
+      }
+    }
+  ]
+}
+```
+
+**Notes**
+
+* `id` (int), `slug`, `title`, `one` (short one-liner).
+* `audio` (URL or null), `pdf` (URL or null).
+* `cues[]` may be `{ label, t }` (seconds) or `@mm:ss`.
+* `score` holds printed→PDF mapping: see next section.
+
+---
+
+## PDF Page-Follow (concept & practice)
+
+**Goal:** While audio plays, the PDF viewer jumps to the correct printed page.
+
+* `pdfStartPage`: the PDF page number that corresponds to printed page **1**.
+* `mediaOffsetSec`: if the recording’s bar 1 doesn’t start at 0:00 (pre-roll, announcements), offset can be positive *or negative*.
+* `pageMap`: waypoints like `{ at: "7:49", page: 10 }` defined in printed page numbers.
+* Optional `pdfDelta`: adjust all computed PDF page numbers by a constant.
+
+---
+
+## Skins
+
+Praetorius renders the same data across different skins. Choose one at generate time with `--skin`. (You can regenerate in another skin at any time—your data stays the same.)
+
+| Skin                | Summary (one-liner)                                  |
+| ------------------- | ---------------------------------------------------- |
+| `console` (default) | Terminal-style console/takeover UX with commands.    |
+| `vite-breeze`       | Modern “liquid glass” portfolio UI.                  |
+| `docs-reader`       | Reader layout for long-form notes + preview.         |
+| `cards-tabs`        | Card grid with tabbed details.                       |
+| `kiosk`             | Fullscreen, minimal, for exhibitions or on-site use. |
+| `typefolio`         | Editorial spread with a live preview pane.           |
+| `typescatter`       | Free-form/scatter presentation with focus on titles. |
+
+> See the `ui/` directory in the repo for each skin’s source and templates. (Skins currently listed in the repo include at least `vite-breeze`, `docs-reader`, `cards-tabs`, `kiosk`; additional skins here reflect the current codebase you’re generating with.) 
+
+---
+
+## CLI reference
+
+All commands are available via `praetorius` or its short alias `prae`.
+
+* `prae init [--out dist]` — create seed files (`.prae/works.json`, minimal output).
+* `prae add` — add a new work (guided prompts).
+* `prae edit` — edit an existing work (by id/slug; guided).
+* `prae rm` — remove a work.
+* `prae order` — reorder display order.
+* `prae list` — print current DB for inspection.
+* `prae import <file.(json|csv)>` — import works.
+* `prae export [--format json|csv]` — export works.
+* `prae generate [--skin <name>] [--out dist] [--embed]` — emit assets/snippet.
+* `prae doctor` — validate schema, mapping, and links; print actionable guidance.
+  *(Doctor++ checks are implemented; use this when something feels off.)*
+
+> Authoring is intended to be host-agnostic: generate static assets (`dist/*`) or a single `--embed` snippet you paste into a site builder. 
+
+---
+
+## Embedding & hosting
+
+* **Squarespace/WordPress/Webflow/etc.:** paste the embed or include your hosted `script.js`/`styles.css`. This avoids theme collisions and works anywhere a Code/HTML block is allowed. 
+* **PDF hosting:** prefer your own origin (or a CDN you control). When using Google Drive, convert links as noted under PDF Page-Follow.
+
+---
+
+## Deep linking
+
+You can link directly to a work section (e.g., `#work-<slug>`) and optionally include a start time query (e.g., `?t=630` for 10:30). Your UI can read these on load and activate the correct section + seek the audio.
+
+---
+
+## Accessibility & performance
+
+* **ARIA:** preview/hud announce via `aria-live`; controls are labeled.
+* **Keyboard:** arrow keys to change selection; Esc closes drawers.
+* **Performance:** audio loads lazily; PDF viewer is iframed to isolate work.
+* **Color:** strict light/dark tokens for predictable contrast.
+
+---
 
 ## Troubleshooting
-- Empty page? Ensure `window.PRAE.works` is populated—missing data yields an empty works list.
-- Disabled audio or PDF buttons? Provide valid `audio`/`pdf` URLs per work; absent values disable the
-  action gracefully.
-- Theme toggle missing? Confirm your template includes `#wc-theme-toggle` or wire one via the
-  exported helpers.
-- PDF not opening? Verify the URL is reachable and compatible with PDF.js (e.g., Google Drive
-  `uc?export=download` links).
-- CLI import hiccups? Install optional deps (`csv-parse`, `yaml`, `esbuild`) when prompted.
+
+**404s for `style.css`/`main.js` (during dev or embed testing)**
+If you see `GET http://localhost:5173/style.css 404` or similar, you’re pointing at a dev server that isn’t running or a path that doesn’t exist in production. When embedding, either paste `--embed` output directly or host `dist/*` on your site and reference those hosted URLs.
+
+**PDF page-follow doesn’t work**
+Use **cdn-hosted links** URL with a proper `file=` parameter (not a Drive “preview” URL). Verify your `score` mapping is monotonic (i.e. times increasing; pages ≥ 1). 
+
+
+---
 
 ## Contributing
-- Follow conventional commits; docs-only changes use the `docs:` scope.
-- Keep skins honest: they must never fabricate works—everything flows from `window.PRAE.works`.
-- Update documentation alongside CLI strings to keep help and README aligned.
-- Run linting/tests as needed (`npm run test`) before submitting PRs.
+
+Issues and PRs welcome—open an issue with a minimal repro (DB sample, links). Unit tests for time parsing and score validation are especially helpful.
 
 ## License
-[MIT](LICENSE)
+
+MIT. © Seb Suarez.
