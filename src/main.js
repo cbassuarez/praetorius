@@ -1,4 +1,5 @@
 import { normalizeWork } from './work-model.js';
+import { ensureBrandMark } from './lib/aperture.js';
 
 (function ensureFavicon(){
   if (typeof document === 'undefined') return;
@@ -48,6 +49,14 @@ export function initWorksConsole() {
   const input = $('#wc-cmd');
   const form = $('#works-console .wc-input');
   const consoleRoot = $('#works-console');
+
+  try {
+    const brandHost = SCOPE.querySelector('.wb-brand') || document.querySelector('.wb-brand');
+    if (brandHost) {
+      const overrides = (window.PRAE && window.PRAE.config && window.PRAE.config.site && window.PRAE.config.site.brand) || {};
+      ensureBrandMark(brandHost, overrides);
+    }
+  } catch (_) {}
 
   /* ===========================
      Hard-coded works (inline)

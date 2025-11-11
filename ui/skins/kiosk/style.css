@@ -115,9 +115,20 @@ svg {
 
 .kiosk-brand {
   display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  max-width: var(--measure);
+}
+
+.kiosk-brand-text {
+  display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  max-width: var(--measure);
+}
+
+.kiosk-brand .prae-aperture {
+  flex-shrink: 0;
+  --size: 34px;
 }
 
 .kiosk-title {

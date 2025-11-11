@@ -80,8 +80,20 @@ body[data-theme="light"] .ts-header {
 .ts-header-brand {
   min-width: 0;
   display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ts-header-brand-text {
+  display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 0;
+}
+
+.ts-header-brand .prae-aperture {
+  flex-shrink: 0;
+  --size: clamp(28px, 2vw, 34px);
 }
 
 .ts-site-title {

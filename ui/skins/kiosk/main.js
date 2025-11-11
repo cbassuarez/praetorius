@@ -1,3 +1,5 @@
+import { ensureBrandMark } from '../../lib/aperture.js';
+
 const PRAE_THEME_STORAGE_KEY = 'wc.theme';
 const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
 
@@ -1071,6 +1073,8 @@ function primeHudApi() {
 
 ready(() => {
   document.documentElement.dataset.skin = 'kiosk';
+  const brandRoot = document.querySelector('.kiosk-brand');
+  if (brandRoot) ensureBrandMark(brandRoot, PRAE.config?.site?.brand || {});
   window.praeApplyTheme?.(window.praeCurrentTheme?.(), { persist: false });
   if (typeof PRAE.ensureAudioTags === 'function') {
     try { PRAE.ensureAudioTags(); } catch (_) {}

@@ -1,3 +1,5 @@
+import { ensureBrandMark } from '../../lib/aperture.js';
+
 const PRAE_THEME_STORAGE_KEY = 'wc.theme';
 const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
 
@@ -830,6 +832,8 @@ function applySiteInfo() {
   document.querySelectorAll('[data-site-title]').forEach((el) => {
     el.textContent = title;
   });
+  const brandRoot = document.querySelector('.tf-head-brand');
+  if (brandRoot) ensureBrandMark(brandRoot, site.brand || {});
   const foot = document.querySelector('[data-site-footnote]');
   if (foot) {
     const year = new Date().getFullYear();

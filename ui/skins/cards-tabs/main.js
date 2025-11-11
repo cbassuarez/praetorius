@@ -1,3 +1,5 @@
+import { ensureBrandMark } from '../../lib/aperture.js';
+
 const TAB_KEYS = ['details', 'cues', 'playback', 'score'];
 const HASH_WORK_KEY = 'work';
 const HASH_TAB_KEY = 'tab';
@@ -1216,6 +1218,8 @@ function bindHudToggle() {
 
 ready(() => {
   document.documentElement.dataset.skin = 'cards-tabs';
+  const brandRoot = document.querySelector('.ct-brand');
+  if (brandRoot) ensureBrandMark(brandRoot, PRAE.config?.site?.brand || {});
   injectHudCssOnce();
   ensureHudDom();
   bindHudToggle();

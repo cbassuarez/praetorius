@@ -1,3 +1,5 @@
+import { ensureBrandMark } from '../../lib/aperture.js';
+
 // HUD logic + Vite Breeze skin glue.
 // Edit HUD logic in: ui/skins/vite-breeze/main.js → emitted to dist/app.js
 
@@ -228,6 +230,8 @@ ensureHudRoot();
   ready(mount);
   function mount(){
     bindDom();
+    const brandRoot = document.querySelector('.vb-brand');
+    if (brandRoot) ensureBrandMark(brandRoot, site.brand || {});
     // Move HUD into the grid when the shell exists
 if (shell && hudBox.parentNode !== shell) {
   shell.insertBefore(hudBox, shell.firstChild);
