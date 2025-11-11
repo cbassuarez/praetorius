@@ -31,14 +31,24 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "slug", "title", "one"],
+        "anyOf": [
+          { "required": ["oneliner"] },
+          { "required": ["one"] }
+        ],
+        "required": ["id", "slug", "title"],
         "properties": {
           "id": { "type": "integer", "minimum": 1 },
           "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
           "title": { "type": "string", "minLength": 1 },
-          "one": { "type": "string", "minLength": 1 },
+          "one": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240,
+            "pattern": "^[^\\n]*$"
+          },
           "oneliner": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 240,
             "pattern": "^[^\\n]*$"
           },

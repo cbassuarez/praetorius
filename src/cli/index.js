@@ -213,7 +213,7 @@ const STARTER_JS = `${STARTER_JS_NOTE}
       id: 1,
       slug: 'soundnoisemusic',
       title: 'WORK 1 — String Quartet No. 2 “SOUNDNOISEMUSIC”',
-      one: 'A through-composed/indeterminate quartet...',
+      oneliner: 'A through-composed/indeterminate quartet...',
       cues: [{ label: '@10:30', t: 630 }],
       audio: 'https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/audio/SSS_soundnoisemusic_audio.mp3',
       pdf:   'https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/STRING%20QUARTET%20NO.%202%20_soundnoisemusic_%20-%20Score-min.pdf'
@@ -517,7 +517,6 @@ const GENERIC_STARTER_WORKS = Object.freeze([
     id: 1,
     slug: 'demo-satie-gymnopedie-1',
     title: 'Gymnopédies — Satie',
-    one: 'Minimal piano works exploring poise and space.',
     oneliner: 'Minimal piano works exploring poise and space.',
     description: 'Erik Satie’s Gymnopédies (1888) are three piano pieces noted for their floating harmonies and suspended time. This demo pairs the Mutopia engraving with a Wikimedia Commons recording so you can explore PDF-follow and cue playback in Praetorius.',
     cues: [{ label: '@0:00', t: 0 }],
@@ -528,7 +527,6 @@ const GENERIC_STARTER_WORKS = Object.freeze([
     id: 2,
     slug: 'demo-us-army-band-lo-how-a-rose',
     title: 'Lo, How a Rose — U.S. Army Band',
-    one: 'Brass chorale with lyrical warmth and traditional scoring.',
     oneliner: 'Brass chorale with lyrical warmth and traditional scoring.',
     description: 'The United States Army Band’s public-domain rendition of “Lo, How a Rose E’er Blooming” demonstrates how an ensemble recording and Mutopia score can combine inside Praetorius. Use it to test audio playback, cue navigation, and PDF syncing.',
     cues: [{ label: '@0:00', t: 0 }],
@@ -750,14 +748,24 @@ const WORKS_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id','slug','title','one'],
+        anyOf: [
+          { required: ['oneliner'] },
+          { required: ['one'] }
+        ],
+        required: ['id','slug','title'],
         properties: {
           id:    { type: 'integer', minimum: 1 },
           slug:  { type: 'string', minLength: 1 },
           title: { type: 'string', minLength: 1 },
-          one:   { type: 'string', minLength: 1 },
+          one:   {
+            type: 'string',
+            minLength: 1,
+            maxLength: 240,
+            pattern: '^[^\\n]*$'
+          },
           oneliner: {
             type: 'string',
+            minLength: 1,
             maxLength: 240,
             pattern: '^[^\\n]*$'
           },
@@ -1160,12 +1168,18 @@ function parseMaybeJSON(s) {
 }
 function sanitizeNarrativeFields(work) {
   const normalized = normalizeWork(work);
-  const sanitized = { ...work, one: normalized.one };
+  const sanitized = { ...work };
+  const explicitSource = String(work.oneliner ?? work.one ?? '').trim();
   delete sanitized.desc;
   if (normalized.oneliner) sanitized.oneliner = normalized.oneliner;
+  else if (explicitSource) sanitized.oneliner = normalized.onelinerEffective || '';
   else delete sanitized.oneliner;
-  if (normalized.description) sanitized.description = normalized.description;
-  else delete sanitized.description;
+  if (normalized.description !== undefined) {
+    if (normalized.description !== null) sanitized.description = normalized.description;
+    else if ('description' in sanitized) sanitized.description = null;
+  }
+  if ('one' in work) sanitized.one = normalized.one;
+  else if ('one' in sanitized) delete sanitized.one;
   return { sanitized, normalized };
 }
 function normalizeImportedWork(row) {
@@ -3189,7 +3203,7 @@ program
       const base = await prompt([
         { type: 'input', name: 'title', message: 'Work title', validate: v => !!String(v).trim() || 'Required' },
         { type: 'input', name: 'slug',  message: 'Slug', initial: (ans)=> slugify(ans.title), validate: v => !!String(v).trim() || 'Required' },
-        { type: 'input', name: 'oneliner', message: 'Oneliner (1 sentence, optional)' },
+        { type: 'input', name: 'oneliner', message: 'Oneliner (optional, one sentence)' },
         { type: 'input', name: 'description', message: 'Long description (Markdown, optional)' },
         { type: 'input', name: 'audio', message: 'Audio URL (optional; leave blank if none)' },
         { type: 'input', name: 'pdf',   message: 'Score PDF URL (optional)' },
@@ -3403,8 +3417,8 @@ program
       const base = await prompt([
         { type: 'input', name: 'title', message: 'Title', initial: work.title },
         { type: 'input', name: 'slug',  message: 'Slug',  initial: work.slug },
-        { type: 'input', name: 'oneliner', message: 'Oneliner (optional)', initial: work.oneliner || '' },
-        { type: 'input', name: 'description', message: 'Long description (optional)', initial: work.description || '' },
+        { type: 'input', name: 'oneliner', message: 'Oneliner (optional, one sentence)', initial: work.oneliner || '' },
+        { type: 'input', name: 'description', message: 'Long description (Markdown, optional)', initial: work.description || '' },
         { type: 'input', name: 'audio', message: 'Audio URL (blank to clear)', initial: work.audio || '' },
         { type: 'input', name: 'pdf',   message: 'Score PDF URL (blank to clear)', initial: work.pdf || '' }
       ]);
