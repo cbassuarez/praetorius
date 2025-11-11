@@ -142,6 +142,9 @@ export function normalizeWork(work = {}) {
   if (descriptionEffective) normalized.description = descriptionEffective;
   else if ('description' in normalized) delete normalized.description;
 
+  if (!onelinerEffective) onelinerEffective = null;
+  if (!descriptionEffective) descriptionEffective = null;
+
   if (typeof window !== 'undefined' && window && window.__PRAE_DEBUG) {
     try {
       const logger = window.console && window.console.debug ? window.console.debug : window.console?.log;

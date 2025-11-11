@@ -1459,7 +1459,7 @@ const DOCS_GLOB_CACHE = new Map();
 function globToRegex(pattern) {
   const key = pattern || '';
   if (DOCS_GLOB_CACHE.has(key)) return DOCS_GLOB_CACHE.get(key);
-  const normalized = String(pattern || '').replace(/\\/g, '/');
+  const normalized = String(pattern || '').split('\\').join('/');
   let source = '';
   for (let i = 0; i < normalized.length; i += 1) {
     const ch = normalized[i];
@@ -1488,13 +1488,26 @@ function globToRegex(pattern) {
 function matchesGlob(pattern, target) {
   if (!pattern) return false;
   const rx = globToRegex(pattern);
-  return rx.test(target.replace(/\\/g, '/'));
+  return rx.test(target.split('\\').join('/'));
 }
 
 function toPosix(p) { return p.split(path.sep).join('/'); }
 
+function globBase(pattern) {
+  const normalized = String(pattern || '').split('\\').join('/');
+  const parts = normalized.split('/');
+  const base = [];
+  for (const part of parts) {
+    if (!part) continue;
+    if (/[\[*?]/.test(part)) break;
+    base.push(part);
+  }
+  if (!base.length) return '.';
+  return base.join('/');
+}
+
 function ensureDocsRoot(input) {
-  const normalized = (input || 'docs').replace(/\\/g, '/');
+  const normalized = (input || 'docs').split('\\').join('/');
   return normalized.endsWith('/') ? normalized : `${normalized}/`;
 }
 
@@ -1533,6 +1546,43 @@ function markdownFirstParagraph(src) {
   return buf.join(' ');
 }
 
+function stripInlineMarkdown(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[[^\]]*\]\(([^)]*)\)/g, (_, label) => label)
+    .replace(/[*_~]+/g, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function deriveSummaryFromMarkdown(markdown) {
+  if (!markdown) return '';
+  const lines = String(markdown).split(/\r?\n/);
+  const buf = [];
+  let collecting = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!collecting) {
+      if (!trimmed) continue;
+      if (/^#{1,6}\s+/.test(trimmed)) continue;
+      collecting = true;
+    }
+    if (collecting) {
+      if (!trimmed) break;
+      if (/^#{1,6}\s+/.test(trimmed)) break;
+      buf.push(trimmed);
+    }
+    if (buf.join(' ').length > 220) break;
+  }
+  const paragraph = stripInlineMarkdown(buf.join(' '));
+  if (!paragraph) return '';
+  if (paragraph.length <= 200) return paragraph;
+  return `${paragraph.slice(0, 197).trimEnd()}…`;
+}
+
 function walkMarkdownFiles(rootDir) {
   const out = [];
   if (!fs.existsSync(rootDir)) return out;
@@ -1557,6 +1607,91 @@ function walkMarkdownFiles(rootDir) {
     }
   }
   return out;
+}
+
+function collectMarkdownSources({ projectRoot, globs, docsRoot }) {
+  const patterns = Array.isArray(globs) && globs.length ? globs.map(g => String(g || '').trim()).filter(Boolean) : [];
+  const normalizedPatterns = patterns.length ? patterns : ['docs/**/*.md'];
+  const docsRootNorm = ensureDocsRoot(docsRoot || 'docs/');
+  const docsAssetsDir = `${docsRootNorm.replace(/\/$/, '')}/assets`;
+  const skipDirs = new Set(['node_modules', 'dist', 'build', 'coverage']);
+  const dedup = new Map();
+  const bases = new Set();
+  normalizedPatterns.forEach(pattern => {
+    const base = globBase(pattern) || '.';
+    bases.add(base);
+  });
+
+  const ensureMatch = (rel) => normalizedPatterns.some(pattern => matchesGlob(pattern, rel));
+
+  const visitDir = (absBase) => {
+    const stack = [absBase];
+    while (stack.length) {
+      const dir = stack.pop();
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch (_) {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry) continue;
+        const name = entry.name;
+        if (!name) continue;
+        if (name.startsWith('.')) continue;
+        if (entry.isDirectory()) {
+          if (skipDirs.has(name)) continue;
+          const childAbs = path.join(dir, name);
+          const rel = toPosix(path.relative(projectRoot, childAbs));
+          const relLower = rel.toLowerCase();
+          if (relLower === docsAssetsDir.toLowerCase()) continue;
+          if (relLower.startsWith(`${docsAssetsDir.toLowerCase()}/`)) continue;
+          stack.push(childAbs);
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        if (!name.toLowerCase().endsWith('.md')) continue;
+        const abs = path.join(dir, name);
+        const rel = toPosix(path.relative(projectRoot, abs));
+        if (rel.startsWith('.')) {
+          const trimmed = rel.replace(/^\.\/+/, '');
+          if (!ensureMatch(trimmed)) continue;
+        }
+        if (!ensureMatch(rel)) continue;
+        const relLower = rel.toLowerCase();
+        if (relLower === docsAssetsDir.toLowerCase()) continue;
+        if (relLower.startsWith(`${docsAssetsDir.toLowerCase()}/`)) continue;
+        dedup.set(rel, abs);
+      }
+    }
+  };
+
+  for (const base of bases) {
+    const absBase = path.resolve(projectRoot, base);
+    let stat;
+    try {
+      stat = fs.statSync(absBase);
+    } catch (_) {
+      continue;
+    }
+    if (stat.isFile()) {
+      const rel = toPosix(path.relative(projectRoot, absBase));
+      if (ensureMatch(rel)) {
+        const relLower = rel.toLowerCase();
+        if (relLower === docsAssetsDir.toLowerCase()) continue;
+        if (relLower.startsWith(`${docsAssetsDir.toLowerCase()}/`)) continue;
+        dedup.set(rel, absBase);
+      }
+      continue;
+    }
+    if (stat.isDirectory()) {
+      visitDir(absBase);
+    }
+  }
+
+  return Array.from(dedup.entries())
+    .map(([rel, abs]) => ({ rel: rel.replace(/^\.\/+/, ''), abs }))
+    .sort((a, b) => a.rel.localeCompare(b.rel));
 }
 
 function parseReadmeSections(readmePath) {
@@ -1776,25 +1911,38 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
   const sectionsConfig = Array.isArray(config.ia) ? config.ia.slice() : [];
   sectionsConfig.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const docsRoot = ensureDocsRoot(config.paths?.root || 'docs/');
-  const docsDir = path.resolve(projectRoot, docsRoot);
+  const docsRootNoSlash = docsRoot.replace(/\/$/, '');
   const works = Array.isArray(worksDb?.works) ? worksDb.works : [];
   const YAML = await lazyYaml();
   const markedLib = await lazyMarked();
-  const nav = [];
-  const searchIndex = [];
-  const sections = [];
   const warnings = [];
-  let homepageSlug = (config.paths?.homepage || '').replace(/\\/g, '/');
-  let homepagePage = null;
+  const markdownSources = collectMarkdownSources({
+    projectRoot,
+    globs: config.sources?.globs,
+    docsRoot
+  });
 
-  const ensureHref = (slug) => `#${slug}`;
+  const docs = [];
+  const docLookup = new Map();
 
-  const renderMarkdownSection = (markdown) => {
+  const registerDoc = (doc) => {
+    if (!doc || !doc.id) return;
+    const keys = [doc.id, doc.path, doc.url, doc.path.replace(/\.md$/i, '')]
+      .map(key => key && key.toLowerCase())
+      .filter(Boolean);
+    keys.forEach(key => {
+      if (!key) return;
+      if (!docLookup.has(key)) docLookup.set(key, doc);
+    });
+  };
+
+  const renderMarkdown = (markdown) => {
     const renderer = new markedLib.Renderer();
     const headings = [];
     renderer.heading = (text, level, raw) => {
       const safe = slugify(String(raw || text));
-      headings.push({ id: safe, level });
+      const plain = stripInlineMarkdown(raw || text);
+      headings.push({ id: safe, depth: level, text: plain });
       return `<h${level} id="${safe}">${text}</h${level}>`;
     };
     const parser = new markedLib.Marked({
@@ -1809,129 +1957,263 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
     return { html, headings };
   };
 
-  for (const section of sectionsConfig) {
-    if (!section || section.hidden) continue;
+  const titleFromFilename = (relPath) => {
+    const name = path.basename(relPath, path.extname(relPath));
+    return sectionLabelFromSegment(name);
+  };
+
+  markdownSources.forEach(({ rel, abs }) => {
+    const relPosix = rel.split('\\').join('/');
+    const raw = readFileSafe(abs);
+    const fm = extractFrontMatter(raw, YAML);
+    const fmData = (fm.data && typeof fm.data === 'object') ? fm.data : {};
+    const body = fm.body || '';
+    const headingTitle = markdownFirstHeading(body);
+    let title = typeof fmData.title === 'string' && fmData.title.trim()
+      ? fmData.title.trim()
+      : (headingTitle ? headingTitle.trim() : titleFromFilename(relPosix));
+    if (!title) title = titleFromFilename(relPosix);
+    const subtitle = typeof fmData.subtitle === 'string' && fmData.subtitle.trim()
+      ? fmData.subtitle.trim()
+      : undefined;
+    let summary = typeof fmData.summary === 'string' && fmData.summary.trim()
+      ? fmData.summary.trim()
+      : deriveSummaryFromMarkdown(body);
+    if (!summary) summary = '';
+    const rendered = renderMarkdown(body);
+    const id = relPosix.replace(/\.md$/i, '');
+    const url = `#/${id}`;
+    const doc = {
+      id,
+      path: relPosix,
+      url,
+      title,
+      subtitle,
+      summary,
+      headings: rendered.headings,
+      html: rendered.html,
+      fm: fmData
+    };
+    docs.push(doc);
+    registerDoc(doc);
+  });
+
+  const worksConfig = config.works || {};
+  const worksIncludeInNav = !!worksConfig.includeInNav;
+  const worksIncludeOnHome = !!worksConfig.includeOnHome;
+  const worksLinkMode = worksConfig.linkMode || 'auto';
+  const worksHighlights = [];
+  let worksDoc = null;
+
+  if (worksIncludeInNav || worksIncludeOnHome) {
+    const worksHtml = renderWorksList(works, { linkMode: worksLinkMode });
+    if (worksIncludeInNav) {
+      worksDoc = {
+        id: 'works',
+        path: 'works::auto',
+        url: '#/works',
+        title: 'Works',
+        subtitle: undefined,
+        summary: works.length ? 'Browse the works catalogue.' : 'Auto-generated works listing.',
+        headings: [],
+        html: worksHtml,
+        fm: {}
+      };
+      docs.push(worksDoc);
+      registerDoc(worksDoc);
+    }
+    if (worksIncludeOnHome) {
+      const highlights = works.slice(0, 4).map(work => {
+        const view = normalizeWork(work);
+        const label = view.title || view.slug || 'Untitled';
+        const text = view.onelinerEffective || stripInlineMarkdown(view.descriptionEffective || '').slice(0, 180);
+        return {
+          id: slugify(view.slug || label || 'work'),
+          title: label,
+          summary: text ? (text.length > 200 ? `${text.slice(0, 197).trimEnd()}…` : text) : ''
+        };
+      }).filter(Boolean);
+      highlights.forEach(item => {
+        if (!item.title) item.title = 'Untitled';
+      });
+      worksHighlights.push(...highlights);
+    }
+  }
+
+  const normalizeSourcePath = (source) => {
+    if (!source) return '';
+    const raw = String(source || '').trim();
+    if (!raw) return '';
+    const normalized = raw.split('\\').join('/');
+    if (normalized.startsWith('/')) {
+      let trimmed = normalized;
+      while (trimmed.startsWith('/')) trimmed = trimmed.slice(1);
+      return trimmed;
+    }
+    if (normalized.startsWith('./')) {
+      let trimmed = normalized;
+      while (trimmed.startsWith('./')) trimmed = trimmed.slice(2);
+      return trimmed;
+    }
+    if (!normalized.startsWith(docsRoot)) {
+      let joined = `${docsRootNoSlash}/${normalized}`;
+      while (joined.includes('//')) joined = joined.replace('//', '/');
+      return joined;
+    }
+    return normalized;
+  };
+  const findDocForSource = (source, slug) => {
+    const normalized = normalizeSourcePath(source);
+    const keys = [];
+    if (normalized) {
+      const lower = normalized.toLowerCase();
+      keys.push(lower);
+      if (lower.endsWith('.md')) {
+        keys.push(lower.replace(/\.md$/, ''));
+      } else {
+        keys.push(`${lower}.md`);
+      }
+    }
+    if (slug) keys.push(String(slug).toLowerCase());
+    for (const key of keys) {
+      if (docLookup.has(key)) return docLookup.get(key);
+    }
+    if (slug) {
+      const slugLower = String(slug).toLowerCase();
+      for (const doc of docs) {
+        if (doc.id.toLowerCase().endsWith(`/${slugLower}`)) return doc;
+      }
+    }
+    return null;
+  };
+
+  const nav = [];
+  const usedDocIds = new Set();
+  const docSearchGroup = new Map();
+
+  sectionsConfig.forEach((section) => {
+    if (!section || section.hidden) return;
     const group = {
       id: section.id || slugify(section.title || 'section'),
       label: section.title || 'Section',
       items: []
     };
     const pages = Array.isArray(section.pages) ? section.pages.slice() : [];
-    for (const page of pages) {
-      if (!page || page.hidden) continue;
-      const slug = page.slug || slugify(page.title || page.source || 'page');
-      const source = (page.source || '').replace(/\\/g, '/');
-      let title = page.title || slug;
-      let summary = page.summary || '';
-      let html = '';
-      let type = 'markdown';
-
+    pages.forEach((page) => {
+      if (!page || page.hidden) return;
+      const source = (page.source || '').split('\\').join('/');
       if (source.startsWith('works::')) {
-        type = 'works';
-        title = page.title || 'Works';
-        summary = summary || 'Auto-generated works listing.';
-        html = renderWorksList(works, { linkMode: config.works?.linkMode || 'auto' });
-      } else if (source.startsWith('README.md#')) {
-        const readmeSlug = source.split('#')[1];
-        const { title: readmeTitle, body } = readReadmeSection(projectRoot, readmeSlug);
-        if (!body) {
-          warnings.push(`README section "${source}" not found.`);
-          html = '<p>README section not found.</p>';
-        } else {
-          const fm = extractFrontMatter(body, YAML);
-          if (fm.data?.title) title = fm.data.title;
-          if (!summary) summary = fm.data?.summary || markdownFirstParagraph(fm.body);
-          const rendered = renderMarkdownSection(fm.body);
-          html = rendered.html;
+        if (worksDoc) {
+          const label = (page.title && page.title.trim()) || worksDoc.title;
+          const snippet = (page.summary && page.summary.trim()) || worksDoc.summary || 'Works catalogue';
+          group.items.push({ id: worksDoc.id, label, href: worksDoc.url, snippet, docId: worksDoc.id });
+          usedDocIds.add(worksDoc.id);
+          docSearchGroup.set(worksDoc.id, group.label);
         }
-        if (!page.title && readmeTitle) title = readmeTitle;
-      } else {
-        let absPath = source;
-        if (!absPath) absPath = '';
-        if (!absPath.startsWith('/') && !absPath.startsWith(docsRoot)) {
-          absPath = path.join(docsRoot, absPath);
-        }
-        const resolved = path.resolve(projectRoot, absPath || '');
-        if (!fs.existsSync(resolved)) {
-          warnings.push(`Docs source not found: ${source || '(blank)'}`);
-          html = '<p>Content missing — source file not found.</p>';
-        } else {
-          const raw = readFileSafe(resolved);
-          const fm = extractFrontMatter(raw, YAML);
-          const headingTitle = markdownFirstHeading(fm.body);
-          if (fm.data?.title) title = fm.data.title;
-          else if (!page.title && headingTitle) title = headingTitle;
-          if (!summary) summary = fm.data?.summary || markdownFirstParagraph(fm.body);
-          const rendered = renderMarkdownSection(fm.body);
-          html = rendered.html;
-        }
+        return;
       }
-
-      const snippetText = (summary || htmlToPlainText(html)).trim();
-
-      const item = {
-        id: slug,
-        label: title,
-        href: ensureHref(slug),
-        snippet: snippetText,
-        sectionId: group.id,
-        type,
-        html,
-        summary: summary || snippetText,
-        title
-      };
-      group.items.push({ id: slug, label: title, href: ensureHref(slug), snippet: snippetText });
-      searchIndex.push({ title, url: ensureHref(slug), snippet: snippetText, group: group.label });
-      sections.push(item);
-      if (!homepagePage) {
-        const matchSource = source || slug;
-        if (homepageSlug && homepageSlug === source) homepagePage = item;
-        else if (homepageSlug && homepageSlug === slug) homepagePage = item;
+      const doc = findDocForSource(source, page.slug);
+      if (!doc) {
+        if (source) warnings.push(`Docs source not found: ${source}`);
+        return;
       }
-    }
+      usedDocIds.add(doc.id);
+      docSearchGroup.set(doc.id, group.label);
+      const label = (page.title && page.title.trim()) || doc.title;
+      const snippet = (page.summary && page.summary.trim()) || doc.summary || htmlToPlainText(doc.html).slice(0, 200);
+      group.items.push({ id: doc.id, label, href: doc.url, snippet, docId: doc.id });
+    });
     if (group.items.length) nav.push(group);
+  });
+
+  const docsRootPrefix = `${docsRootNoSlash}/`;
+  const autoGroups = new Map();
+  docs.forEach((doc) => {
+    if (!doc || usedDocIds.has(doc.id)) return;
+    if (doc.path === 'works::auto') return;
+    if (!doc.path.toLowerCase().endsWith('.md')) return;
+    let within = doc.path;
+    if (within.startsWith(docsRootPrefix)) {
+      within = within.slice(docsRootPrefix.length);
+    }
+    const segment = within.includes('/') ? within.split('/')[0] : '';
+    const groupId = segment ? `auto-${slugify(segment)}` : 'auto-other';
+    const groupLabel = segment ? sectionLabelFromSegment(segment) : 'Other';
+    if (!autoGroups.has(groupId)) {
+      autoGroups.set(groupId, { id: groupId, label: groupLabel, items: [] });
+    }
+    const snippet = doc.summary || htmlToPlainText(doc.html).slice(0, 200);
+    autoGroups.get(groupId).items.push({ id: doc.id, label: doc.title, href: doc.url, snippet, docId: doc.id });
+    docSearchGroup.set(doc.id, groupLabel);
+  });
+
+  Array.from(autoGroups.values())
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .forEach((group) => {
+      group.items.sort((a, b) => a.label.localeCompare(b.label));
+      nav.push(group);
+    });
+
+  if (worksDoc && !usedDocIds.has(worksDoc.id) && worksIncludeInNav) {
+    const groupId = 'works';
+    const group = { id: groupId, label: 'Works', items: [{
+      id: worksDoc.id,
+      label: worksDoc.title,
+      href: worksDoc.url,
+      snippet: worksDoc.summary || 'Works catalogue',
+      docId: worksDoc.id
+    }] };
+    nav.push(group);
+    docSearchGroup.set(worksDoc.id, group.label);
   }
 
-  if (!homepagePage) homepagePage = sections[0] || null;
+  const homepageSource = (config.paths?.homepage || '').split('\\').join('/');
+  let homepageDoc = findDocForSource(homepageSource, null);
+  if (!homepageDoc) {
+    const defaultIndex = `${docsRootNoSlash}/index.md`.toLowerCase();
+    homepageDoc = docLookup.get(defaultIndex) || docLookup.get(defaultIndex.replace(/\.md$/, '')) || null;
+  }
+  if (!homepageDoc) {
+    homepageDoc = docs.find(doc => doc.path.toLowerCase().endsWith('index.md')) || null;
+  }
+  if (!homepageDoc) {
+    homepageDoc = docs.find(doc => doc.path.toLowerCase().endsWith('.md')) || null;
+  }
+  if (homepageDoc && homepageDoc.path === 'works::auto') {
+    homepageDoc = docs.find(doc => doc.path !== 'works::auto');
+  }
+
   const siteTitle = config.site?.title?.trim() || 'Praetorius Docs';
   const siteSubtitle = config.site?.subtitle?.trim() || '';
-  const heroTitle = homepagePage?.title || siteTitle;
-  const heroSummary = homepagePage?.summary || config.site?.description || '';
-  const hero = {
-    title: heroTitle,
-    lede: heroSummary,
-    kicker: siteSubtitle,
-    works: []
-  };
+  const siteDescription = config.site?.description?.trim() || '';
+  const siteAccent = config.site?.accent?.trim() || '';
 
-  if (config.works?.includeOnHome && works.length) {
-    hero.works = works.slice(0, 4).map((work) => {
-      const view = normalizeWork(work);
-      return {
-        id: view.slug || slugify(view.title || 'work'),
-        title: view.title || view.slug || 'Untitled',
-        summary: view.onelinerEffective || ''
-      };
-    });
-  }
+  const searchIndex = docs.map((doc) => {
+    if (!doc) return null;
+    const snippet = doc.summary || htmlToPlainText(doc.html).slice(0, 200);
+    return {
+      title: doc.title,
+      url: doc.url,
+      snippet,
+      group: docSearchGroup.get(doc.id) || 'Docs',
+      docId: doc.id
+    };
+  }).filter(Boolean);
 
   return {
     data: {
-      site: {
-        title: siteTitle,
-        subtitle: siteSubtitle,
-        description: config.site?.description || '',
-        accent: config.site?.accent || ''
-      },
-      hero,
+      site: { title: siteTitle, subtitle: siteSubtitle, description: siteDescription, accent: siteAccent },
       nav,
       search: searchIndex,
-      sections,
-      homepage: homepagePage ? homepagePage.id : '',
+      docs,
+      homepage: homepageDoc ? homepageDoc.id : '',
+      homepageMissing: !homepageDoc,
       works: {
-        includeInNav: !!config.works?.includeInNav,
-        includeOnHome: !!config.works?.includeOnHome,
-        linkMode: config.works?.linkMode || 'auto'
+        includeInNav: worksIncludeInNav,
+        includeOnHome: worksIncludeOnHome,
+        linkMode: worksLinkMode,
+        docId: worksDoc ? worksDoc.id : '',
+        highlights: worksHighlights
       }
     },
     warnings
@@ -2838,7 +3120,7 @@ async function runDocsWizard(opts = {}, meta = {}) {
           { type: 'input', name: 'title', message: 'Homepage title', initial: 'Introduction', validate: (v) => (v && v.trim().length ? true : 'Required') },
           { type: 'input', name: 'filename', message: 'Markdown filename (relative to docs root)', initial: 'index.md', validate: (v) => (v && v.trim().endsWith('.md') ? true : 'Use a .md filename') }
         ]);
-    const filename = introAnswers.filename.trim().replace(/\\/g, '/');
+    const filename = introAnswers.filename.trim().split('\\').join('/');
     const abs = path.join(detection.docsDir, filename);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     if (!fs.existsSync(abs)) {

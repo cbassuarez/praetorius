@@ -448,6 +448,56 @@ body[data-theme="light"] .docs-header {
   color: var(--muted);
 }
 
+.docs-body {
+  padding-bottom: var(--gap-lg);
+}
+
+.docs-works-home {
+  margin-top: var(--gap-lg);
+  padding: var(--gap-lg);
+  border-radius: var(--radius-md);
+  background: rgba(90, 125, 255, 0.12);
+  border: 1px solid rgba(90, 125, 255, 0.18);
+  display: grid;
+  gap: var(--gap-md);
+}
+
+.docs-works-home h2 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.docs-works-home-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--gap-sm);
+}
+
+.docs-works-home-list li {
+  margin: 0;
+  padding: var(--gap-sm);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.docs-works-home-list li strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 0.35rem;
+}
+
+.docs-works-home-list li p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .docs-section h2,
 .docs-section h3 {
   position: relative;
