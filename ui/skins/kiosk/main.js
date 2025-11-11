@@ -420,7 +420,7 @@ function showDetail(id) {
     <header class="kiosk-detail-head">
       <span class="kiosk-detail-slug">${esc(work.slug || '')}</span>
       <h1>${esc(work.title || 'Untitled work')}</h1>
-      <p class="kiosk-detail-one">${esc(work.one || '')}</p>
+      <p class="kiosk-detail-one">${esc(work.descriptionEffective || work.onelinerEffective || '')}</p>
     </header>
     ${cueHtml}
     <div class="kiosk-detail-progress" data-role="progress">Now playing 0:00 / 0:00</div>
@@ -730,7 +730,11 @@ function renderGrid() {
     tile.tabIndex = 0;
     tile.dataset.workId = work.id;
     tile.setAttribute('role', 'button');
-    tile.setAttribute('aria-label', `Open ${work.title || work.slug || 'work'} details`);
+    const ariaLabelBase = work.title || work.slug || 'work';
+    const ariaLabel = work.onelinerEffective
+      ? `Open ${ariaLabelBase} — ${work.onelinerEffective}`
+      : `Open ${ariaLabelBase} details`;
+    tile.setAttribute('aria-label', ariaLabel);
     const cues = Array.isArray(work.cues) ? work.cues : [];
     const cueHtml = cues.length
       ? `<div class="kiosk-cues">${cues
@@ -745,7 +749,7 @@ function renderGrid() {
         <span class="kiosk-slug">${esc(work.slug || '')}</span>
         <h2>${esc(work.title || 'Untitled work')}</h2>
       </div>
-      <p class="kiosk-one">${esc(work.one || '')}</p>
+      <p class="kiosk-one">${esc(work.onelinerEffective || '')}</p>
       ${cueHtml}
       <div class="kiosk-actions">
         <button type="button" class="kiosk-btn" data-act="play" data-id="${work.id}">Play</button>

@@ -572,10 +572,10 @@ function buildPraeBadge() {
 
 function getStackModules(work) {
   const modules = [];
-  const oneliner = work.oneliner || work.one || '';
+  const oneliner = work.onelinerEffective || '';
   const descriptionParts = [];
   if (Array.isArray(work.openNote)) descriptionParts.push(work.openNote.join('\n\n'));
-  if (work.description) descriptionParts.push(String(work.description));
+  if (work.descriptionEffective) descriptionParts.push(String(work.descriptionEffective));
   const description = descriptionParts.join('\n\n');
   if (oneliner) modules.push({ kind: 'oneliner', text: String(oneliner) });
   if (description && description.trim() && description.trim() !== oneliner.trim()) {

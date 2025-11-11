@@ -6,6 +6,8 @@
       "slug": "fixture-demo",
       "title": "Fixture Demo Work",
       "one": "Sample work used for CLI seeding tests.",
+      "oneliner": "Sample work used for CLI seeding tests.",
+      "description": "A placeholder work seeded by tests so CLI flows have concrete data. Replace this entry with your own catalogue information when scaffolding a project.",
       "cues": [],
       "audio": null,
       "pdf": null

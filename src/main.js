@@ -1,3 +1,5 @@
+import { normalizeWork } from './work-model.js';
+
 // --- Theme preboot (moved from template.html) -------------------------------
 // Applies saved light/dark theme ASAP and sets color-scheme to avoid FOUC.
 // Safe alongside the later applyTheme(readTheme()) in initWorksConsole.
@@ -94,12 +96,14 @@ export function initWorksConsole() {
     }
   };
 
-  Object.values(works).forEach((work) => {
+  Object.keys(works).forEach((key) => {
+    const work = works[key];
     if (!Array.isArray(work.cues)) {
       work.cues = [];
-      return;
+    } else {
+      work.cues = work.cues.map(normalizeCue);
     }
-    work.cues = work.cues.map(normalizeCue);
+    works[key] = normalizeWork(work);
   });
 
 // === PageFollow maps (printed page numbers) ===
@@ -354,7 +358,7 @@ function attachPageFollow(slug, audio){
       row.dataset.workIndex = String(workIndex);
       row.appendChild(block([
         bold(`[${w.id}] ${w.title}`),
-        span(w.one,'one'),
+        span(w.onelinerEffective || '','one'),
         actRow([
           btn(`open ${w.id}`,'Open'),
           ...createPlayButtons(w, workIndex),
