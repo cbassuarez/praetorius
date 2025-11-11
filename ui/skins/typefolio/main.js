@@ -364,6 +364,11 @@ function playAt(id, seconds = 0) {
   const record = findWorkById(id);
   const work = record?.data;
   if (!work) return;
+  const index = works.indexOf(work);
+  if (index >= 0) {
+    setActiveWork(index, { announce: false, scroll: false, updatePreview: false });
+  }
+  syncPdfForWork(work, { seconds });
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
   if (!audio) return;
   pauseAllAudio(work.id);
@@ -1038,6 +1043,27 @@ function previewMatchesWork(work) {
   return state.pdf.currentSlug === slug;
 }
 
+function syncPdfForWork(work, { seconds = 0, openDrawer = false } = {}) {
+  if (!work) return;
+  const normalized = normalizePdfUrl(getPdfSourceFrom(work));
+  if (!normalized) return;
+  if (!previewMatchesWork(work)) {
+    updatePreviewForWork(work, { openDrawer, announce: false });
+  }
+  const slug = work.slug || workKey(work);
+  if (!slug) return;
+  const rawTime = Number(seconds);
+  const time = Number.isFinite(rawTime) ? rawTime : 0;
+  const pdfPage = computePdfPage(slug, time);
+  if (!Number.isFinite(pdfPage)) return;
+  const detail = { slug, pdfPage };
+  const follow = pageFollowMaps?.[slug];
+  if (follow) {
+    detail.printedPage = printedPageForTime(follow, time);
+  }
+  window.dispatchEvent(new CustomEvent('wc:pdf-goto', { detail }));
+}
+
 function announceActiveWork(work) {
   if (!work) {
     announcePreview('No work selected.');
@@ -1164,6 +1190,7 @@ function renderBook() {
       activationTrigger.setAttribute('aria-pressed', 'false');
       activationTrigger.addEventListener('click', () => {
         setActiveWork(index, { announce: true, updatePreview: false });
+        syncPdfForWork(work, { seconds: 0 });
       });
     } else {
       bindSectionActivation(section, index);
