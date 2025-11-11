@@ -241,51 +241,148 @@ Quick paths:
 `;
 
 /* --- script generator template (turns DB into paste-ready JS) --- */
-function renderScriptFromDb(db, opts = {}) {
-  const min = !!opts.minify;
-  const worksArr = (db.works || []).map(w => ({
-    id: w.id,
-    slug: w.slug,
-    title: w.title,
-    one: w.one,
-    cues: w.cues || [],
-    pdf: w.pdf || null,
-    audio: w.audio || null,
-    audioId: `wc-a${w.id}`
-  }));
+function normalizeCueRow(row) {
+  if (!row) return { label: '', at: '' };
+  if (typeof row === 'string') return { label: row, at: row };
+  const label = row.label || row.name || row.title || '';
+  const at = row.at ?? row.t ?? row.time ?? row.start ?? label ?? '';
+  return { label, at };
+}
 
-  // Build page-follow maps keyed by slug (only for works that provide "score")
-  const pf = {};
-  for (const w of db.works || []) {
-    if (w.score && (w.score.pdfStartPage || (w.score.pageMap && w.score.pageMap.length))) {
-      pf[w.slug] = {
-        pdfStartPage: Number.isInteger(w.score.pdfStartPage) ? w.score.pdfStartPage : 1,
-        mediaOffsetSec: Number.isInteger(w.score.mediaOffsetSec) ? w.score.mediaOffsetSec : 0,
-        pageMap: (w.score.pageMap || []).map(row => ({
-          at: row.at,                 // mm:ss string or integer seconds; main.js can parse both
-          page: row.page
-        }))
-      };
-      if (Number.isInteger(w.score.pdfDelta)) {
-        pf[w.slug].pdfDelta = w.score.pdfDelta; // optional override hook your console already supports
-      }
+function coalesceUrl(work, primary, fallbacks = []) {
+  for (const key of [primary, ...fallbacks]) {
+    if (!key) continue;
+    const value = work[key];
+    if (value) return String(value);
+  }
+  const media = work.media || {};
+  for (const key of [primary, ...fallbacks]) {
+    if (media[key]) return String(media[key]);
+  }
+  const files = work.files || {};
+  for (const key of [primary, ...fallbacks]) {
+    if (files[key]) return String(files[key]);
+  }
+  return null;
+}
+
+function normalizePageFollowConfig(work) {
+  const source = work.pageFollow || work.score || null;
+  if (!source) return null;
+  const pageMapRaw = Array.isArray(source.pageMap) ? source.pageMap : [];
+  const pageMap = pageMapRaw.map((row) => ({
+    at: row.at ?? row.t ?? row.time ?? row.label ?? '',
+    page: Number.isFinite(Number(row.page)) ? Number(row.page) : 1
+  }));
+  const cfg = {
+    pdfStartPage: Number.isFinite(Number(source.pdfStartPage)) ? Number(source.pdfStartPage) : 1,
+    mediaOffsetSec: Number.isFinite(Number(source.mediaOffsetSec)) ? Number(source.mediaOffsetSec) : 0,
+    pageMap
+  };
+  if (Number.isFinite(Number(source.pdfDelta))) {
+    cfg.pdfDelta = Number(source.pdfDelta);
+  }
+  return cfg;
+}
+
+function buildRuntimeWorks(rawWorks = []) {
+  const works = Array.isArray(rawWorks) ? rawWorks : [];
+  return works.map((item, idx) => {
+    const work = JSON.parse(JSON.stringify(item || {}));
+    const numericId = Number.isFinite(Number(work.id)) ? Number(work.id) : idx + 1;
+    work.id = numericId;
+    const slug = (work.slug && String(work.slug).trim()) || slugify(work.title || `work-${numericId}`);
+    work.slug = slug;
+    if (!Array.isArray(work.cues)) {
+      work.cues = [];
+    }
+    work.cues = work.cues.map(normalizeCueRow);
+    if (work.openNote && !Array.isArray(work.openNote)) {
+      work.openNote = [String(work.openNote)];
+    }
+    const audio = coalesceUrl(work, 'audioUrl', ['audio', 'audioURL', 'audio_url']);
+    if (audio) {
+      work.audioUrl = audio;
+      if (!work.audio) work.audio = audio;
+    }
+    const pdf = coalesceUrl(work, 'pdfUrl', ['pdf', 'pdfURL', 'scorePdf', 'scorePDF', 'score_url']);
+    if (pdf) {
+      work.pdfUrl = pdf;
+      if (!work.pdf) work.pdf = pdf;
+    }
+    work.audioId = work.audioId || `wc-a${numericId}`;
+    const pageFollow = normalizePageFollowConfig(work);
+    if (pageFollow) {
+      work.pageFollow = pageFollow;
+    }
+    return work;
+  });
+}
+
+function buildPageFollowMaps(works = []) {
+  const maps = {};
+  for (const work of works) {
+    if (work.slug && work.pageFollow) {
+      maps[work.slug] = work.pageFollow;
     }
   }
+  return maps;
+}
 
- const serializedWorks = JSON.stringify(worksArr, null, min ? 0 : 2);
-  const serializedPF    = JSON.stringify(pf, null,   min ? 0 : 2);
+function createRuntimePayload(db, opts = {}) {
+  const rawWorks = Array.isArray(opts.worksOverride) ? opts.worksOverride : (db.works || []);
+  const works = buildRuntimeWorks(rawWorks);
+  const pageFollowMaps = buildPageFollowMaps(works);
+  const theme = opts.theme === 'light' ? 'light' : 'dark';
+  const site = opts.site || {};
+  const warnings = Array.isArray(opts.warnings) ? opts.warnings : [];
+  return {
+    works,
+    pageFollowMaps,
+    config: { theme, site },
+    source: opts.source || 'user',
+    seeded: !!opts.seeded,
+    count: Number.isInteger(opts.count) ? opts.count : works.length,
+    schemaVersion: opts.schemaVersion || String(db.version || ''),
+    warnings
+  };
+}
+
+function renderScriptFromDb(db, opts = {}) {
+  const min = !!opts.minify;
+  const payload = createRuntimePayload(db, {
+    worksOverride: opts.worksOverride,
+    theme: opts.theme,
+    site: opts.site,
+    source: opts.source,
+    seeded: opts.seeded,
+    count: opts.count,
+    warnings: opts.warnings,
+    schemaVersion: opts.schemaVersion
+  });
+  const serializedPayload = JSON.stringify(payload, null, min ? 0 : 2).replace(/</g, '\\u003c');
 
   return `/** AUTO-GENERATED by praetorius generate
  * Paste into a Squarespace Code block, or host as an external JS file.
  * Source data: .prae/works.json
  */
 (function(){
-  var works = ${serializedWorks};
+  var fallback = ${serializedPayload};
+  var hasWindow = typeof window !== 'undefined';
+  var data = (hasWindow && window.__PRAE_DATA__ && Array.isArray(window.__PRAE_DATA__.works))
+    ? window.__PRAE_DATA__
+    : fallback;
+  if (hasWindow && !window.__PRAE_DATA__) {
+    window.__PRAE_DATA__ = data;
+  }
+  if (!hasWindow) return;
+  var works = Array.isArray(data.works) ? data.works : [];
+  var pageFollowMaps = data.pageFollowMaps || {};
 
-  // Ensure matching <audio> tags exist and carry data-audio attributes.
   function ensureAudioTags() {
     works.forEach(function(w){
-      if(!w.audio) return;
+      var src = w.audioUrl || w.audio || '';
+      if(!src) return;
       var id = w.audioId || ('wc-a' + String(w.id||'').trim());
       if(!id) return;
       var a = document.getElementById(id);
@@ -294,11 +391,11 @@ function renderScriptFromDb(db, opts = {}) {
         a.id = id;
         a.preload = 'none';
         a.setAttribute('playsinline','');
-        a.setAttribute('data-audio', w.audio);
+        a.setAttribute('data-audio', src);
         var host = document.querySelector('#works-console') || document.body;
         host.appendChild(a);
       } else {
-        a.setAttribute('data-audio', w.audio);
+        a.setAttribute('data-audio', src);
       }
     });
   }
@@ -306,22 +403,68 @@ function renderScriptFromDb(db, opts = {}) {
   var worksById = {};
   works.forEach(function(w){ worksById[w.id] = w; });
 
-  // Emit page-follow maps: picked up by main.js via
-  // const pageFollowMaps = (window.PRAE && window.PRAE.pageFollowMaps) || { ...fallback... };
-  var pageFollowMaps = ${serializedPF};
-
   window.PRAE = window.PRAE || {};
   window.PRAE.works = works;
   window.PRAE.worksById = worksById;
   window.PRAE.pageFollowMaps = pageFollowMaps;
   window.PRAE.ensureAudioTags = ensureAudioTags;
-  // Optional theme hint from config (non-authoritative; UI can ignore)
   window.PRAE.config = window.PRAE.config || {};
-  window.PRAE.config.theme = ${JSON.stringify(opts.theme === 'light' ? 'light' : 'dark')};
-  window.PRAE.config.site  = ${JSON.stringify(opts.site || {})};
+  window.PRAE.config.theme = data.config ? data.config.theme : ${JSON.stringify(opts.theme === 'light' ? 'light' : 'dark')};
+  window.PRAE.config.site  = data.config ? data.config.site  : ${JSON.stringify(opts.site || {})};
+  window.PRAE.warnings = Array.isArray(data.warnings) ? data.warnings : [];
 
   try { ensureAudioTags(); } catch(_) {}
-  console.log('[prae] loaded', works.length, 'works; page-follow maps:', Object.keys(pageFollowMaps).length);
+  try { console.info('[prae] data:', data.source || 'unknown', 'count:', data.count != null ? data.count : works.length); } catch(_) {}
+
+  if (data && data.source === 'user') {
+    var fingerprints = ['Gymnopédie', 'Es ist ein Ros', 'DEMO — Placeholder'];
+    var haystack = JSON.stringify(works).toLowerCase();
+    var hit = fingerprints.find(function(fp){ return haystack.indexOf(fp.toLowerCase()) >= 0; });
+    if (hit) {
+      var msg = 'Praetorius detected starter content while source=user (' + hit + '). Clean dist/ and rebuild.';
+      console.error(msg);
+      if (typeof document !== 'undefined') {
+        var banner = document.createElement('div');
+        banner.style.position = 'fixed';
+        banner.style.top = '0';
+        banner.style.left = '0';
+        banner.style.right = '0';
+        banner.style.padding = '16px';
+        banner.style.background = '#b91c1c';
+        banner.style.color = '#fff';
+        banner.style.fontFamily = 'system-ui, sans-serif';
+        banner.style.zIndex = '2147483647';
+        banner.style.textAlign = 'center';
+        banner.textContent = msg;
+        document.body.appendChild(banner);
+      }
+      throw new Error(msg);
+    }
+  }
+
+  if (window.PRAE.warnings && window.PRAE.warnings.length) {
+    try {
+      document.querySelectorAll('.prae-warning-banner').forEach(function(node){ node.remove(); });
+    } catch (_) {}
+    var warnHost = document.createElement('div');
+    warnHost.className = 'prae-warning-banner';
+    warnHost.setAttribute('role', 'status');
+    warnHost.setAttribute('aria-live', 'polite');
+    warnHost.style.position = 'relative';
+    warnHost.style.display = 'block';
+    warnHost.style.padding = '0.75rem 1rem';
+    warnHost.style.margin = '0';
+    warnHost.style.background = '#f97316';
+    warnHost.style.color = '#000';
+    warnHost.style.fontFamily = 'system-ui, sans-serif';
+    warnHost.style.fontSize = '0.95rem';
+    warnHost.style.fontWeight = '600';
+    warnHost.textContent = window.PRAE.warnings.join(' ');
+    var target = document.querySelector('[data-prae-banner]') || document.body;
+    if (target && typeof target.prepend === 'function') {
+      target.prepend(warnHost);
+    }
+  }
 })();
 `;
 }
@@ -1883,7 +2026,7 @@ function previewHarnessHTML(theme = 'dark') {
     '  <link rel="stylesheet" href="/styles.css"/>',
     '  <style>body{margin:0;padding:1rem;background:var(--bg, #111);color:var(--fg,#fff)}</style>',
     '</head>',
-    `<body class="prae-theme-${theme}">`,
+    `<body class="prae-theme-${theme}" data-prae-banner>`,
     '  <section id="works-console"></section>',
     '  <script src="/script.js" defer></script>',
     // Ensure host/body have the right theme and render using the minimal list UI.
@@ -3660,11 +3803,13 @@ program
   .option('--app-css <file>','UI CSS output filename', 'app.css')
   .option('--no-ui',        'skip building UI (HTML/JS/CSS) even if present', false)
   .option('--seed <mode>', 'starter content seeding (auto|always|never)', 'auto')
+  .option('--allow-fallback', 'Use starter seed when validation fails (prints warning banner)', false)
 
 
   .action(async function (opts) {
     const command = this;
     const outDir = path.resolve(process.cwd(), opts.out);
+    const allowFallback = !!opts.allowFallback;
     fs.mkdirSync(outDir, { recursive: true });
     const uiSrcDir = path.resolve(process.cwd(), opts.uiSrc || 'ui');
     const pkgUiDir = path.resolve(PKG_ROOT, 'ui'); // packaged starter UI (fallback)
@@ -3677,6 +3822,9 @@ program
     }
 
     const buildOnce = async () => {
+      try { fs.rmSync(outDir, { recursive: true, force: true }); } catch {}
+      fs.mkdirSync(outDir, { recursive: true });
+
       const cfg = loadConfig();
       const requestedSkinRaw = String(opts.skin || cfg.ui?.skin || 'console').trim();
       const normalizedSkin = requestedSkinRaw.toLowerCase();
@@ -3718,7 +3866,11 @@ program
       }
 
       const db = loadDb();
-      const worksCount = Array.isArray(db.works) ? db.works.length : 0;
+      let worksCount = Array.isArray(db.works) ? db.works.length : 0;
+      let dataSource = seedWasApplied ? 'seed' : 'user';
+      let fallbackWorks = null;
+      const runtimeWarnings = [];
+      const schemaVersion = pkgJson.version || '0.0.0';
       if (process.env.PRAE_TEST === '1') {
         const tag = seedWasApplied ? 'APPLIED' : 'SKIPPED';
         console.log(`PRAE_TEST: works=${worksCount}, seed=${tag}`);
@@ -3729,10 +3881,36 @@ program
       if (!validate(db)) {
         console.log(pc.red('DB validation failed:'));
         for (const e of validate.errors || []) console.log('  - ' + e.instancePath + ' ' + e.message);
-        return false;
+        if (allowFallback) {
+          console.log(pc.yellow('--allow-fallback specified → using starter seed (validation failed).'));
+          fallbackWorks = GENERIC_STARTER_WORKS;
+          dataSource = 'seed';
+          seedWasApplied = true;
+          runtimeWarnings.push('Starter seed is shown because works data failed validation (--allow-fallback).');
+        } else {
+          if (!opts.watch) process.exit(1);
+          process.exitCode = 1;
+          return false;
+        }
       }
       const wantMin = !!opts.minify || !!cfg.output.minify;
-      let js  = renderScriptFromDb(db, { minify: wantMin, theme: cfg.theme, site: cfg.site });
+      const runtimeOpts = {
+        worksOverride: fallbackWorks,
+        theme: cfg.theme,
+        site: cfg.site,
+        source: dataSource,
+        seeded: dataSource === 'seed',
+        warnings: runtimeWarnings,
+        schemaVersion
+      };
+      const runtimePayload = createRuntimePayload(db, runtimeOpts);
+      worksCount = runtimePayload.count;
+      const scriptOpts = {
+        ...runtimeOpts,
+        count: runtimePayload.count,
+        minify: wantMin
+      };
+      let js  = renderScriptFromDb(db, scriptOpts);
       let css = buildCssBundle();
       if (wantMin) {
         const esb = await lazyEsbuild();
@@ -3754,6 +3932,7 @@ program
         const htmlPath = path.join(outDir, 'embed.html');
         atomicWriteFile(htmlPath, html);
         console.log(pc.green('write ') + pc.dim(cwdRel(htmlPath)));
+        console.log(pc.gray(`Using data: source=${runtimePayload.source}, count=${runtimePayload.count}`));
         return true;
       }
       const jsFile  = opts.js || 'script.js';
@@ -3882,10 +4061,21 @@ program
 
           // Ensure the chosen light/dark theme class lands on <body>
           html = upsertBodyTheme(html, cfg.theme);
+          if (!wantMin) {
+            const metaTag = `<meta name="prae-data-source" content="${runtimePayload.source}">`;
+            if (/<\/head>/i.test(html)) {
+              html = html.replace(/<\/head>/i, `  ${metaTag}\n</head>`);
+            } else if (/<html[^>]*>/i.test(html)) {
+              html = html.replace(/<html[^>]*>/i, (m) => `${m}\n  ${metaTag}`);
+            } else {
+              html = `${metaTag}\n${html}`;
+            }
+          }
           const injParts = [
             `<link rel="stylesheet" href="./${cssFile}">`
           ];
           if (haveStyle) injParts.push(`<link rel="stylesheet" href="./${appCssFileName}">`);
+          injParts.push(`<script id="prae-data" data-source="${runtimePayload.source}" data-count="${runtimePayload.count}">window.__PRAE_DATA__ = ${serializeForScript(runtimePayload)};</script>`);
           injParts.push(`<script src="./${jsFile}" defer></script>`);
           if (docsData) {
             injParts.push(`<script id="prae-docs-data" type="application/json">${serializeForScript(docsData)}</script>`);
@@ -3909,12 +4099,16 @@ program
           );
         }
       }
-      console.log(pc.bold(`Generated ${chosenSkin} to ${cwdRel(outDir)} (works: ${worksCount}, seeded: ${seedWasApplied ? 'yes' : 'no'})`));
+        console.log(pc.gray(`Using data: source=${runtimePayload.source}, count=${runtimePayload.count}`));
+        console.log(pc.bold(`Generated ${chosenSkin} to ${cwdRel(outDir)} (works: ${worksCount}, seeded: ${seedWasApplied ? 'yes' : 'no'})`));
       return true; // end buildOnce success
     }; // <-- end buildOnce
 
-    const ok = await buildOnce();
-    if (ok === false) return;
+      const ok = await buildOnce();
+      if (ok === false) {
+        if (!opts.watch) process.exit(1);
+        return;
+      }
     if (opts.watch) {
       const chokidar = await lazyChokidar();
       const watcher = chokidar.watch(

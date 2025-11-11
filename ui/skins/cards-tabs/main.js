@@ -89,9 +89,12 @@ if (typeof window.praeCycleTheme !== 'function') {
 }
 
 const PRAE = (window.PRAE = window.PRAE || {});
-const works = Array.isArray(PRAE.works) ? PRAE.works : [];
+const PRAE_DATA = window.__PRAE_DATA__ || {};
+const works = Array.isArray(PRAE_DATA.works)
+  ? PRAE_DATA.works
+  : (Array.isArray(PRAE.works) ? PRAE.works : []);
 
-const pfMap = PRAE.pageFollowMaps || {};
+const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
 
 let selectedId = works[0]?.id ?? null;
 let activeTab = 'details';
