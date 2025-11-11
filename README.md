@@ -82,12 +82,21 @@ Skins read the works array seeded via `window.PRAE.works`. Common fields:
 - `id` (integer identifier).
 - `slug` (stable string used for hashes and lookup).
 - `title` (display name).
-- `one` (portfolio one-liner).
+- `one` (legacy single-line summary; kept in sync for compatibility).
+- `oneliner` (optional) — single-line (~160 char) blurb for compact/tile views. Markdown is stripped; newlines collapse.
+- `description` (optional) — Markdown body for program notes, shown in detailed views.
 - `cues` (optional) — array of `{ t, label }` where `t` is seconds.
 - `audio` (optional) — URL or `null` for playback.
 - `pdf` (optional) — URL or `null` for score viewing.
 - `score` (optional) — include `pdfStartPage`, `mediaOffsetSec`, `pageMap[]`, and optional
   `pdfDelta` for page-follow.
+
+Praetorius normalizes each work via `normalizeWork` to expose `onelinerEffective` and `descriptionEffective`.
+Skins always read these computed fields, so legacy projects that only provide `description` render
+identically to earlier releases.
+
+Run `prae validate` anytime to confirm schema compliance and catch narrative warnings (e.g., long
+oneliners or accidental line breaks).
 
 Deep links: some skins sync selection and tabs into the URL hash (e.g.,
 `#work=<id>&tab=playback`). The exact keys are skin-specific—inspect each skin template when you
@@ -122,6 +131,7 @@ need to wire custom routing.
 prae generate
 prae generate --skin <name>
 prae skin list
+prae validate
 ```
 
 Supported skin flags: `vite-breeze`, `docs-reader` (`docs`), `cards-tabs` (`dashboard`),
