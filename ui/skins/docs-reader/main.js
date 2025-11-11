@@ -238,11 +238,10 @@ function buildHeroElement(hero) {
       const label = document.createElement('strong');
       label.textContent = work.title || 'Untitled';
       li.appendChild(label);
-      if (work.summary || work.snippet || work.description || work.onelinerEffective || work.descriptionEffective) {
+      if (work.summary || work.snippet || work.onelinerEffective || work.descriptionEffective) {
         const p = document.createElement('p');
         const summary = work.summary
           ?? work.snippet
-          ?? work.description
           ?? work.onelinerEffective
           ?? work.descriptionEffective
           ?? '';
