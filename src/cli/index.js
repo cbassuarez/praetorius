@@ -4201,6 +4201,18 @@ program
               console.log(pc.green('write ') + pc.dim(cwdRel(appCssOut)));
             }
 
+            const extraDirs = ['lib'];
+            for (const dirName of extraDirs) {
+              const srcDir = path.join(uiRoot, dirName);
+              let stat;
+              try { stat = fs.statSync(srcDir); } catch {}
+              if (stat && stat.isDirectory()) {
+                const destDir = path.join(outDir, dirName);
+                copyDirSync(srcDir, destDir);
+                console.log(pc.green('copy ') + pc.dim(`${cwdRel(srcDir)} → ${cwdRel(destDir)}`));
+              }
+            }
+
           // Build dist/index.html by injecting links/scripts before </body>
           let html = fs.readFileSync(tplIn, 'utf8')
             .replace('<html', `<html data-skin="${chosenSkin}"`);
