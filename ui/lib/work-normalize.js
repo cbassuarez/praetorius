@@ -60,27 +60,99 @@ function deriveOnelinerFromDescription(description) {
 
 export function normalizeWork(work = {}) {
   const source = work || {};
-  const src = toSingleLine(source.oneliner ?? source.one ?? '');
-  const description = normalizeDescription(source.description);
-
-  let onelinerEffective = src || null;
-  if (!onelinerEffective && description) {
-    const derived = deriveOnelinerFromDescription(description);
-    if (derived) onelinerEffective = derived;
-  }
-
-  const descriptionEffective = description || (src || null);
-
   const normalized = { ...source };
 
-  if (src) normalized.oneliner = src;
+  const onelinerInput = source.oneliner ?? source.one ?? '';
+  const onelinerRaw = coerceString(onelinerInput);
+  let onelinerEffective = toSingleLine(onelinerRaw).trim();
+  const hasProvidedOneliner = onelinerRaw.trim().length > 0;
+
+  const normalizeDescCandidate = (value) => {
+    if (value === undefined || value === null) return '';
+    let text;
+    if (Array.isArray(value)) {
+      text = value
+        .map((part) => coerceString(part).replace(/\r\n?/g, '\n').trim())
+        .filter(Boolean)
+        .join('\n\n');
+    } else {
+      text = coerceString(value);
+    }
+    text = text.replace(/\r\n?/g, '\n').trim();
+    if (!text) return '';
+    text = text.replace(/\n{3,}/g, '\n\n');
+    text = text.replace(/[ \t]{2,}/g, ' ');
+    return text;
+  };
+
+  const descriptionKeys = [
+    'description',
+    'desc',
+    'program',
+    'programNote',
+    'programNotes',
+    'notes',
+    'body',
+    'text',
+    'copy',
+  ];
+
+  let descriptionEffective = '';
+  let descriptionField = null;
+
+  for (const key of descriptionKeys) {
+    const candidate = normalizeDescCandidate(source[key]);
+    if (candidate) {
+      descriptionEffective = candidate;
+      descriptionField = key;
+      break;
+    }
+  }
+
+  if (!onelinerEffective && !hasProvidedOneliner && descriptionEffective) {
+    onelinerEffective = deriveOnelinerFromDescription(descriptionEffective) || '';
+  }
+
+  let dedupedOneliner = false;
+
+  const canonical = (value) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+
+  if (descriptionEffective) {
+    const firstParagraph = descriptionEffective
+      .split(/\n{2,}/)
+      .map((part) => part.trim())
+      .find(Boolean)
+      || descriptionEffective.split(/\n+/).map((part) => part.trim()).find(Boolean)
+      || '';
+
+    if (firstParagraph && onelinerEffective && canonical(firstParagraph) === canonical(onelinerEffective)) {
+      onelinerEffective = '';
+      dedupedOneliner = true;
+    }
+  } else if (onelinerEffective) {
+    descriptionEffective = '';
+  }
+
+  if (hasProvidedOneliner && onelinerEffective) normalized.oneliner = onelinerEffective;
   else if ('oneliner' in normalized) delete normalized.oneliner;
 
   if (onelinerEffective) normalized.one = onelinerEffective;
   else if ('one' in normalized) delete normalized.one;
 
-  if (description) normalized.description = description;
+  if (descriptionEffective) normalized.description = descriptionEffective;
   else if ('description' in normalized) delete normalized.description;
+
+  if (typeof window !== 'undefined' && window && window.__PRAE_DEBUG) {
+    try {
+      const logger = window.console && window.console.debug ? window.console.debug : window.console?.log;
+      if (logger) {
+        logger('[prae] normalizeWork', {
+          descriptionField,
+          dedupedOneliner,
+        });
+      }
+    } catch (_) {}
+  }
 
   return {
     ...normalized,
