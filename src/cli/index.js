@@ -1135,7 +1135,8 @@ function ensureRequired(row) {
   const hasSlug  = !!(row.slug  && String(row.slug).trim());
   const hasOne   = !!(row.one   && String(row.one).trim());
   const hasOneliner = !!(row.oneliner && String(row.oneliner).trim());
-  const hasDescription = !!(row.description && String(row.description).trim());
+  const rawDescription = row.description ?? row.desc;
+  const hasDescription = !!(rawDescription && String(rawDescription).trim());
   return hasTitle && hasSlug && (hasOne || hasOneliner || hasDescription);
 }
 function parseMaybeJSON(s) {
@@ -1145,6 +1146,7 @@ function parseMaybeJSON(s) {
 function sanitizeNarrativeFields(work) {
   const normalized = normalizeWork(work);
   const sanitized = { ...work, one: normalized.one };
+  delete sanitized.desc;
   if (normalized.oneliner) sanitized.oneliner = normalized.oneliner;
   else delete sanitized.oneliner;
   if (normalized.description) sanitized.description = normalized.description;
@@ -1172,7 +1174,7 @@ function normalizeImportedWork(row) {
   const narrativeSource = {
     ...base,
     oneliner: row.oneliner ?? row.one ?? '',
-    description: row.description ?? null
+    description: row.description ?? row.desc ?? null
   };
   const { sanitized } = sanitizeNarrativeFields(narrativeSource);
   const output = { ...sanitized };

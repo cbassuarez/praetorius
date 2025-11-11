@@ -41,6 +41,7 @@
             "type": "string",
             "maxLength": 240
           },
+          "desc": { "type": "string" },
           "description": { "type": "string" },
           "openNote": {
             "type": "array",
