@@ -39,10 +39,23 @@
           "one": { "type": "string", "minLength": 1 },
           "oneliner": {
             "type": "string",
-            "maxLength": 240
+            "maxLength": 240,
+            "pattern": "^[^\\n]*$"
           },
-          "desc": { "type": "string" },
-          "description": { "type": "string" },
+          "desc": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "null" }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "null" }
+            ]
+          },
           "openNote": {
             "type": "array",
             "items": { "type": "string" }

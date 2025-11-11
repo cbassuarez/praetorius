@@ -756,6 +756,21 @@ const WORKS_SCHEMA = {
           slug:  { type: 'string', minLength: 1 },
           title: { type: 'string', minLength: 1 },
           one:   { type: 'string', minLength: 1 },
+          oneliner: {
+            type: 'string',
+            maxLength: 240,
+            pattern: '^[^\\n]*$'
+          },
+          description: { anyOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+            { type: 'null' }
+          ] },
+          desc: { anyOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+            { type: 'null' }
+          ] },
           audio: { type: ['string','null'] },
           pdf:   { type: ['string','null'] },
           cues: {
@@ -1955,6 +1970,14 @@ Supported skins:
   • typefolio (alias: typography) — web-book reader: light header/footer, two-page spread, Caslon-style typography; portfolio actions intact.
   • typescatter (alias: posterboard) — type-only poster wall with draggable tiles; scatter → editorial grid toggle.
 Theme: light/dark via the built-in #wc-theme-toggle. No WAAPI.
+
+Narrative fields:
+  • oneliner — optional single-line (~160 char) summary for tiles/lists. Markdown is stripped; newlines collapse.
+  • description — optional Markdown body for detail views (paragraphs, headings, links allowed).
+    Legacy projects without an oneliner keep working: compact views auto-derive from description/title.
+
+Validation:
+  • prae validate — schema check + narrative warnings (long/newline oneliners; collapse notice).
 
 Examples:
   # Generate with default skin
@@ -3298,6 +3321,51 @@ program
         console.log('   score: ' + pc.gray(`p1→PDF ${normalized.score.pdfStartPage ?? 1}, offset ${normalized.score.mediaOffsetSec ?? 0}s, map ${normalized.score.pageMap.length} rows`));
       }
     });
+  });
+
+/* ------------------ validate ------------------ */
+program
+  .command('validate')
+  .description('Validate works DB against schema and emit narrative warnings')
+  .action(() => {
+    const db = loadDb();
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(WORKS_SCHEMA);
+    const schemaOk = validate(db);
+
+    const worksCount = Array.isArray(db.works) ? db.works.length : 0;
+    if (schemaOk) {
+      console.log(pc.green(`Schema OK — ${worksCount} work${worksCount === 1 ? '' : 's'}`));
+    } else {
+      console.log(pc.red('Schema errors:'));
+      for (const err of validate.errors || []) {
+        const where = err.instancePath && err.instancePath.length ? err.instancePath : '/';
+        console.log('  - ' + where + ' ' + (err.message || 'invalid'));
+      }
+    }
+
+    const warnings = [];
+    for (const work of db.works || []) {
+      const view = normalizeWork(work);
+      const hints = collectWorkWarnings(view);
+      for (const hint of hints) {
+        const label = `#${view.id ?? '?'} ${view.title ?? ''}`.trim();
+        warnings.push({ label, hint });
+      }
+    }
+
+    if (warnings.length) {
+      console.log(pc.yellow('Warnings:'));
+      for (const entry of warnings) {
+        console.log('  - ' + entry.label + ': ' + entry.hint);
+      }
+    } else {
+      console.log(pc.green('No narrative warnings.'));
+    }
+
+    if (!schemaOk) {
+      process.exitCode = 1;
+    }
   });
 
 /* ------------------ edit ------------------ */
