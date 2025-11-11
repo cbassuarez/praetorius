@@ -1466,8 +1466,14 @@ function globToRegex(pattern) {
     if (ch === '*') {
       const next = normalized[i + 1];
       if (next === '*') {
-        source += '.*';
-        i += 1; // skip the next '*'
+        const after = normalized[i + 2];
+        if (after === '/') {
+          source += '(?:.*/)?';
+          i += 2; // skip the next '*' and the '/'
+        } else {
+          source += '.*';
+          i += 1; // skip the next '*'
+        }
       } else {
         source += '[^/]*';
       }
@@ -1939,11 +1945,19 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
   const renderMarkdown = (markdown) => {
     const renderer = new markedLib.Renderer();
     const headings = [];
-    renderer.heading = (text, level, raw) => {
-      const safe = slugify(String(raw || text));
-      const plain = stripInlineMarkdown(raw || text);
-      headings.push({ id: safe, depth: level, text: plain });
-      return `<h${level} id="${safe}">${text}</h${level}>`;
+    const headingCounts = new Map();
+    renderer.heading = function headingRenderer(token) {
+      const depth = Number.isFinite(token?.depth) ? token.depth : 2;
+      const rawHtml = this.parser && token?.tokens ? this.parser.parseInline(token.tokens) : (token?.text ?? '');
+      const sourceText = typeof token?.text === 'string' ? token.text : stripInlineMarkdown(rawHtml);
+      let safe = slugify(sourceText || `section-${headings.length + 1}`);
+      if (!safe) safe = `section-${headings.length + 1}`;
+      const seen = headingCounts.get(safe) || 0;
+      headingCounts.set(safe, seen + 1);
+      const id = seen ? `${safe}-${seen + 1}` : safe;
+      const plain = stripInlineMarkdown(sourceText || rawHtml || id);
+      headings.push({ id, depth, text: plain || id });
+      return `<h${depth} id="${id}">${rawHtml}</h${depth}>`;
     };
     const parser = new markedLib.Marked({
       renderer,
@@ -2200,6 +2214,108 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
     };
   }).filter(Boolean);
 
+  const ensureString = (value, fallback = '') => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length ? trimmed : fallback;
+    }
+    return fallback;
+  };
+
+  const heroData = (() => {
+    const base = {
+      title: ensureString(homepageDoc?.title, siteTitle) || siteTitle || 'Documentation',
+      lede: ensureString(homepageDoc?.summary, siteDescription) || siteDescription || '',
+      kicker: ensureString(homepageDoc?.subtitle, siteSubtitle)
+    };
+    const fmHero = homepageDoc?.fm && typeof homepageDoc.fm.hero === 'object' ? homepageDoc.fm.hero : null;
+    if (fmHero) {
+      if (typeof fmHero.title === 'string' && fmHero.title.trim()) base.title = fmHero.title.trim();
+      if (typeof fmHero.lede === 'string' && fmHero.lede.trim()) base.lede = fmHero.lede.trim();
+      if (typeof fmHero.kicker === 'string' && fmHero.kicker.trim()) base.kicker = fmHero.kicker.trim();
+    }
+    if (!base.lede) base.lede = siteDescription || '';
+    if (!base.kicker) base.kicker = siteSubtitle || '';
+    if (worksIncludeOnHome && worksHighlights.length) {
+      base.works = worksHighlights.map((item) => ({
+        id: item.id,
+        title: item.title,
+        summary: item.summary
+      }));
+    }
+    return base;
+  })();
+
+  const homepageSections = (() => {
+    const sections = [];
+    const fmSections = Array.isArray(homepageDoc?.fm?.sections) ? homepageDoc.fm.sections : [];
+    const normalizeItems = (items) => {
+      if (!Array.isArray(items)) return [];
+      return items
+        .map((entry) => {
+          if (typeof entry === 'string') {
+            const label = entry.trim();
+            if (!label) return null;
+            return { title: label, href: '', snippet: '', docId: '' };
+          }
+          if (!entry || typeof entry !== 'object') return null;
+          const title = ensureString(entry.title, ensureString(entry.label));
+          const href = ensureString(entry.href, ensureString(entry.url));
+          const snippet = ensureString(entry.snippet, ensureString(entry.summary));
+          const docId = ensureString(entry.docId, ensureString(entry.id));
+          if (!title && !href && !snippet && !docId) return null;
+          return { title, href, snippet, docId };
+        })
+        .filter(Boolean);
+    };
+
+    const pickMarkdown = (section) => {
+      const candidates = [section.markdown, section.body, section.content, section.md];
+      for (const candidate of candidates) {
+        if (typeof candidate === 'string' && candidate.trim()) {
+          return candidate;
+        }
+      }
+      return '';
+    };
+
+    fmSections.forEach((section, idx) => {
+      if (!section || typeof section !== 'object') return;
+      const title = ensureString(section.title);
+      const kicker = ensureString(section.kicker);
+      const lede = ensureString(section.lede, ensureString(section.summary));
+      const idSource = ensureString(section.id, ensureString(section.slug, title || `section-${idx + 1}`));
+      const id = slugify(idSource || `section-${idx + 1}`) || `section-${idx + 1}`;
+      let html = '';
+      if (typeof section.html === 'string' && section.html.trim()) {
+        html = section.html;
+      } else {
+        const md = pickMarkdown(section);
+        if (md) {
+          html = renderMarkdown(md).html;
+        }
+      }
+      const items = normalizeItems(section.items);
+      sections.push({ id, title, kicker, lede, html, items });
+    });
+
+    if (sections.length) return sections;
+
+    return nav.map((group) => ({
+      id: group.id,
+      title: group.label,
+      kicker: '',
+      lede: '',
+      html: '',
+      items: group.items.map((item) => ({
+        title: item.label,
+        href: item.href,
+        snippet: item.snippet || '',
+        docId: item.docId || ''
+      }))
+    }));
+  })();
+
   return {
     data: {
       site: { title: siteTitle, subtitle: siteSubtitle, description: siteDescription, accent: siteAccent },
@@ -2208,6 +2324,8 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
       docs,
       homepage: homepageDoc ? homepageDoc.id : '',
       homepageMissing: !homepageDoc,
+      hero: heroData,
+      sections: homepageSections,
       works: {
         includeInNav: worksIncludeInNav,
         includeOnHome: worksIncludeOnHome,

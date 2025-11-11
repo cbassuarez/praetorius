@@ -70,6 +70,8 @@ DOCS_LIST.forEach((doc) => {
 const HOMEPAGE_ID = typeof DOCS_DATA.homepage === 'string' ? DOCS_DATA.homepage : '';
 const HOMEPAGE_MISSING = !!DOCS_DATA.homepageMissing;
 const WORKS_SETTINGS = (DOCS_DATA.works && typeof DOCS_DATA.works === 'object') ? DOCS_DATA.works : {};
+const HERO_DATA = (DOCS_DATA.hero && typeof DOCS_DATA.hero === 'object') ? DOCS_DATA.hero : {};
+const HOME_SECTIONS = Array.isArray(DOCS_DATA.sections) ? DOCS_DATA.sections : [];
 const PLACEHOLDER_DOC = HOMEPAGE_MISSING ? {
   id: 'docs-placeholder',
   title: 'Documentation coming soon',
@@ -298,18 +300,123 @@ function buildHeroElement(hero) {
   return header;
 }
 
+function renderHomeSections(article, sections) {
+  if (!article || !Array.isArray(sections) || !sections.length) return;
+  sections.forEach((section) => {
+    if (!section || typeof section !== 'object') return;
+    const block = document.createElement('section');
+    block.className = 'docs-section docs-home-section';
+    const id = ensureString(section.id, 'section.id');
+    if (id) block.id = id;
+    const kickerText = ensureString(section.kicker, 'section.kicker');
+    if (kickerText) {
+      const kicker = document.createElement('p');
+      kicker.className = 'docs-kicker';
+      kicker.textContent = kickerText;
+      block.appendChild(kicker);
+    }
+    const titleText = ensureString(section.title, 'section.title');
+    if (titleText) {
+      const heading = document.createElement('h2');
+      heading.textContent = titleText;
+      block.appendChild(heading);
+    }
+    const ledeText = ensureString(section.lede, 'section.lede');
+    if (ledeText) {
+      const lede = document.createElement('p');
+      lede.className = 'docs-lede';
+      lede.textContent = ledeText;
+      block.appendChild(lede);
+    }
+    const html = ensureHtml(section.html, 'section.html');
+    if (html) {
+      const body = document.createElement('div');
+      body.className = 'docs-home-section-body';
+      body.innerHTML = html;
+      block.appendChild(body);
+    }
+    const items = Array.isArray(section.items) ? section.items : [];
+    if (items.length) {
+      const list = document.createElement('ul');
+      list.className = 'docs-home-section-list';
+      items.forEach((item) => {
+        if (!item || (typeof item !== 'object' && typeof item !== 'string')) return;
+        const entry = document.createElement('li');
+        entry.className = 'docs-home-section-item';
+        let label = '';
+        let href = '';
+        let snippet = '';
+        let docId = '';
+        if (typeof item === 'string') {
+          label = ensureString(item, 'section.item.title');
+        } else {
+          label = ensureString(item.title ?? item.label, 'section.item.title');
+          href = ensureString(item.href ?? item.url, 'section.item.href');
+          snippet = ensureString(item.snippet ?? item.summary, 'section.item.snippet');
+          docId = ensureString(item.docId ?? item.id, 'section.item.docId');
+        }
+        if (!label && !href && !snippet) return;
+        if (href) {
+          const link = document.createElement('a');
+          link.href = href;
+          link.textContent = label || href;
+          if (docId) link.dataset.docId = docId;
+          entry.appendChild(link);
+        } else if (label) {
+          const strong = document.createElement('strong');
+          strong.textContent = label;
+          entry.appendChild(strong);
+        }
+        if (snippet) {
+          const p = document.createElement('p');
+          p.textContent = snippet;
+          entry.appendChild(p);
+        }
+        list.appendChild(entry);
+      });
+      block.appendChild(list);
+    }
+    article.appendChild(block);
+  });
+}
+
 function renderDocsContent(article, doc, opts = {}) {
   if (!article) return { body: null };
   const effectiveDoc = doc || PLACEHOLDER_DOC;
   article.innerHTML = '';
   if (!effectiveDoc) return { body: null };
 
-  const hero = buildHeroElement({
-    kicker: effectiveDoc.subtitle,
-    title: effectiveDoc.title,
-    lede: effectiveDoc.summary
-  });
+  const baseHero = {
+    kicker: ensureString(effectiveDoc.subtitle, 'doc.subtitle'),
+    title: ensureString(effectiveDoc.title, 'doc.title', 'Documentation') || 'Documentation',
+    lede: ensureString(effectiveDoc.summary, 'doc.summary')
+  };
+  let heroInput = baseHero;
+  if (opts.heroOverride && typeof opts.heroOverride === 'object') {
+    heroInput = {
+      kicker: ensureString(opts.heroOverride.kicker, 'hero.kicker', baseHero.kicker),
+      title: ensureString(opts.heroOverride.title, 'hero.title', baseHero.title) || baseHero.title || 'Documentation',
+      lede: ensureString(opts.heroOverride.lede, 'hero.lede', baseHero.lede)
+    };
+    if (Array.isArray(opts.heroOverride.works) && opts.heroOverride.works.length) {
+      heroInput.works = opts.heroOverride.works
+        .map((item) => {
+          if (!item || typeof item !== 'object') return null;
+          const title = ensureString(item.title, 'hero.works.title', 'Untitled') || 'Untitled';
+          const summary = ensureString(item.summary, 'hero.works.summary');
+          const id = ensureString(item.id, 'hero.works.id', slugify(title || 'work'));
+          return { id, title, summary };
+        })
+        .filter(Boolean);
+    }
+  }
+
+  const hero = buildHeroElement(heroInput);
   if (hero) article.appendChild(hero);
+
+  if (Array.isArray(opts.sections) && opts.sections.length) {
+    renderHomeSections(article, opts.sections);
+  }
 
   const body = document.createElement('section');
   body.className = 'docs-section docs-body';
@@ -868,8 +975,12 @@ ready(() => {
   }
 
   function renderDoc(doc) {
-    const showWorks = showWorksOnHome && homepageDoc && doc && doc.id === homepageDoc.id;
-    renderDocsContent(article, doc, { showWorks, highlights: worksHighlights });
+    const isHomepageDoc = Boolean(homepageDoc && doc && doc.id === homepageDoc.id);
+    const heroOverride = isHomepageDoc ? HERO_DATA : null;
+    const heroHasWorks = Array.isArray(heroOverride?.works) && heroOverride.works.length > 0;
+    const showWorks = showWorksOnHome && isHomepageDoc && !heroHasWorks;
+    const sections = isHomepageDoc ? HOME_SECTIONS : [];
+    renderDocsContent(article, doc, { showWorks, highlights: worksHighlights, heroOverride, sections });
     const headings = buildHeadings(article);
     enhanceHeadings(headings);
     if (article) enhanceCodeBlocks(article);
