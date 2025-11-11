@@ -1,5 +1,4 @@
 import { normalizeWork } from './lib/work-normalize.js';
-import { buildOpenDetailLines } from './lib/work-detail-lines.js';
 
 (function ensureFavicon(){
   if (typeof document === 'undefined') return;
@@ -336,21 +335,25 @@ function attachPageFollow(slug, audio){
     const w = works[n];
     if(!w){ return appendLine(`error: unknown work ${nRaw}`,'err',true); }
     section(w.title);
-    const detailLines = buildOpenDetailLines(w);
-    const normalizedOneliner = (detailLines.find(line => line.className === 'one')?.text
-      || String(w.onelinerEffective ?? '')).trim();
-    const descriptionSource = String(w.descriptionEffective ?? '');
+
+    const revealQueue = [];
+
+    const descriptionSource = typeof w.descriptionEffective === 'string'
+      ? w.descriptionEffective
+      : '';
     const descParagraphs = descriptionSource
       .split(/\n{2,}/)
       .map(part => part.trim())
       .filter(Boolean);
-    const revealQueue = [];
     descParagraphs.forEach(text => {
       revealQueue.push({ text, className: 'desc' });
     });
-    if (normalizedOneliner) {
-      revealQueue.push({ text: normalizedOneliner, className: 'muted one' });
+
+    const oneliner = String(w.onelinerEffective ?? '').trim();
+    if (oneliner) {
+      revealQueue.push({ text: oneliner, className: 'muted one' });
     }
+
     const openNotes = Array.isArray(w.openNote)
       ? w.openNote
       : (w.openNote != null ? [w.openNote] : []);
@@ -360,10 +363,12 @@ function attachPageFollow(slug, audio){
       .forEach(text => {
         revealQueue.push({ text, className: '' });
       });
+
     revealQueue.forEach((entry, i) => {
       const { text, className } = entry;
-      setTimeout(() => appendLine(text, className, true), i * 18);
+      setTimeout(() => appendLine(text, className, true), i * 20);
     });
+
     const acts = actRow([
       ...createPlayButtons(w, w.id),
       btn(`copy ${w.id}`,'Copy URL'),
