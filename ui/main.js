@@ -1,4 +1,5 @@
 import { normalizeWork } from './lib/work-normalize.js';
+import { buildOpenDetailLines } from './lib/work-detail-lines.js';
 
 (function ensureFavicon(){
   if (typeof document === 'undefined') return;
@@ -335,21 +336,11 @@ function attachPageFollow(slug, audio){
     const w = works[n];
     if(!w){ return appendLine(`error: unknown work ${nRaw}`,'err',true); }
     section(w.title);
-    const detailLines = [];
-    if (w.descriptionEffective) {
-      const paragraphs = String(w.descriptionEffective)
-        .split(/\n{2,}/)
-        .map(part => part.trim())
-        .filter(Boolean);
-      detailLines.push(...paragraphs);
-    }
-    if (Array.isArray(w.openNote)) {
-      w.openNote
-        .map(note => String(note ?? '').trim())
-        .filter(Boolean)
-        .forEach(text => detailLines.push(text));
-    }
-    detailLines.forEach((text, i) => setTimeout(() => appendLine(text,'',true), i*18));
+    const detailLines = buildOpenDetailLines(w);
+    detailLines.forEach((entry, i) => {
+      const { text, className } = entry;
+      setTimeout(() => appendLine(text, className, true), i * 18);
+    });
     const acts = actRow([
       ...createPlayButtons(w, w.id),
       btn(`copy ${w.id}`,'Copy URL'),
