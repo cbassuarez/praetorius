@@ -139,7 +139,7 @@ Minimal, human-readable schema:
 ---
 
 ## Skins
-
+> ![Example_gif_2](https://raw.githubusercontent.com/cbassuarez/praetorius/a7242056a07f669dcaf6f22b632e352199e009cd/praetorius_example_video_typefolio.gif)
 Praetorius renders the same data across different skins. Choose one at generate time with `--skin`. (You can regenerate in another skin at any time—your data stays the same.)
 
 | Skin                | Summary (one-liner)                                  |
