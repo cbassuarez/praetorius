@@ -1,3 +1,5 @@
+import { ensureBrandMark } from '../../lib/aperture.js';
+
 const PRAE_THEME_STORAGE_KEY = 'wc.theme';
 const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
 
@@ -533,6 +535,8 @@ function applySiteInfo() {
   const title = String(fallbackName || '').trim();
   document.querySelectorAll('[data-site-title]').forEach((el) => { el.textContent = title; });
   document.querySelectorAll('[data-site-subtitle]').forEach((el) => { el.textContent = subtitle; });
+  const brandRoot = document.querySelector('.ts-header-brand');
+  if (brandRoot) ensureBrandMark(brandRoot, site.brand || {});
   const nav = document.getElementById('prae-nav');
   if (nav) {
     const links = Array.isArray(site.links) ? site.links.filter((link) => link?.href && link?.label) : [];

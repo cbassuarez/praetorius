@@ -1,4 +1,5 @@
 import { normalizeWork } from './lib/work-normalize.js';
+import { ensureBrandMark } from './lib/aperture.js';
 
 (function ensureFavicon(){
   if (typeof document === 'undefined') return;
@@ -657,7 +658,12 @@ pdfPane.addEventListener('transitionend', (e)=>{
     const copyEl  = SCOPE.querySelector('[data-copyright-name]');
     const linksEl = SCOPE.querySelector('[data-links]');
     const badgeEl = SCOPE.querySelector('.wb-badge');
-if (badgeEl) badgeEl.style.display = (site.showBadge === false) ? 'none' : '';
+    const brandHost = SCOPE.querySelector('.wb-brand');
+    if (badgeEl) badgeEl.style.display = (site.showBadge === false) ? 'none' : '';
+
+    if (brandHost) {
+      ensureBrandMark(brandHost, site.brand || {});
+    }
 
 
     const fullName = site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ').trim();

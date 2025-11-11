@@ -12,6 +12,7 @@
     "dist",
     "src/cli",
     "src/work-model.js",
+    "src/lib",
     "src/types.d.ts",
     "ui",
     "scaffolds",

@@ -498,7 +498,14 @@ const DEFAULT_CONFIG = Object.freeze({
       { label:'Home',     href:'#', external:false },
       { label:'Projects', href:'#', external:false },
       { label:'Contact',  href:'#', external:false }
-    ]
+    ],
+    brand: {
+      showAperture: true,
+      href: 'https://www.npmjs.com/package/praetorius',
+      target: '_blank',
+      size: 'md',
+      theme: 'auto'
+    }
   }
 });
 
@@ -1306,7 +1313,8 @@ ui: {
       ...DEFAULT_CONFIG.site,
       ...(raw.site || {}),
       updated: { ...DEFAULT_CONFIG.site.updated, ...(raw.site?.updated || {}) },
-      links: Array.isArray(raw.site?.links) ? raw.site.links : DEFAULT_CONFIG.site.links
+      links: Array.isArray(raw.site?.links) ? raw.site.links : DEFAULT_CONFIG.site.links,
+      brand: { ...DEFAULT_CONFIG.site.brand, ...(raw.site?.brand || {}) }
     }
   };
 
@@ -1336,7 +1344,31 @@ ui: {
       },
       links: (Array.isArray(cfg.site?.links) ? cfg.site.links : []).map(l => ({
         label: String(l.label || ''), href: String(l.href || ''), external: !!l.external
-      }))
+      })),
+      brand: (() => {
+        const raw = cfg.site?.brand || {};
+        const pickSize = () => {
+          if (typeof raw.size === 'number' && Number.isFinite(raw.size)) return raw.size;
+          if (typeof raw.size === 'string') {
+            const trimmed = raw.size.trim();
+            if (['sm', 'md', 'lg'].includes(trimmed)) return trimmed;
+            const parsed = Number(trimmed);
+            if (Number.isFinite(parsed)) return parsed;
+          }
+          return DEFAULT_CONFIG.site.brand.size;
+        };
+        const out = {
+          showAperture: raw.showAperture !== false,
+          href: String(raw.href || DEFAULT_CONFIG.site.brand.href || ''),
+          target: raw.target === '_self' ? '_self' : '_blank',
+          size: pickSize(),
+          theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : DEFAULT_CONFIG.site.brand.theme
+        };
+        if (raw.title) out.title = String(raw.title);
+        if (raw.ariaLabel) out.ariaLabel = String(raw.ariaLabel);
+        if (raw.className) out.className = String(raw.className);
+        return out;
+      })()
     }
   };
 

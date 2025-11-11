@@ -359,9 +359,20 @@ main.vb-shell,
 
 .vb-brand {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: clamp(0.5rem, 0.35rem + 0.4vw, 0.9rem);
+  padding-inline: clamp(0.75rem, 0.55rem + 0.9vw, 1.6rem);
+}
+
+.vb-brand-text {
   display: grid;
   gap: 0.25rem;
-  padding-inline: clamp(0.75rem, 0.55rem + 0.9vw, 1.6rem);
+}
+
+.vb-brand .prae-aperture {
+  flex-shrink: 0;
+  --size: clamp(28px, 2.2vw, 36px);
 }
 
 .vb-theme-toggle {

@@ -1,3 +1,5 @@
+import { ensureBrandMark } from '../../lib/aperture.js';
+
 const DEFAULT_NAV_DATA = [
   {
     id: 'start',
@@ -900,6 +902,11 @@ ready(() => {
   apply(current(), { persist: false });
 
   applySiteChrome(DOCS_DATA.site || {});
+  const brandRoot = document.querySelector('.docs-brand');
+  if (brandRoot) {
+    const overrides = Object.assign({}, PRAE.config?.site?.brand || {}, DOCS_DATA.site?.brand || {});
+    ensureBrandMark(brandRoot, overrides);
+  }
   const article = document.querySelector('.docs-article');
 
   const themeBtn = document.getElementById('wc-theme-toggle');

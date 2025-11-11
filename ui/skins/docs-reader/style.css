@@ -119,9 +119,21 @@ body[data-theme="light"] .docs-header {
 
 .docs-brand {
   display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  min-width: 0;
+}
+
+.docs-brand-text {
+  display: flex;
   flex-direction: column;
   gap: var(--gap-2xs);
   min-width: 0;
+}
+
+.docs-brand .prae-aperture {
+  flex-shrink: 0;
+  --size: 28px;
 }
 
 .docs-title {
