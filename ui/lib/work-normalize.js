@@ -1,33 +1,23 @@
-const MAX_ONELINER_LENGTH = 240;
 const RECOMMENDED_ONELINER_LENGTH = 160;
+const MAX_ONELINER_LENGTH = 240;
 
 function coerceString(value) {
   if (value === undefined || value === null) return '';
   return String(value);
 }
 
-function collapseWhitespace(value) {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
 function toSingleLine(value) {
   const raw = coerceString(value);
   if (!raw) return '';
-  const withoutBreaks = raw.replace(/[\r\n]+/g, ' ');
-  return collapseWhitespace(withoutBreaks);
+  return raw.replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function normalizeDescription(value) {
-  if (value === undefined || value === null) return null;
+  if (value === undefined || value === null) return '';
   if (Array.isArray(value)) {
-    const joined = value.map(coerceString).join('\n\n');
-    const normalized = joined.replace(/[\r\n]{3,}/g, '\n\n');
-    const trimmed = normalized.trim();
-    return trimmed ? trimmed : null;
+    value = value.map(coerceString).join('\n\n');
   }
-  const str = coerceString(value);
-  const trimmed = str.replace(/\r\n?/g, '\n').trim();
-  return trimmed ? trimmed : null;
+  return coerceString(value).replace(/\r\n?/g, '\n').trim();
 }
 
 function stripMarkdown(input) {
@@ -35,13 +25,13 @@ function stripMarkdown(input) {
   if (!text) return '';
   text = text.replace(/```[\s\S]*?```/g, ' ');
   text = text.replace(/`[^`]*`/g, ' ');
-  text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '');
   text = text.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
   text = text.replace(/^#{1,6}\s*/gm, '');
   text = text.replace(/^>\s?/gm, '');
   text = text.replace(/([*_~]{1,3})([^*_~]+)\1/g, '$2');
   text = text.replace(/<[^>]+>/g, ' ');
-  return collapseWhitespace(text);
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 function truncateWithEllipsis(text, limit) {
@@ -63,86 +53,66 @@ function deriveOnelinerFromDescription(description) {
     const firstBreak = candidate.indexOf('\n');
     if (firstBreak >= 0) candidate = candidate.slice(0, firstBreak);
   }
-  candidate = collapseWhitespace(candidate);
+  candidate = candidate.replace(/\s+/g, ' ').trim();
   if (!candidate) return '';
   return truncateWithEllipsis(candidate, RECOMMENDED_ONELINER_LENGTH);
 }
 
-function clampOneliner(value) {
-  if (!value) return '';
-  return truncateWithEllipsis(value, MAX_ONELINER_LENGTH);
-}
-
 export function normalizeWork(work = {}) {
   const source = work || {};
-  const base = { ...source };
+  const src = toSingleLine(source.oneliner ?? source.one ?? '');
+  const description = normalizeDescription(source.description);
 
-  const rawSingleLine = coerceString(base.oneliner ?? base.one ?? '');
-  const src = collapseWhitespace(rawSingleLine.replace(/\r?\n+/g, ' '));
-  const normalizedOneliner = clampOneliner(src);
-
-  const descriptionSource = base.description !== undefined ? base.description : base.desc;
-  const description = normalizeDescription(descriptionSource);
-
-  let onelinerEffective = normalizedOneliner;
-  if (!onelinerEffective) {
-    const derived = clampOneliner(deriveOnelinerFromDescription(description));
+  let onelinerEffective = src || null;
+  if (!onelinerEffective && description) {
+    const derived = deriveOnelinerFromDescription(description);
     if (derived) onelinerEffective = derived;
   }
-  const titleCandidate = clampOneliner(collapseWhitespace(coerceString(base.title)));
-  if (!onelinerEffective && titleCandidate) {
-    onelinerEffective = titleCandidate;
-  }
 
-  const descriptionEffective = description ?? (normalizedOneliner || null);
+  const descriptionEffective = description || (src || null);
 
-  const normalized = {
-    ...base,
-  };
+  const normalized = { ...source };
 
-  if (normalized.desc !== undefined) delete normalized.desc;
-
-  if (normalizedOneliner) normalized.oneliner = normalizedOneliner;
+  if (src) normalized.oneliner = src;
   else if ('oneliner' in normalized) delete normalized.oneliner;
 
-  if (description !== null) normalized.description = description;
-  else if ('description' in normalized) normalized.description = null;
+  if (onelinerEffective) normalized.one = onelinerEffective;
+  else if ('one' in normalized) delete normalized.one;
 
-  let ensuredOne = onelinerEffective || normalizedOneliner || titleCandidate || '';
-  if (!ensuredOne) ensuredOne = 'Untitled work';
-  normalized.one = ensuredOne;
+  if (description) normalized.description = description;
+  else if ('description' in normalized) delete normalized.description;
 
   return {
     ...normalized,
-    onelinerEffective: onelinerEffective || null,
+    onelinerEffective,
     descriptionEffective,
   };
 }
 
 export function collectWorkWarnings(work = {}) {
   const warnings = [];
-  const rawSource = coerceString(work.oneliner ?? work.one ?? '');
-  const hasOneliner = work.oneliner !== undefined && work.oneliner !== null;
-  const hasLegacy = work.one !== undefined && work.one !== null;
+  const rawOneliner = coerceString(work.oneliner);
+  const rawLegacy = coerceString(work.one);
+  const source = coerceString(work.oneliner ?? work.one ?? '');
 
-  if (hasOneliner && hasLegacy) {
-    const newVal = collapseWhitespace(coerceString(work.oneliner)).trim();
-    const legacyVal = collapseWhitespace(coerceString(work.one)).trim();
-    if (newVal && legacyVal && newVal !== legacyVal) {
+  if (work.oneliner != null && work.one != null) {
+    if (toSingleLine(rawOneliner) && toSingleLine(rawLegacy) && toSingleLine(rawOneliner) !== toSingleLine(rawLegacy)) {
       warnings.push('Both "oneliner" and legacy "one" provided; "oneliner" will be used (remove "one" after migrating).');
     }
   }
 
-  if (/\r|\n/.test(rawSource)) {
+  if (/\r|\n/.test(source)) {
     warnings.push('Oneliner contains line breaks; they will be collapsed to a single space.');
   }
-  const normalized = toSingleLine(rawSource);
+
+  const normalized = toSingleLine(source);
   if (normalized.length > RECOMMENDED_ONELINER_LENGTH) {
     warnings.push(`Oneliner is ${normalized.length} characters (recommended ≤ ${RECOMMENDED_ONELINER_LENGTH}).`);
   }
   if (normalized.length > MAX_ONELINER_LENGTH) {
     warnings.push(`Oneliner exceeds ${MAX_ONELINER_LENGTH} characters and will be truncated.`);
   }
+
   return warnings;
 }
 
@@ -151,5 +121,5 @@ export const __workModelInternals = {
   normalizeDescription,
   stripMarkdown,
   deriveOnelinerFromDescription,
-  clampOneliner,
+  truncateWithEllipsis,
 };

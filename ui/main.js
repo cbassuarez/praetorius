@@ -312,16 +312,17 @@ function attachPageFollow(slug, audio){
       row.className = 'row';
       const workIndex = workIndexNumber(w, idx);
       row.dataset.workIndex = String(workIndex);
-      row.appendChild(block([
-        bold(`[${w.id}] ${w.title}`),
-        span(w.onelinerEffective || '','one'),
-        actRow([
-          btn(`open ${w.id}`,'Open'),
-          ...createPlayButtons(w, workIndex),
-          btn(`copy ${w.id}`,'Copy URL'),
-          ...(w.pdf ? [btn(`pdf ${w.id}`,'PDF')] : [])
-        ], workIndex)
-      ], workIndex));
+      const summaryNodes = [bold(`[${w.id}] ${w.title}`)];
+      if (w.onelinerEffective) {
+        summaryNodes.push(span(w.onelinerEffective, 'one'));
+      }
+      const actions = actRow([
+        btn(`open ${w.id}`,'Open'),
+        ...createPlayButtons(w, workIndex),
+        btn(`copy ${w.id}`,'Copy URL'),
+        ...(w.pdf ? [btn(`pdf ${w.id}`,'PDF')] : [])
+      ], workIndex);
+      row.appendChild(block([...summaryNodes, actions], workIndex));
       return row;
     });
 
@@ -334,7 +335,21 @@ function attachPageFollow(slug, audio){
     const w = works[n];
     if(!w){ return appendLine(`error: unknown work ${nRaw}`,'err',true); }
     section(w.title);
-    w.openNote.forEach((p,i)=> setTimeout(()=> appendLine(p,'',true), i*18));
+    const detailLines = [];
+    if (w.descriptionEffective) {
+      const paragraphs = String(w.descriptionEffective)
+        .split(/\n{2,}/)
+        .map(part => part.trim())
+        .filter(Boolean);
+      detailLines.push(...paragraphs);
+    }
+    if (Array.isArray(w.openNote)) {
+      w.openNote
+        .map(note => String(note ?? '').trim())
+        .filter(Boolean)
+        .forEach(text => detailLines.push(text));
+    }
+    detailLines.forEach((text, i) => setTimeout(() => appendLine(text,'',true), i*18));
     const acts = actRow([
       ...createPlayButtons(w, w.id),
       btn(`copy ${w.id}`,'Copy URL'),
@@ -1156,8 +1171,12 @@ function getActiveAudioInfo(){
   function hudUpdate(n, a){
     if(!hudBox) return;
     const refs = ensureHudDom(); if(!refs) return;
-const wTitle = (n && works[n] ? works[n].title : '—');
-    const pillText = `Now playing ${wTitle}`;
+    const currentWork = (n && works[n]) ? works[n] : null;
+    const title = currentWork?.title || '—';
+    const oneliner = currentWork?.onelinerEffective || '';
+    const pillText = currentWork
+      ? `Now playing ${title}${oneliner ? ` — ${oneliner}` : ''}`
+      : 'Now playing —';
     // Update marquee text and duplicate for seamless loop
     refs.tagTxt.textContent = pillText;
     refs.tagDup.textContent = ' · ' + pillText;
