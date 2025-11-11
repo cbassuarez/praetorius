@@ -1,3 +1,5 @@
+import { normalizeWork } from '../src/work-model.js';
+
 // --- Theme preboot (moved from template.html) -------------------------------
 // Applies saved light/dark theme ASAP and sets color-scheme to avoid FOUC.
 // Safe alongside the later applyTheme(readTheme()) in initWorksConsole.
@@ -73,7 +75,7 @@ const themeBtn  = document.getElementById('wc-theme-toggle');
       clone.openNote = [String(clone.openNote)];
     }
     clone.audioId = clone.audioId || `wc-a${id}`;
-    works[id] = clone;
+    works[id] = normalizeWork(clone);
   });
 
   try {
@@ -301,7 +303,7 @@ function attachPageFollow(slug, audio){
       row.dataset.workIndex = String(workIndex);
       row.appendChild(block([
         bold(`[${w.id}] ${w.title}`),
-        span(w.one,'one'),
+        span(w.onelinerEffective || '','one'),
         actRow([
           btn(`open ${w.id}`,'Open'),
           ...createPlayButtons(w, workIndex),

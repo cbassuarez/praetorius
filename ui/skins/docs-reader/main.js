@@ -238,9 +238,14 @@ function buildHeroElement(hero) {
       const label = document.createElement('strong');
       label.textContent = work.title || 'Untitled';
       li.appendChild(label);
-      if (work.summary || work.snippet || work.description) {
+      if (work.summary || work.snippet || work.description || work.onelinerEffective || work.descriptionEffective) {
         const p = document.createElement('p');
-        const summary = work.summary ?? work.snippet ?? work.description ?? '';
+        const summary = work.summary
+          ?? work.snippet
+          ?? work.description
+          ?? work.onelinerEffective
+          ?? work.descriptionEffective
+          ?? '';
         if (typeof summary === 'string') {
           p.textContent = summary;
         } else if (summary && typeof summary === 'object') {

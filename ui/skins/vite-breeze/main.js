@@ -297,7 +297,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
 
     el.innerHTML = `
       <h2><span class="work-title">${esc(w.title)}</span> <span class="muted">(${esc(w.slug)})</span></h2>
-      <p class="one">${esc(w.one || '')}</p>
+      <p class="one">${esc(w.onelinerEffective || '')}</p>
       ${cueHtml}
       <div class="actions">
         <button class="btn" type="button" data-act="open" data-id="${w.id}">Open</button>
@@ -342,11 +342,11 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
         const isHidden = note.hasAttribute('hidden');
         note.toggleAttribute('hidden', !isHidden);
       } else {
-        // Accept array or string; fallback to other fields
-        const paras = Array.isArray(w.openNote) ? w.openNote
-                    : (w.openNote ? [w.openNote]
-                    : (w.description ? [w.description]
-                   : (w.one ? [w.one] : [])));
+        const paras = [];
+        if (w.descriptionEffective) paras.push(w.descriptionEffective);
+        else if (w.onelinerEffective) paras.push(w.onelinerEffective);
+        if (Array.isArray(w.openNote)) paras.push(...w.openNote);
+        else if (w.openNote) paras.push(String(w.openNote));
         paras.forEach(p=>{
           const d = document.createElement('p');
           d.textContent = String(p||'');

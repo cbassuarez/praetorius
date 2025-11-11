@@ -1,15 +1,18 @@
 {
   "name": "praetorius",
-  "version": "0.1.145",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "bin": {
     "praetorius": "src/cli/index.js",
     "prae": "src/cli/index.js"
   },
+  "types": "src/types.d.ts",
   "files": [
     "dist",
     "src/cli",
+    "src/work-model.js",
+    "src/types.d.ts",
     "ui",
     "scaffolds",
     "assets"

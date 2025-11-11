@@ -675,9 +675,10 @@ function renderPanels() {
       slugLine.textContent = work.slug ? `Slug · ${work.slug}` : 'Slug · —';
       header.appendChild(slugLine);
       detailsPanel.appendChild(header);
-      if (work.one) {
+      const detailText = work.descriptionEffective || work.onelinerEffective;
+      if (detailText) {
         const summary = document.createElement('p');
-        summary.textContent = work.one;
+        summary.textContent = detailText;
         detailsPanel.appendChild(summary);
       }
     }
@@ -908,7 +909,7 @@ function renderWorksList() {
         <div class="work-title">${escapeHtml(work.title ?? '')}</div>
         <div class="work-slug">${escapeHtml(work.slug ?? '')}</div>
       </div>
-      <p class="work-one">${escapeHtml(work.one ?? '')}</p>
+      <p class="work-one">${escapeHtml(work.onelinerEffective ?? '')}</p>
     `;
     const cues = Array.isArray(work.cues) ? work.cues : [];
     if (cues.length) {

@@ -911,7 +911,7 @@ function createWorkSection(work, index) {
     });
     section.appendChild(meta);
   }
-  const leadText = work.one || work.lead || '';
+  const leadText = work.onelinerEffective || work.lead || '';
   if (leadText) {
     const lead = document.createElement('p');
     lead.className = 'tf-lead';
@@ -934,7 +934,7 @@ function createWorkSection(work, index) {
   } else if (work.openNote) {
     notes.push(work.openNote);
   }
-  const desc = Array.isArray(work.description) ? work.description : (work.description ? [work.description] : []);
+  const desc = work.descriptionEffective ? [work.descriptionEffective] : [];
   const paragraphs = [...notes, ...desc];
   paragraphs.forEach((block) => {
     const text = String(block ?? '').trim();

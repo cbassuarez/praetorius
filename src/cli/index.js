@@ -11,6 +11,7 @@ import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
 import updateNotifier from 'update-notifier';
+import { normalizeWork, collectWorkWarnings } from '../work-model.js';
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
 // Theme tokens (light/dark only; no auto)
@@ -172,7 +173,7 @@ const EMBED_RENDER = `(function(){
       data.forEach(function(w){
         var line=document.createElement('div'); line.className='line';
         var html = '<div class="title"><strong>'+esc(w.title)+'</strong> <span class="muted">('+esc(w.slug||'')+')</span></div>'
-                 + '<div class="one">'+esc(w.one||'')+'</div>';
+                 + '<div class="one">'+esc(w.onelinerEffective||w.one||'')+'</div>';
         if(w.pdf){ html += '<div>score: <a href="'+esc(w.pdf)+'" target="_blank" rel="noopener">PDF</a></div>'; }
         if(w.audio){ html += '<div class="actions"><button class="btn" data-id="'+w.id+'">Play/Pause</button></div>'; }
         line.innerHTML = html;
@@ -315,7 +316,7 @@ function buildRuntimeWorks(rawWorks = []) {
     if (pageFollow) {
       work.pageFollow = pageFollow;
     }
-    return work;
+    return normalizeWork(work);
   });
 }
 
@@ -335,7 +336,14 @@ function createRuntimePayload(db, opts = {}) {
   const pageFollowMaps = buildPageFollowMaps(works);
   const theme = opts.theme === 'light' ? 'light' : 'dark';
   const site = opts.site || {};
-  const warnings = Array.isArray(opts.warnings) ? opts.warnings : [];
+  const warnings = Array.isArray(opts.warnings) ? opts.warnings.slice() : [];
+  for (const work of works) {
+    const workWarnings = collectWorkWarnings(work);
+    for (const msg of workWarnings) {
+      const label = work.title ? `${work.title} (#${work.id})` : `#${work.id}`;
+      warnings.push(`Work ${label}: ${msg}`);
+    }
+  }
   return {
     works,
     pageFollowMaps,
@@ -508,8 +516,10 @@ const GENERIC_STARTER_WORKS = Object.freeze([
   {
     id: 1,
     slug: 'demo-satie-gymnopedie-1',
-    title: 'DEMO — Erik Satie: Gymnopédie No. 1',
-    one: 'Public-domain demo (Mutopia engraving + Wikimedia audio).',
+    title: 'Gymnopédies — Satie',
+    one: 'Minimal piano works exploring poise and space.',
+    oneliner: 'Minimal piano works exploring poise and space.',
+    description: 'Erik Satie’s Gymnopédies (1888) are three piano pieces noted for their floating harmonies and suspended time. This demo pairs the Mutopia engraving with a Wikimedia Commons recording so you can explore PDF-follow and cue playback in Praetorius.',
     cues: [{ label: '@0:00', t: 0 }],
     audio: 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Gymnopedie_No._1..ogg',
     pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf'
@@ -517,8 +527,10 @@ const GENERIC_STARTER_WORKS = Object.freeze([
   {
     id: 2,
     slug: 'demo-us-army-band-lo-how-a-rose',
-    title: 'DEMO — U.S. Army Band: “Lo, How a Rose”',
-    one: 'Public-domain recording (U.S. Army Band) with Mutopia PDF.',
+    title: 'Lo, How a Rose — U.S. Army Band',
+    one: 'Brass chorale with lyrical warmth and traditional scoring.',
+    oneliner: 'Brass chorale with lyrical warmth and traditional scoring.',
+    description: 'The United States Army Band’s public-domain rendition of “Lo, How a Rose E’er Blooming” demonstrates how an ensemble recording and Mutopia score can combine inside Praetorius. Use it to test audio playback, cue navigation, and PDF syncing.',
     cues: [{ label: '@0:00', t: 0 }],
     audio: 'https://upload.wikimedia.org/wikipedia/commons/c/c9/U.S._Army_Band_-_Lo_How_a_Rose.ogg',
     pdf: 'https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf'
@@ -901,9 +913,10 @@ function migrate_v1_to_v2(db) {
 
     // strings trimmed
     w.title = String(w.title ?? '').trim();
-    w.one   = String(w.one   ?? '').trim();
     // slug normalized
     w.slug  = slugify(w.slug || w.title || '');
+    const sanitizedMigration = sanitizeNarrativeFields(w);
+    Object.assign(w, sanitizedMigration.sanitized);
 
     // cues normalized (try to infer t from label/time if missing)
     if (Array.isArray(w.cues)) {
@@ -1037,7 +1050,7 @@ function loadHistorySnapshot(filename) {
 
 // ---- Lightweight JSON "preview diff" (added/removed/modified works) ----
 function shallowWorkDiff(a, b) {
-  const fields = ['title','slug','one','audio','pdf'];
+  const fields = ['title','slug','one','oneliner','description','audio','pdf'];
   const changed = [];
   for (const k of fields) if (String(a?.[k] ?? '') !== String(b?.[k] ?? '')) changed.push(k);
   if (JSON.stringify(a?.cues ?? [])  !== JSON.stringify(b?.cues ?? []))  changed.push('cues');
@@ -1121,11 +1134,22 @@ function ensureRequired(row) {
   const hasTitle = !!(row.title && String(row.title).trim());
   const hasSlug  = !!(row.slug  && String(row.slug).trim());
   const hasOne   = !!(row.one   && String(row.one).trim());
-  return hasTitle && hasSlug && hasOne;
+  const hasOneliner = !!(row.oneliner && String(row.oneliner).trim());
+  const hasDescription = !!(row.description && String(row.description).trim());
+  return hasTitle && hasSlug && (hasOne || hasOneliner || hasDescription);
 }
 function parseMaybeJSON(s) {
   if (!s || typeof s !== 'string') return null;
   try { return JSON.parse(s); } catch { return null; }
+}
+function sanitizeNarrativeFields(work) {
+  const normalized = normalizeWork(work);
+  const sanitized = { ...work, one: normalized.one };
+  if (normalized.oneliner) sanitized.oneliner = normalized.oneliner;
+  else delete sanitized.oneliner;
+  if (normalized.description) sanitized.description = normalized.description;
+  else delete sanitized.description;
+  return { sanitized, normalized };
 }
 function normalizeImportedWork(row) {
   // Accept flexible shapes from CSV/YAML/JSON rows
@@ -1136,29 +1160,34 @@ function normalizeImportedWork(row) {
     if (Number.isFinite(n) && n >= 1) id = n;
   }
   const slug = (row.slug && String(row.slug).trim()) || slugify(row.title);
-  const one = (row.one && String(row.one).trim()) || '';
   const base = {
     id: id ?? null,
     slug,
     title: String(row.title || '').trim(),
-    one,
     audio: row.audio ? String(row.audio).trim() : null,
     pdf: row.pdf ? String(row.pdf).trim() : null,
     cues: Array.isArray(row.cues) ? row.cues
          : parseMaybeJSON(row.cues_json) || []
   };
+  const narrativeSource = {
+    ...base,
+    oneliner: row.oneliner ?? row.one ?? '',
+    description: row.description ?? null
+  };
+  const { sanitized } = sanitizeNarrativeFields(narrativeSource);
+  const output = { ...sanitized };
   // score block via JSON or flat columns
   const scoreJSON = parseMaybeJSON(row.score_json);
-  if (scoreJSON) base.score = scoreJSON;
+  if (scoreJSON) output.score = scoreJSON;
   else if (row.pdfStartPage || row.mediaOffsetSec || row.pdfDelta || row.pageMap) {
-    base.score = {
+    output.score = {
       pdfStartPage: Number(row.pdfStartPage) || 1,
       mediaOffsetSec: Number(row.mediaOffsetSec) || 0,
       ...(row.pdfDelta !== undefined ? { pdfDelta: Number(row.pdfDelta) } : {}),
       pageMap: Array.isArray(row.pageMap) ? row.pageMap : parseMaybeJSON(row.pageMap) || []
     };
   }
-  return base;
+  return output;
 }
 
 /* ------------------ lazy external loaders ------------------ */
@@ -1697,12 +1726,13 @@ function renderWorksList(works, { linkMode = 'auto' } = {}) {
     return '<p>No works found yet. Run <code>prae add</code> to add repertoire.</p>';
   }
   const items = works.map((work) => {
-    const slug = slugify(work.slug || work.title || 'work');
+    const view = normalizeWork(work);
+    const slug = slugify(view.slug || view.title || 'work');
     const href = linkMode === 'external' && work.href
       ? work.href
       : `#works-${slug}`;
-    const label = work.title || work.slug || 'Untitled';
-    const summary = work.one || '';
+    const label = view.title || view.slug || 'Untitled';
+    const summary = view.onelinerEffective || '';
     const anchor = linkMode === 'external' && work.href
       ? `<a href="${work.href}" target="_blank" rel="noopener">${label}</a>`
       : `<a href="${href}">${label}</a>`;
@@ -1844,11 +1874,14 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
   };
 
   if (config.works?.includeOnHome && works.length) {
-    hero.works = works.slice(0, 4).map((work) => ({
-      id: work.slug || slugify(work.title || 'work'),
-      title: work.title || work.slug || 'Untitled',
-      summary: work.one || ''
-    }));
+    hero.works = works.slice(0, 4).map((work) => {
+      const view = normalizeWork(work);
+      return {
+        id: view.slug || slugify(view.title || 'work'),
+        title: view.title || view.slug || 'Untitled',
+        summary: view.onelinerEffective || ''
+      };
+    });
   }
 
   return {
@@ -3131,7 +3164,8 @@ program
       const base = await prompt([
         { type: 'input', name: 'title', message: 'Work title', validate: v => !!String(v).trim() || 'Required' },
         { type: 'input', name: 'slug',  message: 'Slug', initial: (ans)=> slugify(ans.title), validate: v => !!String(v).trim() || 'Required' },
-        { type: 'input', name: 'one',   message: 'One-liner / description', validate: v => !!String(v).trim() || 'Required' },
+        { type: 'input', name: 'oneliner', message: 'Oneliner (1 sentence, optional)' },
+        { type: 'input', name: 'description', message: 'Long description (Markdown, optional)' },
         { type: 'input', name: 'audio', message: 'Audio URL (optional; leave blank if none)' },
         { type: 'input', name: 'pdf',   message: 'Score PDF URL (optional)' },
       ]);
@@ -3189,16 +3223,33 @@ program
         if (Number.isInteger(pdfDeltaVal)) score.pdfDelta = pdfDeltaVal;
       }
 
-      const entry = {
-        id: nextId(db),
-        slug: (base.slug?.trim()) || slugify(base.title),
-        title: base.title,
-        one: base.one,
+      const title = String(base.title || '').trim();
+      const slugValue = (base.slug?.trim()) || slugify(title);
+      const newId = nextId(db);
+      const entrySource = {
+        id: newId,
+        slug: slugValue,
+        title,
+        oneliner: base.oneliner,
+        description: base.description,
         audio: base.audio?.trim() || null,
         pdf: base.pdf?.trim() || null,
-        cues
+        cues,
+        ...(score ? { score } : {})
       };
-      if (score) entry.score = score;
+      const { sanitized: narrativeSanitized, normalized: normalizedNarrative } = sanitizeNarrativeFields(entrySource);
+      const entry = { ...narrativeSanitized };
+      if (!String(base.oneliner || '').trim()) {
+        if (String(base.description || '').trim() && normalizedNarrative.onelinerEffective) {
+          console.log(pc.gray(`No oneliner provided → using "${normalizedNarrative.onelinerEffective}" in compact views.`));
+        } else if (!String(base.description || '').trim()) {
+          console.log(pc.gray('No oneliner or description provided → using the title in compact views.'));
+        }
+      }
+      const authoringHints = collectWorkWarnings(entry);
+      for (const hint of authoringHints) {
+        console.log(pc.yellow('  • ' + hint));
+      }
 
       const candidate = { version: db.version || 1, works: [...db.works, entry] };
       const ok = validate(candidate);
@@ -3231,16 +3282,18 @@ program
     if (!db.works.length) { console.log(pc.yellow('No works yet. Add with: ') + pc.cyan('praetorius add')); return; }
     console.log(pc.bold('Works'));
    db.works.forEach((w, idx) => {
-      console.log(pc.cyan(`#${w.id}`) + ' ' + w.title + pc.gray(`  (${w.slug})`));
-     console.log('   ' + pc.dim(w.one) + pc.gray(`   [order=${idx+1}]`));
-      if (w.audio) console.log('   audio: ' + pc.gray(w.audio));
-      if (w.pdf)   console.log('   pdf:   ' + pc.gray(w.pdf));
+      const normalized = normalizeWork(w);
+      console.log(pc.cyan(`#${normalized.id}`) + ' ' + normalized.title + pc.gray(`  (${normalized.slug})`));
+      const summary = normalized.onelinerEffective || '';
+      console.log('   ' + pc.dim(summary) + pc.gray(`   [order=${idx+1}]`));
+      if (normalized.audio) console.log('   audio: ' + pc.gray(normalized.audio));
+      if (normalized.pdf)   console.log('   pdf:   ' + pc.gray(normalized.pdf));
       if (w.cues?.length) {
         const cs = w.cues.map(c => `${c.label}=${c.t}s`).join(', ');
         console.log('   cues:  ' + pc.gray(cs));
       }
-      if (w.score?.pageMap?.length) {
-        console.log('   score: ' + pc.gray(`p1→PDF ${w.score.pdfStartPage ?? 1}, offset ${w.score.mediaOffsetSec ?? 0}s, map ${w.score.pageMap.length} rows`));
+      if (normalized.score?.pageMap?.length) {
+        console.log('   score: ' + pc.gray(`p1→PDF ${normalized.score.pdfStartPage ?? 1}, offset ${normalized.score.mediaOffsetSec ?? 0}s, map ${normalized.score.pageMap.length} rows`));
       }
     });
   });
@@ -3251,7 +3304,9 @@ program
   .description('Edit a work (wizard by default; flags to set fields directly)')
   .option('--title <str>', 'Set title')
   .option('--slug <str>',  'Set slug')
-  .option('--one <str>',   'Set one-liner')
+  .option('--one <str>',   'Set oneliner (legacy alias)')
+  .option('--oneliner <str>', 'Set oneliner')
+  .option('--description <str>', 'Set description (Markdown)')
   .option('--audio <url>', 'Set audio URL (or empty to clear)')
   .option('--pdf <url>',   'Set score PDF URL (or empty to clear)')
   .option('--no-cues',     'Do not edit cues interactively')
@@ -3264,26 +3319,44 @@ program
     // Apply direct flags first (non-interactive)
     if (opts.title) work.title = opts.title;
     if (opts.slug)  work.slug  = opts.slug;
-    if (opts.one)   work.one   = opts.one;
+    if (opts.one !== undefined) work.oneliner = opts.one;
+    if (opts.oneliner !== undefined) work.oneliner = opts.oneliner;
+    if ('description' in opts) work.description = opts.description;
     if ('audio' in opts) work.audio = (opts.audio === '' ? null : opts.audio);
     if ('pdf'   in opts) work.pdf   = (opts.pdf   === '' ? null : opts.pdf);
+    Object.assign(work, sanitizeNarrativeFields(work).sanitized);
 
     // If no flags changed anything, run wizard
     const changedViaFlags =
-      !!(opts.title || opts.slug || opts.one || 'audio' in opts || 'pdf' in opts);
+      !!(opts.title || opts.slug || opts.one || opts.oneliner || 'description' in opts || 'audio' in opts || 'pdf' in opts);
     if (!changedViaFlags) {
       const base = await prompt([
         { type: 'input', name: 'title', message: 'Title', initial: work.title },
         { type: 'input', name: 'slug',  message: 'Slug',  initial: work.slug },
-        { type: 'input', name: 'one',   message: 'One-liner', initial: work.one },
+        { type: 'input', name: 'oneliner', message: 'Oneliner (optional)', initial: work.oneliner || '' },
+        { type: 'input', name: 'description', message: 'Long description (optional)', initial: work.description || '' },
         { type: 'input', name: 'audio', message: 'Audio URL (blank to clear)', initial: work.audio || '' },
         { type: 'input', name: 'pdf',   message: 'Score PDF URL (blank to clear)', initial: work.pdf || '' }
       ]);
       work.title = base.title.trim();
       work.slug  = base.slug.trim();
-      work.one   = base.one.trim();
+      work.oneliner = base.oneliner;
+      work.description = base.description;
       work.audio = base.audio.trim() || null;
       work.pdf   = base.pdf.trim()   || null;
+      const normalizedNarrative = sanitizeNarrativeFields(work);
+      Object.assign(work, normalizedNarrative.sanitized);
+      if (!base.oneliner?.trim()) {
+        if (base.description?.trim() && normalizedNarrative.normalized.onelinerEffective) {
+          console.log(pc.gray(`No oneliner provided → using "${normalizedNarrative.normalized.onelinerEffective}" in compact views.`));
+        } else if (!base.description?.trim()) {
+          console.log(pc.gray('No oneliner or description provided → using the title in compact views.'));
+        }
+      }
+      const editHints = collectWorkWarnings(work);
+      for (const hint of editHints) {
+        console.log(pc.yellow('  • ' + hint));
+      }
     }
 
     // Cues edit (unless --no-cues)
@@ -3560,11 +3633,11 @@ const parseCSV = await lazyCsvParse();
 
     const incoming = [];
     for (const r of rows) {
-      if (!ensureRequired(r) && !(r.title && r.slug && r.one)) {
+      if (!ensureRequired(r) && !(r.title && r.slug && (r.one || r.oneliner || r.description))) {
         console.log(pc.yellow('skip row (missing required fields): ') + pc.dim(JSON.stringify(r)));
         continue;
       }
-     incoming.push(normalizeImportedWork(r));
+      incoming.push(normalizeImportedWork(r));
     }
 
     // Merge with conflict handling
@@ -3668,19 +3741,22 @@ program
     }
     if (fmt === 'csv') {
       // Stable columns; JSON-encode nested
-      const cols = ['id','slug','title','one','audio','pdf','cues_json','score_json'];
+      const cols = ['id','slug','title','one','oneliner','description','audio','pdf','cues_json','score_json'];
       const lines = [];
       lines.push(cols.join(','));
       for (const w of db.works||[]) {
+        const view = normalizeWork(w);
         const row = [
-          w.id ?? '',
-          (w.slug ?? '').replaceAll('"','""'),
-          (w.title ?? '').replaceAll('"','""'),
-          (w.one ?? '').replaceAll('"','""'),
-          (w.audio ?? '').replaceAll('"','""'),
-          (w.pdf ?? '').replaceAll('"','""'),
-          JSON.stringify(w.cues ?? []).replaceAll('"','""'),
-          JSON.stringify(w.score ?? null).replaceAll('"','""'),
+          view.id ?? '',
+          (view.slug ?? '').replaceAll('"','""'),
+          (view.title ?? '').replaceAll('"','""'),
+          (view.one ?? '').replaceAll('"','""'),
+          (view.oneliner ?? '').replaceAll('"','""'),
+          (view.description ?? '').replaceAll('"','""'),
+          (view.audio ?? '').replaceAll('"','""'),
+          (view.pdf ?? '').replaceAll('"','""'),
+          JSON.stringify(view.cues ?? []).replaceAll('"','""'),
+          JSON.stringify(view.score ?? null).replaceAll('"','""'),
         ].map(v => `"${String(v)}"`);
         lines.push(row.join(','));
       }
