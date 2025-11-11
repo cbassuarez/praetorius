@@ -224,6 +224,7 @@ const state = {
     root: null,
     frame: null,
     slot: null,
+    fixedHeight: null,
     title: null,
     note: null,
     empty: null,
@@ -416,7 +417,10 @@ function copyToClipboard(text) {
 
 
 function ensurePdfDom() {
-  if (state.pdf.root) return state.pdf;
+  if (state.pdf.root) {
+    applyFixedPdfHeight();
+    return state.pdf;
+  }
   const root = document.getElementById('tf-preview');
   if (!root) return state.pdf;
   state.pdf.root = root;
@@ -444,6 +448,7 @@ function ensurePdfDom() {
     });
     state.pdf.close.dataset.bound = '1';
   }
+  applyFixedPdfHeight();
   return state.pdf;
 }
 
@@ -479,6 +484,26 @@ function setPreviewLink(url, label) {
     link.hidden = false;
   } else {
     link.hidden = true;
+  }
+}
+
+function applyFixedPdfHeight() {
+  const { slot, fixedHeight } = state.pdf;
+  if (!slot) return;
+  if (typeof fixedHeight === 'number') {
+    slot.style.minHeight = `${fixedHeight}px`;
+  }
+}
+
+function lockPdfFrameSize() {
+  const pdf = ensurePdfDom();
+  const { slot, fixedHeight } = pdf;
+  if (!slot || typeof fixedHeight === 'number') return;
+  const rect = slot.getBoundingClientRect();
+  const height = Math.round(rect.height || 0);
+  if (height > 0) {
+    pdf.fixedHeight = height;
+    applyFixedPdfHeight();
   }
 }
 
@@ -543,9 +568,15 @@ function ensurePreviewFrame(slug, work, viewerUrl) {
         gotoPdfPage(pending.pdfPage);
         state.pdf.pendingGoto = null;
       }
+      lockPdfFrameSize();
     });
     pdf.slot.appendChild(frame);
     state.pdf.frame = frame;
+    if (typeof state.pdf.fixedHeight !== 'number') {
+      requestAnimationFrame(() => lockPdfFrameSize());
+    } else {
+      applyFixedPdfHeight();
+    }
   }
   frame.dataset.slug = slug;
   frame.title = `${work.title || work.slug || 'Score'} (PDF)`;
@@ -559,6 +590,9 @@ function ensurePreviewFrame(slug, work, viewerUrl) {
     if (pending && (!pending.slug || pending.slug === state.pdf.currentSlug)) {
       gotoPdfPage(pending.pdfPage);
       state.pdf.pendingGoto = null;
+    }
+    if (typeof state.pdf.fixedHeight !== 'number') {
+      requestAnimationFrame(() => lockPdfFrameSize());
     }
   }
   return frame;
@@ -766,7 +800,7 @@ function openPdfFor(workOrId) {
     return itemKey && key && itemKey === key;
   });
   if (index >= 0) {
-    setActiveWork(index, { force: true, announce: true, openDrawer: true, scroll: true });
+    setActiveWork(index, { force: true, announce: true, openDrawer: true, scroll: true, updatePreview: true });
   } else {
     showPdfForWork(work, { openDrawer: true, announce: true });
   }
@@ -958,14 +992,14 @@ function bindSectionActivation(section, index) {
   };
   section.addEventListener('click', (event) => {
     if (isInteractiveTarget(event.target) && event.target !== section) return;
-    setActiveWork(index, { announce: true });
+    setActiveWork(index, { announce: true, updatePreview: false });
   });
   section.addEventListener('keydown', (event) => {
     if (event.defaultPrevented) return;
     if (event.key === 'Enter' || event.key === ' ') {
       if (isInteractiveTarget(event.target) && event.target !== section) return;
       event.preventDefault();
-      setActiveWork(index, { announce: true });
+      setActiveWork(index, { announce: true, updatePreview: false });
     }
   });
 }
@@ -997,6 +1031,13 @@ function updateActiveSectionHighlight() {
   });
 }
 
+function previewMatchesWork(work) {
+  if (!work) return false;
+  const slug = work.slug || workKey(work);
+  if (!slug) return false;
+  return state.pdf.currentSlug === slug;
+}
+
 function announceActiveWork(work) {
   if (!work) {
     announcePreview('No work selected.');
@@ -1004,9 +1045,13 @@ function announceActiveWork(work) {
   }
   const label = work.title || work.slug || `Work ${state.activeWorkIndex + 1}`;
   if (state.activeHasPdf) {
-    announcePreview(`Now viewing: ${label} PDF`);
+    if (previewMatchesWork(work)) {
+      announcePreview(`Now viewing: ${label} PDF`);
+    } else {
+      announcePreview(`Selected ${label}. PDF preview unchanged.`);
+    }
   } else {
-    announcePreview(`Now viewing: ${label}. No PDF available.`);
+    announcePreview(`Selected ${label}. No PDF available.`);
   }
 }
 
@@ -1070,11 +1115,11 @@ function toggleActiveAudio() {
   updateFooterAudioControl(audio);
 }
 
-function setActiveWork(index, { force = false, scroll = false, announce = true, openDrawer = false } = {}) {
+function setActiveWork(index, { force = false, scroll = false, announce = true, openDrawer = false, updatePreview = true } = {}) {
   if (!works.length) return;
   const clamped = Math.min(works.length - 1, Math.max(0, index));
   if (!force && state.activeWorkIndex === clamped) {
-    if (openDrawer && state.activeHasPdf && isDrawerMode()) {
+    if (openDrawer && updatePreview && state.activeHasPdf && isDrawerMode()) {
       setPreviewDrawer(true);
     }
     updateFooterAudioControl();
@@ -1089,7 +1134,9 @@ function setActiveWork(index, { force = false, scroll = false, announce = true, 
   updateHeaderCurrent(work?.title || work?.slug || null);
   updateFooterCounter();
   updateFooterAudioControl();
-  updatePreviewForWork(work, { openDrawer, announce: false });
+  if (updatePreview) {
+    updatePreviewForWork(work, { openDrawer, announce: false });
+  }
   if (announce) announceActiveWork(work);
   if (scroll && state.sections[clamped]?.section) {
     const target = state.sections[clamped].section;
@@ -1116,7 +1163,7 @@ function renderBook() {
       activationTrigger.dataset.index = String(index);
       activationTrigger.setAttribute('aria-pressed', 'false');
       activationTrigger.addEventListener('click', () => {
-        setActiveWork(index, { announce: true });
+        setActiveWork(index, { announce: true, updatePreview: false });
       });
     } else {
       bindSectionActivation(section, index);
@@ -1161,7 +1208,7 @@ function observeCurrentWork() {
       const owner = state.sections.find((item) => item.heading === candidate);
       const index = owner ? state.sections.indexOf(owner) : -1;
       if (index >= 0) {
-        setActiveWork(index, { announce: false });
+        setActiveWork(index, { announce: false, updatePreview: false });
       }
     }
   };
@@ -1186,11 +1233,11 @@ function onKeydown(event) {
   if (event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.isContentEditable)) return;
   if (event.key === 'ArrowRight' || event.key === 'PageDown') {
     event.preventDefault();
-    setActiveWork(state.activeWorkIndex + 1, { scroll: true, announce: true });
+    setActiveWork(state.activeWorkIndex + 1, { scroll: true, announce: true, updatePreview: false });
   }
   if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
     event.preventDefault();
-    setActiveWork(state.activeWorkIndex - 1, { scroll: true, announce: true });
+    setActiveWork(state.activeWorkIndex - 1, { scroll: true, announce: true, updatePreview: false });
   }
 }
 
