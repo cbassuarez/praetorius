@@ -337,7 +337,30 @@ function attachPageFollow(slug, audio){
     if(!w){ return appendLine(`error: unknown work ${nRaw}`,'err',true); }
     section(w.title);
     const detailLines = buildOpenDetailLines(w);
-    detailLines.forEach((entry, i) => {
+    const normalizedOneliner = (detailLines.find(line => line.className === 'one')?.text
+      || String(w.onelinerEffective ?? '')).trim();
+    const descriptionSource = String(w.descriptionEffective ?? '');
+    const descParagraphs = descriptionSource
+      .split(/\n{2,}/)
+      .map(part => part.trim())
+      .filter(Boolean);
+    const revealQueue = [];
+    descParagraphs.forEach(text => {
+      revealQueue.push({ text, className: 'desc' });
+    });
+    if (normalizedOneliner) {
+      revealQueue.push({ text: normalizedOneliner, className: 'muted one' });
+    }
+    const openNotes = Array.isArray(w.openNote)
+      ? w.openNote
+      : (w.openNote != null ? [w.openNote] : []);
+    openNotes
+      .map(note => String(note ?? '').trim())
+      .filter(Boolean)
+      .forEach(text => {
+        revealQueue.push({ text, className: '' });
+      });
+    revealQueue.forEach((entry, i) => {
       const { text, className } = entry;
       setTimeout(() => appendLine(text, className, true), i * 18);
     });
