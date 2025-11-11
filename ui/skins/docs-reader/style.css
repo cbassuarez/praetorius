@@ -452,6 +452,58 @@ body[data-theme="light"] .docs-header {
   padding-bottom: var(--gap-lg);
 }
 
+.docs-home-section {
+  margin-bottom: var(--gap-xl);
+}
+
+.docs-home-section + .docs-home-section {
+  border-top: 1px solid var(--border);
+  padding-top: var(--gap-lg);
+}
+
+.docs-home-section-body {
+  margin: 0 0 var(--gap-md);
+}
+
+.docs-home-section-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--gap-sm);
+}
+
+.docs-home-section-item {
+  display: grid;
+  gap: var(--gap-2xs);
+  padding: var(--gap-sm);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body[data-theme="light"] .docs-home-section-item {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.docs-home-section-item a {
+  color: var(--link);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.docs-home-section-item a:hover,
+.docs-home-section-item a:focus {
+  text-decoration: underline;
+}
+
+.docs-home-section-item p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .docs-works-home {
   margin-top: var(--gap-lg);
   padding: var(--gap-lg);
