@@ -30,6 +30,7 @@ function readDocsData() {
 }
 
 const DOCS_DATA = readDocsData();
+const DOCS_LIST = Array.isArray(DOCS_DATA.docs) ? DOCS_DATA.docs : [];
 const NAV_DATA = Array.isArray(DOCS_DATA.nav) && DOCS_DATA.nav.length ? DOCS_DATA.nav : DEFAULT_NAV_DATA;
 const SEARCH_INDEX = Array.isArray(DOCS_DATA.search) && DOCS_DATA.search.length
   ? DOCS_DATA.search
@@ -39,6 +40,44 @@ const SEARCH_INDEX = Array.isArray(DOCS_DATA.search) && DOCS_DATA.search.length
       snippet: item.snippet,
       group: group.label
     })));
+const stringWarnings = new Set();
+
+function ensureString(value, key, fallback = '') {
+  if (typeof value === 'string') return value;
+  if (value != null && !stringWarnings.has(key)) {
+    console.warn(`[docs-reader] Ignoring non-string ${key}.`);
+    stringWarnings.add(key);
+  }
+  return fallback;
+}
+
+function ensureHtml(value, key) {
+  if (typeof value === 'string') return value;
+  if (value != null && !stringWarnings.has(key)) {
+    console.warn(`[docs-reader] Ignoring non-string ${key}.`);
+    stringWarnings.add(key);
+  }
+  return '';
+}
+
+const DOC_BY_ID = new Map();
+const DOC_BY_URL = new Map();
+DOCS_LIST.forEach((doc) => {
+  if (!doc || typeof doc !== 'object') return;
+  if (typeof doc.id === 'string' && doc.id) DOC_BY_ID.set(doc.id, doc);
+  if (typeof doc.url === 'string' && doc.url) DOC_BY_URL.set(doc.url, doc);
+});
+const HOMEPAGE_ID = typeof DOCS_DATA.homepage === 'string' ? DOCS_DATA.homepage : '';
+const HOMEPAGE_MISSING = !!DOCS_DATA.homepageMissing;
+const WORKS_SETTINGS = (DOCS_DATA.works && typeof DOCS_DATA.works === 'object') ? DOCS_DATA.works : {};
+const PLACEHOLDER_DOC = HOMEPAGE_MISSING ? {
+  id: 'docs-placeholder',
+  title: 'Documentation coming soon',
+  summary: 'Auto-generated homepage placeholder.',
+  subtitle: '',
+  html: '<p>Auto-generated homepage placeholder.</p>',
+  headings: []
+} : null;
 
 function ready(fn) {
   if (document.readyState === 'loading') {
@@ -207,21 +246,23 @@ function buildHeroElement(hero) {
   const header = document.createElement('header');
   header.className = 'docs-hero';
 
-  if (hero.kicker) {
+  const kickerText = ensureString(hero.kicker, 'hero.kicker');
+  if (kickerText) {
     const kicker = document.createElement('p');
     kicker.className = 'docs-kicker';
-    kicker.textContent = hero.kicker;
+    kicker.textContent = kickerText;
     header.appendChild(kicker);
   }
 
   const title = document.createElement('h1');
-  title.textContent = hero.title || 'Documentation';
+  title.textContent = ensureString(hero.title, 'hero.title', 'Documentation') || 'Documentation';
   header.appendChild(title);
 
-  if (hero.lede) {
+  const ledeText = ensureString(hero.lede, 'hero.lede');
+  if (ledeText) {
     const lede = document.createElement('p');
     lede.className = 'docs-lede';
-    lede.textContent = hero.lede;
+    lede.textContent = ledeText;
     header.appendChild(lede);
   }
 
@@ -236,28 +277,16 @@ function buildHeroElement(hero) {
       const li = document.createElement('li');
       li.id = `works-${slugify(work.id || work.title || '')}`;
       const label = document.createElement('strong');
-      label.textContent = work.title || 'Untitled';
+      label.textContent = ensureString(work.title, 'hero.works.title', 'Untitled') || 'Untitled';
       li.appendChild(label);
-      if (work.summary || work.snippet || work.onelinerEffective || work.descriptionEffective) {
+      const summaryCandidate = work.summary
+        ?? work.snippet
+        ?? work.onelinerEffective
+        ?? work.descriptionEffective;
+      const summaryText = ensureString(summaryCandidate, 'hero.works.summary');
+      if (summaryText) {
         const p = document.createElement('p');
-        const summary = work.summary
-          ?? work.snippet
-          ?? work.onelinerEffective
-          ?? work.descriptionEffective
-          ?? '';
-        if (typeof summary === 'string') {
-          p.textContent = summary;
-        } else if (summary && typeof summary === 'object') {
-          if (typeof summary.text === 'string') {
-            p.textContent = summary.text;
-          } else if (typeof summary.html === 'string') {
-            p.innerHTML = summary.html;
-          } else {
-            p.textContent = String(summary);
-          }
-        } else {
-          p.textContent = String(summary || '');
-        }
+        p.textContent = summaryText;
         li.appendChild(p);
       }
       list.appendChild(li);
@@ -269,21 +298,51 @@ function buildHeroElement(hero) {
   return header;
 }
 
-function renderDocsContent(article, data) {
-  if (!article) return;
+function renderDocsContent(article, doc, opts = {}) {
+  if (!article) return { body: null };
+  const effectiveDoc = doc || PLACEHOLDER_DOC;
   article.innerHTML = '';
-  const hero = buildHeroElement(data.hero);
-  if (hero) article.appendChild(hero);
-  const sections = Array.isArray(data.sections) ? data.sections : [];
-  sections.forEach((section) => {
-    const sec = document.createElement('section');
-    sec.className = 'docs-section';
-    const id = section?.id || slugify(section?.title || 'section');
-    sec.id = id;
-    sec.setAttribute('data-source', section?.type || 'markdown');
-    sec.innerHTML = section?.html || '';
-    article.appendChild(sec);
+  if (!effectiveDoc) return { body: null };
+
+  const hero = buildHeroElement({
+    kicker: effectiveDoc.subtitle,
+    title: effectiveDoc.title,
+    lede: effectiveDoc.summary
   });
+  if (hero) article.appendChild(hero);
+
+  const body = document.createElement('section');
+  body.className = 'docs-section docs-body';
+  body.innerHTML = ensureHtml(effectiveDoc.html, 'doc.html');
+  article.appendChild(body);
+
+  if (opts.showWorks && Array.isArray(opts.highlights) && opts.highlights.length) {
+    const aside = document.createElement('aside');
+    aside.className = 'docs-works-home';
+    const heading = document.createElement('h2');
+    heading.textContent = 'Featured works';
+    aside.appendChild(heading);
+    const list = document.createElement('ul');
+    list.className = 'docs-works-home-list';
+    opts.highlights.forEach((item) => {
+      if (!item) return;
+      const li = document.createElement('li');
+      const title = document.createElement('strong');
+      title.textContent = ensureString(item.title, 'works.highlight.title', 'Untitled') || 'Untitled';
+      li.appendChild(title);
+      const summaryText = ensureString(item.summary, 'works.highlight.summary');
+      if (summaryText) {
+        const p = document.createElement('p');
+        p.textContent = summaryText;
+        li.appendChild(p);
+      }
+      list.appendChild(li);
+    });
+    aside.appendChild(list);
+    article.appendChild(aside);
+  }
+
+  return { body };
 }
 
 function buildNav(nav, state, onActivate) {
@@ -325,15 +384,16 @@ function buildNav(nav, state, onActivate) {
       li.className = 'docs-nav-item';
       const link = document.createElement('a');
       link.href = item.href;
-      link.textContent = item.label;
+      link.textContent = ensureString(item.label, 'nav.item.label', 'Untitled') || 'Untitled';
+      if (item.docId) link.dataset.docId = item.docId;
       link.addEventListener('click', (ev) => {
         if (typeof onActivate === 'function') onActivate(item.href);
         // allow default navigation (hash)
       });
       li.appendChild(link);
       list.appendChild(li);
-      const id = item.href.replace('#', '');
-      linkMap.set(id, link);
+      const key = item.docId || item.href.replace('#', '');
+      if (key) linkMap.set(key, link);
     });
 
     groupEl.appendChild(toggle);
@@ -453,7 +513,7 @@ function buildHeadings(root) {
 }
 
 function observeHeadings(headings, onActive) {
-  if (!('IntersectionObserver' in window)) return;
+  if (!('IntersectionObserver' in window)) return null;
   const observer = new IntersectionObserver(entries => {
     const visible = entries
       .filter(entry => entry.isIntersecting)
@@ -471,6 +531,7 @@ function observeHeadings(headings, onActive) {
   }, { rootMargin: '-40% 0px -50% 0px', threshold: [0, 0.25, 0.5, 0.75, 1] });
 
   headings.forEach(({ element }) => { if (element) observer.observe(element); });
+  return observer;
 }
 
 function buildSearchAdapter() {
@@ -733,10 +794,6 @@ ready(() => {
 
   applySiteChrome(DOCS_DATA.site || {});
   const article = document.querySelector('.docs-article');
-  const hasDynamicContent = Array.isArray(DOCS_DATA.sections) && DOCS_DATA.sections.length > 0;
-  if (hasDynamicContent) {
-    renderDocsContent(article, DOCS_DATA);
-  }
 
   const themeBtn = document.getElementById('wc-theme-toggle');
   if (themeBtn && themeBtn.childElementCount === 0) {
@@ -764,37 +821,111 @@ ready(() => {
 
   const closeDrawers = setupDrawers().close;
   const main = document.getElementById('docs-main');
-  const headings = buildHeadings(main);
-  enhanceHeadings(headings);
-  enhanceCodeBlocks(main);
   attachCopyShortcut(main);
 
   const navState = readNavState();
   const navLinkMap = buildNav(document.getElementById('docs-nav'), navState, () => closeDrawers());
-  const outlineMap = buildOutline(document.getElementById('docs-outline'), headings);
+  let outlineMap = new Map();
+  let headingObserver = null;
 
-  function setActive(id) {
+  function setActiveDoc(docId) {
     navLinkMap.forEach((link, key) => {
       if (!link) return;
-      link.classList.toggle('is-active', key === id);
-    });
-    outlineMap.forEach((item, key) => {
-      if (!item) return;
-      item.classList.toggle('is-active', key === id);
+      link.classList.toggle('is-active', key === docId);
     });
   }
 
-  observeHeadings(headings, setActive);
-  if (headings[0]?.element?.id) {
-    setActive(headings[0].element.id);
+  function updateOutline(headings) {
+    if (headingObserver) headingObserver.disconnect();
+    outlineMap = buildOutline(document.getElementById('docs-outline'), headings);
+    headingObserver = observeHeadings(headings, (headingId) => {
+      outlineMap.forEach((item, key) => {
+        if (!item) return;
+        item.classList.toggle('is-active', key === headingId);
+      });
+    });
   }
+
+  const worksHighlights = Array.isArray(WORKS_SETTINGS.highlights) ? WORKS_SETTINGS.highlights : [];
+  const showWorksOnHome = !!WORKS_SETTINGS.includeOnHome && worksHighlights.length > 0;
+
+  const getFirstDoc = () => {
+    const preferred = DOCS_LIST.find(doc => typeof doc?.path === 'string' && doc.path.toLowerCase().endsWith('.md'));
+    return preferred || DOCS_LIST[0] || null;
+  };
+
+  let homepageDoc = HOMEPAGE_ID && DOC_BY_ID.get(HOMEPAGE_ID) ? DOC_BY_ID.get(HOMEPAGE_ID) : null;
+  if (!homepageDoc) homepageDoc = getFirstDoc();
+  const fallbackDoc = homepageDoc || getFirstDoc() || PLACEHOLDER_DOC;
+
+  function resolveDocFromHash(hash) {
+    if (!hash) return null;
+    const normalized = hash.startsWith('#') ? hash : `#${hash}`;
+    if (DOC_BY_URL.has(normalized)) return DOC_BY_URL.get(normalized);
+    const trimmed = normalized.replace(/^#\/?/, '');
+    if (DOC_BY_ID.has(trimmed)) return DOC_BY_ID.get(trimmed);
+    return null;
+  }
+
+  function renderDoc(doc) {
+    const showWorks = showWorksOnHome && homepageDoc && doc && doc.id === homepageDoc.id;
+    renderDocsContent(article, doc, { showWorks, highlights: worksHighlights });
+    const headings = buildHeadings(article);
+    enhanceHeadings(headings);
+    if (article) enhanceCodeBlocks(article);
+    updateOutline(headings);
+    setActiveDoc(doc?.id || (doc === PLACEHOLDER_DOC ? doc.id : ''));
+  }
+
+  function ensureHash(doc) {
+    if (!doc || doc === PLACEHOLDER_DOC || !doc.url) {
+      if (location.hash) {
+        history.replaceState(null, '', `${location.pathname}${location.search}`);
+      }
+      return;
+    }
+    const targetHash = doc.url.startsWith('#') ? doc.url : `#${doc.url}`;
+    if (location.hash !== targetHash) {
+      history.replaceState(null, '', `${location.pathname}${location.search}${targetHash}`);
+    }
+  }
+
+  function handleRouteChange({ initial = false } = {}) {
+    const currentHash = location.hash || '';
+    let doc = resolveDocFromHash(currentHash);
+    if (!doc) {
+      if (HOMEPAGE_MISSING && PLACEHOLDER_DOC) {
+        doc = PLACEHOLDER_DOC;
+        if (initial && currentHash) {
+          history.replaceState(null, '', `${location.pathname}${location.search}`);
+        }
+      } else {
+        doc = fallbackDoc;
+        if (doc && doc !== PLACEHOLDER_DOC && initial) {
+          ensureHash(doc);
+        }
+      }
+    }
+    if (!doc) return;
+    renderDoc(doc);
+  }
+
+  handleRouteChange({ initial: true });
+  window.addEventListener('hashchange', () => handleRouteChange());
 
   setupSearch(document, (url) => {
     closeDrawers();
+    const doc = DOC_BY_URL.get(url) || DOC_BY_ID.get(String(url || '').replace(/^#\/?/, ''));
+    if (doc && doc.url) {
+      if (location.hash !== doc.url) {
+        location.hash = doc.url;
+      } else {
+        handleRouteChange();
+      }
+    }
     setTimeout(() => {
-      const targetId = url.replace('#', '');
-      const target = document.getElementById(targetId);
-      if (target) target.focus({ preventScroll: false });
+      const focusTarget = document.querySelector('.docs-article h1, .docs-article h2');
+      if (focusTarget) focusTarget.focus({ preventScroll: false });
     }, 50);
   });
 
