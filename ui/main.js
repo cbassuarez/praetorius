@@ -55,61 +55,36 @@ const themeRoot = document.getElementById('works-group');
 const themeBtn  = document.getElementById('wc-theme-toggle');
 
 
-  /* ===========================
-     Hard-coded works (inline)
-     =========================== */
-  const works = {
-  1: {
-    id: 1,
-    slug: 'satie-gymnopedie-1',
-    title: 'DEMO — Erik Satie: Gymnopédie No. 1',
-    one: 'Public-domain demo piece to showcase audio + score. Public-domain demo piece to showcase audio + score.Public-domain demo piece to showcase audio + score.Public-domain demo piece to showcase audio + score.Public-domain demo piece to showcase audio + score.Public-domain demo piece to showcase audio + score.Public-domain demo piece to showcase audio + score.Public-domain demo piece to showcase audio + score.',
-    cues: [{ label: '@0:00', t: time('0:00') }],
-    audioId: 'wc-a1',
-    // Mutopia Project — Public Domain engraving (A4 PDF)
-    pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf',
-    openNote: [
-      'A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later. A minimal demo entry. Replace via your CLI later.',
-      'Source: PD recording (Wikimedia) + PD score (Mutopia).'
-    ]
-  },
-  2: {
-    id: 2,
-    slug: 'praetorius-es-ist-ein-ros',
-    title: 'DEMO — Michael Praetorius (harm.): Es ist ein Ros entsprungen',
-    one: 'Public-domain demo (U.S. Army Band) with PD score.',
-    cues: [{ label: '@0:00', t: time('0:00') }],
-    audioId: 'wc-a2',
-    // Mutopia Project — Public Domain engraving (A4 PDF)
-    pdf: 'https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf',
-    // direct A4 PDF target (avoid the info page redirect):
-    // https://www.mutopiaproject.org/ftp/PraetoriusM/Es_ist_ein_Ros/Es_ist_ein_Ros/Es_ist_ein_Ros-lys.pdf (varies)
-    // Use the A4 PDF we clicked in the template step:
-    // (If that link changes, keep the piece-info URL above.)
-    openNote: [
-      'Chorale harmonization demo. Replace via CLI later.',
-      'Source: PD USGov recording (Wikimedia) + PD score (Mutopia).'
-    ]
-  },
-  3: {
-    id: 3,
-    slug: 'placeholder-work',
-    title: 'DEMO — Placeholder Work',
-    one: 'Empty template entry (no audio / no score).',
-    cues: [],
-    audioId: 'wc-a3',
-    pdf: null,
-    openNote: [
-      'Use this as your template work. Add audio/PDF with your CLI when ready.'
-    ]
-  }
-};
+  const praeData = window.__PRAE_DATA__ || {};
+  const praeWorksList = Array.isArray(praeData.works)
+    ? praeData.works
+    : (Array.isArray(window.PRAE?.works) ? window.PRAE.works : []);
+  const works = {};
+  praeWorksList.forEach((item, idx) => {
+    const raw = item || {};
+    const id = Number.isFinite(Number(raw.id)) ? Number(raw.id) : (idx + 1);
+    const clone = { ...raw };
+    clone.id = id;
+    clone.slug = (clone.slug && String(clone.slug).trim()) || `work-${id}`;
+    if (!Array.isArray(clone.cues)) clone.cues = [];
+    if (clone.openNote && !Array.isArray(clone.openNote)) {
+      clone.openNote = [String(clone.openNote)];
+    }
+    clone.audioId = clone.audioId || `wc-a${id}`;
+    works[id] = clone;
+  });
+
+  try {
+    if (typeof window.PRAE?.ensureAudioTags === 'function') {
+      window.PRAE.ensureAudioTags();
+    }
+  } catch (_) {}
 
 
    // Runtime guard: surface missing <audio> elements
 (function warnMissingAudio() {
   try {
-    const miss = Object.values(works).filter(w => !document.getElementById(w.audioId));
+    const miss = Object.values(works).filter(w => w && !document.getElementById(w.audioId));
     if (miss.length) {
       miss.forEach(w => appendLine(
         `warn: missing <audio id="${w.audioId}"> for "${w.title}" — generator should create one.`,
@@ -123,19 +98,9 @@ const themeBtn  = document.getElementById('wc-theme-toggle');
 
 // === PageFollow maps (printed page numbers) ===
 // Tip: if you later want page 1 to start at audio 0:00 (for W1), set mediaOffsetSec to -30.
-const pageFollowMaps = {
-  'satie-gymnopedie-1': {
-    pdfStartPage: 1,
-    mediaOffsetSec: 0,
-    pageMap: [{ at: '0:00', page: 1 }]
-  },
-  'praetorius-es-ist-ein-ros': {
-    pdfStartPage: 1,
-    mediaOffsetSec: 0,
-    pageMap: [{ at: '0:00', page: 1 }]
-  }
-  // placeholder has no score
-};
+const pageFollowMaps = praeData.pageFollowMaps
+  || (window.PRAE && window.PRAE.pageFollowMaps)
+  || {};
 
    const cmds = ['help','list','open','play','pause','stop','copy','goto','pdf','vol','speed','resume','share','unlock','clear','theme'];
  const aliases = { h:'help', ls:'list', o:'open', p:'play', pa:'pause', st:'stop', cp:'copy', g:'goto', v:'vol', sp:'speed', rs:'resume', sh:'share', ul:'unlock', cls:'clear', th:'theme' };

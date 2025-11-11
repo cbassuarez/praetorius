@@ -185,9 +185,12 @@ function isDrawerMode() {
 }
 
 const PRAE = (window.PRAE = window.PRAE || {});
-const works = Array.isArray(PRAE.works) ? PRAE.works : [];
+const PRAE_DATA = window.__PRAE_DATA__ || {};
+const works = Array.isArray(PRAE_DATA.works)
+  ? PRAE_DATA.works
+  : (Array.isArray(PRAE.works) ? PRAE.works : []);
 const pageFollowMaps = (() => {
-  const provided = PRAE.pageFollowMaps || {};
+  const provided = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
   if (Object.keys(provided).length) return provided;
   const map = {};
   for (const work of works) {

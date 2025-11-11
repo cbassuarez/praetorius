@@ -78,8 +78,11 @@ if (typeof window.praeCycleTheme !== 'function') {
 }
 
 const PRAE = (window.PRAE = window.PRAE || {});
-const works = Array.isArray(PRAE.works) ? PRAE.works : [];
-const pfMap = PRAE.pageFollowMaps || {};
+const PRAE_DATA = window.__PRAE_DATA__ || {};
+const works = Array.isArray(PRAE_DATA.works)
+  ? PRAE_DATA.works
+  : (Array.isArray(PRAE.works) ? PRAE.works : []);
+const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
 
 const HASH_KEY = 'work';
 const ATTRACT_DELAY = 70000;

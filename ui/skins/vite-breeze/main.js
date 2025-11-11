@@ -129,6 +129,7 @@ function praeCurrentTheme(){
   if (urlSkin) document.documentElement.setAttribute('data-skin', urlSkin);
 
   const PRAE  = (window.PRAE = window.PRAE || {});
+  const PRAE_DATA = window.__PRAE_DATA__ || {};
   // --- HUD bootstrap: create immediately so it always exists
 const HUD_ID = 'wc-hud';
 let hudBox = null;
@@ -149,9 +150,11 @@ function ensureHudRoot(){
 }
 ensureHudRoot();
 
-  const works = Array.isArray(PRAE.works) ? PRAE.works : [];
+  const works = Array.isArray(PRAE_DATA.works)
+    ? PRAE_DATA.works
+    : (Array.isArray(PRAE.works) ? PRAE.works : []);
   const site  = (PRAE.config && PRAE.config.site) || {};
-  const pfMap = PRAE.pageFollowMaps || {}; // <— FIX: was missing
+  const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
   // ---- Shared state (hoisted to avoid TDZ in mount / listeners) ----
   let currentPdfSlug = null;
   let pdfViewerReady = false;
