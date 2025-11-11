@@ -154,10 +154,13 @@ export function normalizeWork(work = {}) {
     } catch (_) {}
   }
 
+  const onelinerEffectiveValue = onelinerEffective ? onelinerEffective : null;
+  const descriptionEffectiveValue = descriptionEffective ? descriptionEffective : null;
+
   return {
     ...normalized,
-    onelinerEffective,
-    descriptionEffective,
+    onelinerEffective: onelinerEffectiveValue,
+    descriptionEffective: descriptionEffectiveValue,
   };
 }
 
