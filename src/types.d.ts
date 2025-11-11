@@ -23,6 +23,7 @@ export interface Work {
   one?: string;
   oneliner?: string;
   description?: string | string[] | null;
+  desc?: string | string[] | null;
   openNote?: string[] | string;
   audio?: string | null;
   audioUrl?: string | null;

@@ -97,7 +97,8 @@ export function normalizeWork(work = {}) {
   const legacyOne = toSingleLine(clone.one);
   const explicitOnelinerSource = clone.oneliner !== undefined ? clone.oneliner : clone.one;
   const explicitOneliner = clampOneliner(toSingleLine(explicitOnelinerSource));
-  const description = normalizeDescription(clone.description);
+  const descriptionSource = clone.description !== undefined ? clone.description : clone.desc;
+  const description = normalizeDescription(descriptionSource);
 
   if (typeof clone.one === 'string') clone.one = legacyOne;
   if (clone.oneliner !== undefined) {
@@ -106,6 +107,8 @@ export function normalizeWork(work = {}) {
     clone.oneliner = explicitOneliner;
   }
   if (description !== null) clone.description = description;
+  else if (clone.description !== undefined) clone.description = null;
+  if (clone.desc !== undefined) delete clone.desc;
 
   let onelinerEffective = explicitOneliner;
   if (!onelinerEffective) {

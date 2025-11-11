@@ -14,6 +14,12 @@ describe('normalizeWork', () => {
     expect(view.descriptionEffective).toBe('Long body');
   });
 
+  it('accepts legacy desc alias for description', () => {
+    const view = normalizeWork({ desc: 'Alias body. Second sentence.' });
+    expect(view.onelinerEffective).toBe('Alias body.');
+    expect(view.descriptionEffective).toBe('Alias body. Second sentence.');
+  });
+
   it('collapses line breaks inside oneliner', () => {
     const view = normalizeWork({ oneliner: 'Has\nbreak' });
     expect(view.onelinerEffective).toBe('Has break');
