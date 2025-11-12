@@ -1,0 +1,29 @@
+name: Publish to npm (OIDC)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm   # must match what you entered on npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm test --if-present
+      - run: npm run build --if-present
+      # No NPM_TOKEN needed with OIDC
+      - run: npm publish --access public
+        env:
+          NPM_CONFIG_PROVENANCE: true
