@@ -40,7 +40,9 @@ async function ensurePdfJs() {
   if (pdfjsCache) return pdfjsCache
   const [pdfjs, worker] = await Promise.all([
     import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker?worker')
+    import('pdfjs-dist/build/pdf.worker.min.js?url').catch(() =>
+      import('pdfjs-dist/build/pdf.worker.js?url')
+    )
   ])
   const pdfModule = pdfjs as any
   const lib =
@@ -54,13 +56,15 @@ async function ensurePdfJs() {
     throw new Error('Failed to load pdfjs-dist')
   }
 
-  const workerSrc = (worker as any)?.default
-  if (workerSrc) {
+  const workerSrc = (worker as any)?.default ?? worker
+  if (typeof workerSrc === 'string') {
     const globalOptions =
       lib.GlobalWorkerOptions ||
       pdfModule.GlobalWorkerOptions ||
       (pdfModule.GlobalWorkerOptions = lib.GlobalWorkerOptions = {})
     globalOptions.workerSrc = workerSrc
+  } else if (workerSrc) {
+    console.warn('Unexpected pdf.js worker source:', workerSrc)
   }
 
   pdfjsCache = lib
