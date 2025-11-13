@@ -67,7 +67,7 @@ Minimal JSON works file
   }
 }
 ```
-See: [Page Follow](docs/page-follow)
+See: [Page Follow](https://cbassuarez.github.io/praetorius/docs/pdf-audio)
 
 # Squarespace embed (hosted build)
 ```
@@ -81,4 +81,4 @@ prae preview
   ```html
   <section id="works-group"></section>
   ```
-See: [Squarespace Embed](docs/squarespace)
+See: [Squarespace Embed](https://cbassuarez.github.io/praetorius/docs/embedding)
