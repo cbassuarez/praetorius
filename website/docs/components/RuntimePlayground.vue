@@ -1,24 +1,53 @@
 <script setup lang="ts">
-// EAGER real PRAE runtime + robust pdf.js workerSrc (string URL)
 import { onMounted, ref } from 'vue'
 
-// IMPORTANT: use a URL string, not a Worker object → fixes "Invalid workerSrc type"
+// Use a STRING URL for the pdf.js worker (fixes "Invalid workerSrc type")
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 
-// CDN for the UMD build (global window.PRAE). Latest per your preference.
-const PRAE_UMD = 'https://cdn.jsdelivr.net/npm/praetorius@latest/dist/praetorius.umd.js'
-// Optional: CSS from the package if your UMD does not inject styles.
-const PRAE_CSS = 'https://cdn.jsdelivr.net/npm/praetorius@latest/dist/praetorius.css'
+// UMD candidates (loads first that succeeds)
+const UMD_CANDIDATES = [
+  'https://cdn.jsdelivr.net/npm/praetorius@latest/dist/praetorius.umd.js',
+  'https://unpkg.com/praetorius@latest/dist/praetorius.umd.js'
+]
+const CSS_CANDIDATES = [
+  'https://cdn.jsdelivr.net/npm/praetorius@latest/dist/praetorius.css',
+  'https://unpkg.com/praetorius@latest/dist/praetorius.css'
+]
 
-// Works data (robust: lives under docs/public/samples/)
+// Works JSON (served from docs/public/samples/)
 const BASE = (import.meta as any).env?.BASE_URL || '/'
-const WORKS_URL = new URL('samples/works.playground.json', new URL(BASE, location.href)).toString()
+const WORKS_URL = `${BASE.replace(/\/?$/, '/') }samples/works.playground.json`
 
 type Skin = 'typefolio' | 'console' | 'vite-breeze'
 const skin = ref<Skin>('typefolio')
 const pageFollow = ref(true)
+let prae: any = null
 
-let praeInstance: any = null
+// simple UI state + error surface
+const loading = ref(true)
+const err = ref<string | null>(null)
+const log = (...a: any[]) => { try{ console.debug('[playground]', ...a) }catch{} }
+
+function ensureCss(href: string) {
+  if ([...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].some(l => l.href.includes('praetorius'))) return
+  const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = href; document.head.appendChild(link)
+}
+function loadScript(src: string) {
+  return new Promise<void>((resolve, reject) => {
+    const s = document.createElement('script')
+    s.src = src; s.async = true
+    s.onload = () => resolve()
+    s.onerror = () => reject(new Error('Failed to load ' + src))
+    document.head.appendChild(s)
+  })
+}
+async function tryLoadAny(urls: string[]) {
+  let lastErr: any
+  for (const url of urls) {
+    try { await loadScript(url); return url } catch (e) { lastErr = e }
+  }
+  throw lastErr || new Error('All candidates failed to load')
+}
 
 function parseTime(q: string | null) {
   if (!q) return 0
@@ -28,38 +57,16 @@ function parseTime(q: string | null) {
   if (m.length === 3) return (m[0] || 0) * 3600 + (m[1] || 0) * 60 + (m[2] || 0)
   return 0
 }
-function buildLink() {
-  const url = new URL(location.href)
-  const state = (praeInstance?.getState?.() ?? {}) as { page?: number; time?: number; work?: string }
-  if (state.page) url.searchParams.set('page', String(state.page))
-  if (typeof state.time === 'number') url.searchParams.set('time', String(Math.round(state.time)))
-  if (state.work) url.searchParams.set('work', state.work)
-  navigator.clipboard.writeText(url.toString())
-}
-
-function loadScript(src: string) {
-  return new Promise<void>((resolve, reject) => {
-    const el = document.createElement('script')
-    el.src = src
-    el.async = true
-    el.onload = () => resolve()
-    el.onerror = () => reject(new Error('Failed to load ' + src))
-    document.head.appendChild(el)
-  })
-}
-function ensureCss(href: string) {
-  if ([...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].some(l => l.href.includes(href))) return
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = href
-  document.head.appendChild(link)
-}
 
 async function mountPrae() {
-  // Use docs’ pdfjs worker as a string URL (robust across VitePress/GH Pages)
+  // pdf.js worker (string URL)
   ;(window as any).PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: pdfWorkerUrl }
 
-  // Initial deep-link
+  // preflight works.json so silent 404s don’t blank the UI
+  const head = await fetch(WORKS_URL, { method: 'HEAD' })
+  if (!head.ok) throw new Error(`works JSON not found at ${WORKS_URL} (${head.status})`)
+
+  // deep-link state
   const qs = new URLSearchParams(location.search)
   const initial = {
     work: qs.get('work') || undefined,
@@ -67,55 +74,63 @@ async function mountPrae() {
     time: parseTime(qs.get('time')),
   }
 
-  const host = document.getElementById('prae-host')!
+  // ensure CSS (harmless if bundle already styles itself)
+  try { await tryLoadAny(CSS_CANDIDATES) } catch {}
 
-  // Two init strategies to be robust to API surface differences:
+  // load UMD → window.PRAE
+  const used = await tryLoadAny(UMD_CANDIDATES)
+  log('PRAE UMD loaded from', used)
   const PRAE = (window as any).PRAE
+  if (!PRAE) throw new Error('window.PRAE not found after UMD load')
+
+  const host = document.getElementById('prae-host')!
   const opts = {
     worksUrl: WORKS_URL,
     skin: skin.value,
     pageFollow: pageFollow.value,
-    pdfWorkerSrc: pdfWorkerUrl,     // preferred explicit wire-up
+    pdfWorkerSrc: pdfWorkerUrl,
     deepLinking: true,
     initial,
-    basePath: BASE                  // helps with subpath deployments (/praetorius/)
+    basePath: BASE
   }
 
-  if (typeof PRAE?.mount === 'function') {
-    praeInstance = await PRAE.mount(host, opts)
-  } else if (typeof PRAE?.init === 'function') {
-    praeInstance = await PRAE.init(host, opts)
+  if (typeof PRAE.mount === 'function') {
+    prae = await PRAE.mount(host, opts)
+  } else if (typeof PRAE.init === 'function') {
+    prae = await PRAE.init(host, opts)
   } else if (PRAE?.App) {
-    praeInstance = new PRAE.App(opts)
-    await praeInstance.mount?.(host)
+    prae = new PRAE.App(opts); await prae.mount?.(host)
   } else {
-    throw new Error('PRAE UMD API not found on window.PRAE')
+    throw new Error('Unsupported PRAE UMD API surface (no mount/init/App)')
   }
 }
 
-async function remountWith(options: Partial<{ skin: Skin; pageFollow: boolean }>) {
-  // Prefer live updates if exposed; otherwise fall back to re-mount
-  if (praeInstance?.setOption) {
-    if (options.skin !== undefined) praeInstance.setOption('skin', options.skin)
-    if (options.pageFollow !== undefined) praeInstance.setOption('pageFollow', options.pageFollow)
-    return
-  }
-  if (praeInstance?.setSkin && options.skin !== undefined) {
-    praeInstance.setSkin(options.skin)
-  } else {
-    // Full re-mount for maximum compatibility
-    if (options.skin !== undefined) skin.value = options.skin
-    if (options.pageFollow !== undefined) pageFollow.value = options.pageFollow
+async function remountWith(next: Partial<{ skin: Skin; pageFollow: boolean }>) {
+  try {
+    if (prae?.setOption) {
+      if (next.skin !== undefined) prae.setOption('skin', next.skin)
+      if (next.pageFollow !== undefined) prae.setOption('pageFollow', next.pageFollow)
+      return
+    }
+    if (prae?.setSkin && next.skin !== undefined) { prae.setSkin(next.skin); return }
+    // hard remount
     const host = document.getElementById('prae-host')!
     host.innerHTML = ''
+    if (next.skin !== undefined) skin.value = next.skin
+    if (next.pageFollow !== undefined) pageFollow.value = next.pageFollow
     await mountPrae()
-  }
+  } catch (e:any) { err.value = String(e?.message || e); log(e) }
 }
 
 onMounted(async () => {
-  ensureCss(PRAE_CSS) // harmless if UMD already styles itself
-  await loadScript(PRAE_UMD)
-  await mountPrae()
+  try {
+    await mountPrae()
+  } catch (e:any) {
+    err.value = String(e?.message || e)
+    log('mount error', e)
+  } finally {
+    loading.value = false
+  }
 })
 </script>
 
@@ -129,21 +144,34 @@ onMounted(async () => {
           <option value="vite-breeze">Vite-Breeze</option>
         </select>
       </label>
-
-      <label class="pf">
-        <input type="checkbox" v-model="pageFollow" @change="remountWith({ pageFollow })" />
-        Page-follow
-      </label>
-
-      <button class="link" @click="buildLink">Copy deep link</button>
+      <label class="pf"><input type="checkbox" v-model="pageFollow" @change="remountWith({ pageFollow })" /> Page-follow</label>
+      <span v-if="loading" class="muted">Loading…</span>
+      <span v-else-if="!err" class="muted">Ready</span>
+      <span v-else class="error">Error: {{ err }}</span>
     </div>
 
     <div id="prae-host" class="host" aria-label="Praetorius viewer host"></div>
+
+    <div v-if="err" class="overlay">
+      <strong>Playground failed to mount.</strong>
+      <div>{{ err }}</div>
+      <ol>
+        <li>Check that <code>docs/public/samples/works.playground.json</code> exists.</li>
+        <li>Open DevTools → Network: verify <code>praetorius.umd.js</code> loads (200).</li>
+        <li>Verify <code>base</code> in <code>config.ts</code> is <code>/praetorius/</code>.</li>
+      </ol>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .runtime{ display:grid; gap:12px }
 .toolbar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap }
-.host{ min-height: 420px; border:1px solid var(--vp-c-divider); border-radius:12px; overflow:hidden }
+.muted{ opacity:.7 }
+.error{ color: #b00020 }
+.host{ min-height: 520px; border:1px solid var(--vp-c-divider); border-radius:12px; overflow:hidden; background: var(--vp-c-bg-alt) }
+.overlay{
+  margin-top:8px; padding:10px; border:1px solid var(--vp-c-divider);
+  border-radius:12px; background: color-mix(in oklab, var(--vp-c-bg), transparent 70%);
+}
 </style>

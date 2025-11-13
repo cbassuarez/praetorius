@@ -6,4 +6,6 @@ Eager, real runtime of the CLI viewer with skin switcher, page-follow toggle, an
 import RuntimePlayground from './components/RuntimePlayground.vue'
 </script>
 
-<RuntimePlayground/>
+<ClientOnly>
+  <RuntimePlayground/>
+</ClientOnly>
