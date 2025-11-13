@@ -1,18 +1,26 @@
 import { defineConfig } from 'vitepress'
-
-const REPO = 'cbassuarez/praetorius'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+/** Repo + paths */
+const REPO = 'cbassuarez/praetorius'
 const here = path.dirname(fileURLToPath(import.meta.url)) // .../website/docs/.vitepress
 const componentsDir = path.resolve(here, '../components')
+
+/** DocSearch env (set these in CI to enable Algolia; otherwise we use local search) */
+const DOCSEARCH_APP_ID     = process.env.DOCSEARCH_APP_ID     || process.env.ALGOLIA_APP_ID     || ''
+const DOCSEARCH_API_KEY    = process.env.DOCSEARCH_API_KEY    || process.env.ALGOLIA_API_KEY    || ''
+const DOCSEARCH_INDEX_NAME = process.env.DOCSEARCH_INDEX_NAME || 'praetorius'
+const hasDocSearch = !!(DOCSEARCH_APP_ID && DOCSEARCH_API_KEY)
+
 export default defineConfig({
   lang: 'en-US',
   title: 'Praetorius',
   description: 'Interactive works console with synchronized audio + page-follow PDFs.',
   lastUpdated: true,
   cleanUrls: true,
-  appearance: 'light', // default light per preference
-  base: '/praetorius/', // project page on GitHub Pages
+  appearance: 'light',
+  base: '/praetorius/',
   outDir: './.vitepress/dist',
 
   head: [
@@ -34,6 +42,10 @@ export default defineConfig({
       { text: 'Changelog', link: '/changelog' }
     ],
 
+    /** Sidebar:
+     * - Keep full docs sidebar for /docs/*
+     * - Add a root-level sidebar so pages like /playground show a left nav
+     */
     sidebar: {
       '/docs/': [
         {
@@ -69,6 +81,16 @@ export default defineConfig({
             { text: 'Archive (v0.1)', link: '/docs/archive-v0-1' },
           ]
         }
+      ],
+      '/': [
+        {
+          text: 'Site',
+          items: [
+            { text: 'Playground', link: '/playground' },
+            { text: 'Showcase',  link: '/showcase'  },
+            { text: 'Changelog', link: '/changelog' }
+          ]
+        }
       ]
     },
 
@@ -82,16 +104,24 @@ export default defineConfig({
       text: 'Edit this page on GitHub'
     },
 
-    search: {
-      provider: 'algolia',
-      options: {
-        appId: 'YOUR_APP_ID',
-        apiKey: 'YOUR_SEARCH_API_KEY',
-        indexName: 'praetorius',
-        insights: true,
-        placeholder: 'Search docs…'
-      }
-    },
+    /** Search:
+     * Fallback to local search if DocSearch creds aren’t present
+     * (prevents a “completely broken” search UI on prod).
+     */
+    search: hasDocSearch
+      ? {
+          provider: 'algolia',
+          options: {
+            appId: DOCSEARCH_APP_ID,
+            apiKey: DOCSEARCH_API_KEY,
+            indexName: DOCSEARCH_INDEX_NAME,
+            insights: true,
+            placeholder: 'Search docs…'
+          }
+        }
+      : {
+          provider: 'local'
+        },
 
     footer: {
       message: 'MIT Licensed',

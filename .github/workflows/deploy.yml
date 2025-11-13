@@ -64,8 +64,15 @@ jobs:
           test -f docs/public/vendor/pdfjs/pdf.worker.min.js
           test -f docs/public/samples/works.playground.json
 
+      # === REAL DOCSEARCH CREDS (from repo Secrets) ===
+      # Add these secrets in: Settings → Secrets and variables → Actions
+      #   DOCSEARCH_APP_ID, DOCSEARCH_API_KEY, DOCSEARCH_INDEX_NAME
       - name: Build VitePress
         run: npm run build
+        env:
+          DOCSEARCH_APP_ID:     ${{ secrets.DOCSEARCH_APP_ID }}
+          DOCSEARCH_API_KEY:    ${{ secrets.DOCSEARCH_API_KEY }}
+          DOCSEARCH_INDEX_NAME: ${{ secrets.DOCSEARCH_INDEX_NAME }}
 
       - name: Assert dist outputs exist
         run: |
