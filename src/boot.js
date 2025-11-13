@@ -1,28 +1,39 @@
 import tpl from './template.html?raw';
 import css from './style.css?inline';
-import './main.js'; // your IIFE reads the DOM and boots itself
+// ❗ Do NOT import the IIFE at module top-level (it would auto-run pre-mount)
+// import './main.js';
 
-function mount() {
-  // If user didn’t provide the wrapper, create it.
-  const existing = document.getElementById('works-group');
+export async function mount(el, opts = {}) {
+  // Resolve host: element | selector | fallback to document.body
+  const target = typeof el === 'string'
+    ? document.querySelector(el)
+    : (el || document.body);
+
+  // Ensure container markup + styles exist **in the chosen host**
+  const existing = (target && target.querySelector?.('#works-group')) || document.getElementById('works-group');
   if (!existing) {
     const host = document.createElement('div');
     host.innerHTML = `<style>${css}</style>` + tpl;
-    document.body.appendChild(host);
+    target.appendChild(host);
   } else {
-    // Ensure styles are present
     const style = document.createElement('style');
     style.textContent = css;
-    existing.parentElement.insertBefore(style, existing);
-    // If #works-group is empty, fill it with template
+    (existing.parentElement || target).insertBefore(style, existing);
     if (!existing.querySelector('#works-console')) {
       existing.outerHTML = `<style>${css}</style>` + tpl;
     }
   }
+
+  // Now run your runtime IIFE so it bootstraps against the injected DOM
+  await import('./main.js'); // executes the IIFE once
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', mount, { once: true });
-} else {
-  mount();
+export const init = mount;
+
+export class App {
+  constructor(opts = {}) { this.opts = opts; }
+  async mount(el) { return mount(el, this.opts); }
 }
+
+// Library surface (UMD: window.PRAE; ESM: default export)
+export default { mount, init, App };
