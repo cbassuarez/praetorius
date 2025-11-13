@@ -27,46 +27,47 @@ jobs:
         with:
           node-version: 20
 
-      # ---- LIB @ REPO ROOT ----
+            # LIB at repo root → build UMD
       - name: Install deps (repo root)
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+        run: if [ -f package-lock.json ]; then npm ci; else npm i; fi
         working-directory: .
 
       - name: Build library (repo root → dist/)
         run: npm run build
         working-directory: .
 
-      # ---- WEBSITE (VitePress) ----
+      # WEBSITE → install deps so pdfjs-dist exists
       - name: Install deps (website/)
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+        run: if [ -f package-lock.json ]; then npm ci; else npm i; fi
 
-      # Vendor viewer UMD + pdf.js worker into website docs/public
-      - name: Vendor viewer + worker (same-origin)
+      # Vendor UMD + worker into docs/public (same-origin)
+      - name: Vendor viewer + worker
         run: |
           mkdir -p docs/public/vendor/prae
           mkdir -p docs/public/vendor/pdfjs
-          # UMD from repo-root dist
           cp ../dist/praetorius.umd.js docs/public/vendor/prae/
-          # Optional CSS if you actually output it
+          # copy only if you actually ship a separate CSS file
           if [ -f ../dist/praetorius.css ]; then cp ../dist/praetorius.css docs/public/vendor/prae/; fi
-          # Worker from website/node_modules
+          # copy the worker from website/node_modules
           cp node_modules/pdfjs-dist/build/pdf.worker.min.js docs/public/vendor/pdfjs/
 
+      # PROVE they exist before building the site
       - name: Assert vendored files exist
         run: |
+          ls -la docs/public/vendor/prae
+          ls -la docs/public/vendor/pdfjs
           test -f docs/public/vendor/prae/praetorius.umd.js
           test -f docs/public/vendor/pdfjs/pdf.worker.min.js
-          test -f docs/public/samples/works.playground.json
 
+      # Build & then prove they made it into dist
       - name: Build VitePress
         run: npm run build
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: website/docs/.vitepress/dist
+      - name: List in dist (debug)
+        run: |
+          ls -la docs/.vitepress/dist/vendor/prae || true
+          ls -la docs/.vitepress/dist/vendor/pdfjs || true
+
 
   deploy:
     needs: build
