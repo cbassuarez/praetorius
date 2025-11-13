@@ -1,10 +1,10 @@
 name: Publish to npm (OIDC)
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,17 +13,29 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: npm   # must match what you entered on npm
+    environment: npm  # must match the environment name you configured in GitHub
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - run: npm test --if-present
-      - run: npm run build --if-present
-      # No NPM_TOKEN needed with OIDC
-      - run: npm publish --access public
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test --if-present
+
+      - name: Build package
+        run: npm run build --if-present
+
+      - name: Publish to npm (with provenance)
         env:
           NPM_CONFIG_PROVENANCE: true
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+        run: npm publish --access public
