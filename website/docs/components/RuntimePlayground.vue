@@ -14,9 +14,9 @@ const CSS_CANDIDATES = [
   'https://unpkg.com/praetorius@latest/dist/praetorius.css'
 ]
 
-// Works JSON (served from docs/public/samples/)
-const BASE = (import.meta as any).env?.BASE_URL || '/'
-const WORKS_URL = `${BASE.replace(/\/?$/, '/') }samples/works.playground.json`
+// Works JSON — resolve RELATIVE to the current page so /praetorius/ subpath always works
+ const WORKS_URL = 'samples/works.playground.json'
+ const RESOLVED = new URL(WORKS_URL, location.href).toString()
 
 type Skin = 'typefolio' | 'console' | 'vite-breeze'
 const skin = ref<Skin>('typefolio')
@@ -62,9 +62,9 @@ async function mountPrae() {
   // pdf.js worker (string URL)
   ;(window as any).PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: pdfWorkerUrl }
 
-  // preflight works.json so silent 404s don’t blank the UI
-  const head = await fetch(WORKS_URL, { method: 'HEAD' })
-  if (!head.ok) throw new Error(`works JSON not found at ${WORKS_URL} (${head.status})`)
+  // preflight with GET (HEAD can be quirky on some static hosts)
+  const probe = await fetch(WORKS_URL, { method: 'GET', cache: 'no-store' })
+  if (!probe.ok) throw new Error(`works JSON not found at ${RESOLVED} (${probe.status})`)
 
   // deep-link state
   const qs = new URLSearchParams(location.search)
@@ -90,8 +90,7 @@ async function mountPrae() {
     pageFollow: pageFollow.value,
     pdfWorkerSrc: pdfWorkerUrl,
     deepLinking: true,
-    initial,
-    basePath: BASE
+    initial
   }
 
   if (typeof PRAE.mount === 'function') {
@@ -147,7 +146,7 @@ onMounted(async () => {
       <label class="pf"><input type="checkbox" v-model="pageFollow" @change="remountWith({ pageFollow })" /> Page-follow</label>
       <span v-if="loading" class="muted">Loading…</span>
       <span v-else-if="!err" class="muted">Ready</span>
-      <span v-else class="error">Error: {{ err }}</span>
+  <span v-else class="error">Error: {{ err }}</span>
     </div>
 
     <div id="prae-host" class="host" aria-label="Praetorius viewer host"></div>
@@ -155,10 +154,11 @@ onMounted(async () => {
     <div v-if="err" class="overlay">
       <strong>Playground failed to mount.</strong>
       <div>{{ err }}</div>
+      <div style="margin-top:.5rem;">Resolved URL: <code>{{ new URL('samples/works.playground.json', location.href).toString() }}</code></div>
       <ol>
-        <li>Check that <code>docs/public/samples/works.playground.json</code> exists.</li>
+        <li>Ensure <code>docs/public/samples/works.playground.json</code> exists and is valid JSON.</li>
         <li>Open DevTools → Network: verify <code>praetorius.umd.js</code> loads (200).</li>
-        <li>Verify <code>base</code> in <code>config.ts</code> is <code>/praetorius/</code>.</li>
+        <li>(Optional) Verify <code>base</code> in <code>config.ts</code> is <code>/praetorius/</code> for other assets.</li>
       </ol>
     </div>
   </div>
