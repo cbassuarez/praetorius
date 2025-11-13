@@ -17,7 +17,7 @@ Praetorius reads a simple JSON list of works plus optional page-follow config.
   }
 ]
 ```
-Fields
+### Fields
 
 `id` (number) — stable numeric id (used in #work-id deep links)
 
@@ -35,4 +35,5 @@ Fields
 
 `pageFollow` (optional)
 
-See: [Page-Follow](/website/docs/docs/page-follow.md)
+See: [Page-Follow](docs/page-follow)
+
