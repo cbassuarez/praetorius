@@ -1,6 +1,6 @@
 {
   "name": "praetorius",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -41,9 +41,9 @@
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s"
   },
   "publishConfig": {
-  "access": "public",
-  "provenance": true
-},
+    "access": "public",
+    "provenance": true
+  },
   "devDependencies": {
     "vite": "^7.2.2",
     "vitest": "^2.0.0",
