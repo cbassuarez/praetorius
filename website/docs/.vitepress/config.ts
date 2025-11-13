@@ -1,7 +1,10 @@
 import { defineConfig } from 'vitepress'
 
 const REPO = 'cbassuarez/praetorius'
-
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+const here = path.dirname(fileURLToPath(import.meta.url)) // .../website/docs/.vitepress
+const componentsDir = path.resolve(here, '../components')
 export default defineConfig({
   lang: 'en-US',
   title: 'Praetorius',
@@ -98,6 +101,7 @@ export default defineConfig({
   },
 
   vite: {
-    optimizeDeps: { include: ['pdfjs-dist'] }
+    optimizeDeps: { include: ['pdfjs-dist'] },
+    resolve: { alias: { '@components': componentsDir } }
   }
 })
