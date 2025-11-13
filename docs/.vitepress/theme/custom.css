@@ -1,0 +1,20 @@
+:root{
+  --prae-accent: #111111; /* art-forward, minimal */
+  --prae-card: rgba(0,0,0,.04);
+  --prae-blur: 12px;
+  --prae-radius: 16px;
+}
+.VPHome .VPHero.has-image .image-bg { display: none; }
+
+/* subtle glass panels */
+.prae-card{
+  background: var(--prae-card);
+  backdrop-filter: blur(var(--prae-blur));
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--prae-radius);
+}
+
+/* motion prefs */
+@media (prefers-reduced-motion: reduce){
+  *{ animation: none !important; transition: none !important; scroll-behavior:auto !important; }
+}
