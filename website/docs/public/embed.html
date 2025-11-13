@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Praetorius Embed</title>
+  <style>
+    html,body{height:100%;margin:0}
+    body{background:#0f0f0f;color:#fff;font:14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+    #app{position:fixed; inset:0; display:block}
+    #err{position:fixed; inset:auto 12px 12px 12px; background:#111a; border:1px solid #333; padding:10px; border-radius:10px}
+    code{background:#0003; padding:2px 4px; border-radius:6px}
+  </style>
+</head>
+<body>
+  <div id="app" aria-label="Praetorius viewer host"></div>
+  <div id="err" hidden></div>
+
+  <script>
+    (function () {
+      const q = new URLSearchParams(location.search);
+      const works = q.get('works') || 'samples/works.playground.json';
+      const skin  = q.get('skin')  || 'typefolio';
+      const pf    = q.get('pageFollow');
+      const pageFollow = pf === null ? true : pf === '1' || pf === 'true';
+      const worker = new URL('vendor/pdfjs/pdf.worker.min.js', location.href).toString();
+
+      // pdf.js worker (string URL)
+      window.PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: worker };
+
+      // Load the UMD (same origin)
+      const s = document.createElement('script');
+      s.src = new URL('vendor/prae/praetorius.umd.js', location.href).toString();
+      s.async = true;
+      s.onload = () => mount();
+      s.onerror = () => fail('Failed to load viewer UMD', s.src);
+      document.head.appendChild(s);
+
+      async function mount() {
+        try {
+          const host = document.getElementById('app');
+          const PRAE = window.PRAE;
+          if (!PRAE) throw new Error('window.PRAE not found after UMD load');
+
+          // Basic connectivity check for works JSON
+          const probe = await fetch(works, { cache: 'no-store' });
+          if (!probe.ok) throw new Error(`Works JSON not found (${probe.status}) at ${new URL(works, location.href)}`);
+
+          const opts = {
+            worksUrl: works,
+            skin, pageFollow,
+            pdfWorkerSrc: worker,
+            deepLinking: true,
+          };
+
+          if (typeof PRAE.mount === 'function') {
+            await PRAE.mount(host, opts);
+          } else if (typeof PRAE.init === 'function') {
+            await PRAE.init(host, opts);
+          } else if (PRAE && PRAE.App) {
+            const app = new PRAE.App(opts);
+            await (app.mount && app.mount(host));
+          } else {
+            throw new Error('Unsupported PRAE UMD API (no mount/init/App).');
+          }
+        } catch (e) {
+          fail(e && e.message ? e.message : String(e));
+        }
+      }
+
+      function fail(msg, url) {
+        const box = document.getElementById('err');
+        box.hidden = false;
+        box.innerHTML = `<strong>Embed failed:</strong> ${msg}${url ? `<br/><code>${url}</code>` : ''}`;
+      }
+    })();
+  </script>
+</body>
+</html>
+  

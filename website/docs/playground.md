@@ -1,11 +1,11 @@
 # Playground
 
-Eager, real runtime of the CLI viewer with skin switcher, page-follow toggle, and deep-link copy.
+Real Praetorius runtime running in a same-origin embed page. This avoids SSR/HMR quirks and guarantees the correct PDF worker.
 
 <script setup lang="ts">
-import RuntimePlayground from './components/RuntimePlayground.vue'
+const base = import.meta.env.BASE_URL || '/';
+const works = new URL('samples/works.playground.json', location.href).toString();
+const src = `${base}embed.html?works=${encodeURIComponent(works)}&skin=typefolio&pageFollow=1`;
 </script>
 
-<ClientOnly>
-  <RuntimePlayground/>
-</ClientOnly>
+<iframe :src="src" title="Praetorius Playground" style="width:100%;height:70vh;border:1px solid var(--vp-c-divider);border-radius:12px;"></iframe>

@@ -23,12 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
+        with: { node-version: 20 }
 
-      # --- Install + build the LIB at REPO ROOT (overrides defaults) ---
+      # Build the LIB at repo root → dist/ (override working-directory)
       - name: Install deps (repo root)
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm i; fi
@@ -38,31 +36,29 @@ jobs:
         run: npm run build
         working-directory: .
 
-      # --- Vendor the UMD into the docs public folder ---
-      - name: Vendor PRAE UMD into docs/public
+      # Vendor UMD + pdf.js worker into the website docs/public
+      - name: Vendor viewer + worker
         run: |
           mkdir -p website/docs/public/vendor/prae
+          mkdir -p website/docs/public/vendor/pdfjs
           cp dist/praetorius.umd.js website/docs/public/vendor/prae/
-          # Optional CSS only if it actually exists
           if [ -f dist/praetorius.css ]; then cp dist/praetorius.css website/docs/public/vendor/prae/; fi
+          # copy worker from the docs site deps (website/)
+          cp website/node_modules/pdfjs-dist/build/pdf.worker.min.js website/docs/public/vendor/pdfjs/
         working-directory: .
 
-      - name: Assert UMD exists (fail early if missing)
-        run: test -f docs/public/vendor/prae/praetorius.umd.js
+      - name: Assert vendored files exist
+        run: |
+          test -f docs/public/vendor/prae/praetorius.umd.js
+          test -f docs/public/vendor/pdfjs/pdf.worker.min.js
 
-      # --- Now build the VitePress site inside website/ ---
+      # Build the VitePress site in /website
       - name: Install deps (website/)
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm i; fi
 
       - name: Build VitePress
         run: npm run build
-
-      - name: Debug tree (optional)
-        run: |
-          echo "--- website root ---"; ls -la
-          echo "--- docs/public/vendor/prae ---"; ls -la docs/public/vendor/prae || true
-          echo "--- dist ---"; ls -la docs/.vitepress/dist || true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
