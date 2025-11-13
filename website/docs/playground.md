@@ -1,4 +1,4 @@
 # Playground
 <ClientOnly>
-  <PraeConsoleDemo />
+  <PraeConsoleExact />
 </ClientOnly>

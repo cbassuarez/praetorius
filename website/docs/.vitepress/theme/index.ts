@@ -12,6 +12,7 @@ import SinceBadge from '@components/SinceBadge.vue'
 import PraePlayground from '@components/PraePlayground.vue'
 import PraeViewer from '@components/PraeViewer.vue'
 import PraeConsoleDemo from '@components/PraeConsoleDemo.vue'
+import PraeConsoleExact from '@components/PraeConsoleExact.vue'
 
 export default {
   ...DefaultTheme,
@@ -26,5 +27,6 @@ export default {
     app.component('PraePlayground', PraePlayground)
     app.component('PraeViewer', PraeViewer)
     app.component('PraeConsoleDemo', PraeConsoleDemo)
+    app.component('PraeConsoleExact', PraeConsoleExact)
   }
 }

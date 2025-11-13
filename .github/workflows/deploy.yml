@@ -33,9 +33,13 @@ jobs:
           if [ -f package-lock.json ]; then npm ci; else npm i; fi
         working-directory: .
 
-      - name: Build library (repo root → dist/)
-        run: npm run build
-        working-directory: .
+      - name: Build library (root)
+        run: npm run -C .. build
+
+      - name: Stage library for docs artifact
+        run: |
+          mkdir -p docs/public/prae-lib
+          cp -R ../dist/* docs/public/prae-lib/
 
       # --- WEBSITE (VitePress) ---
       - name: Install deps (website/)
@@ -43,22 +47,18 @@ jobs:
           if [ -f package-lock.json ]; then npm ci; else npm i; fi
 
       # --- Vendor UMD + worker into docs/public (same-origin) ---
-      - name: Vendor viewer + worker
+      - name: Vendor pdf.js worker
         run: |
           set -euo pipefail
-          mkdir -p docs/public/vendor/prae
           mkdir -p docs/public/vendor/pdfjs
-          cp ../dist/praetorius.umd.js docs/public/vendor/prae/
-          cp ../dist/praetorius.es.js  docs/public/vendor/prae/ || true
           cp node_modules/pdfjs-dist/build/pdf.worker.min.js docs/public/vendor/pdfjs/
 
       - name: Assert vendored inputs exist
         run: |
           set -euo pipefail
           test -f docs/public/embed.html
-          test -f docs/public/vendor/prae/praetorius.umd.js
-          # ESM optional but preferred
-          ls -la docs/public/vendor/prae/ | (grep praetorius.es.js || true)
+          test -f docs/public/prae-lib/praetorius.umd.js
+          test -f docs/public/prae-lib/praetorius.es.js
           test -f docs/public/vendor/pdfjs/pdf.worker.min.js
           test -f docs/public/samples/works.playground.json
 
@@ -69,16 +69,16 @@ jobs:
         run: |
           set -euo pipefail
           test -f docs/.vitepress/dist/embed.html
-          test -f docs/.vitepress/dist/vendor/prae/praetorius.umd.js
-          ls -la docs/.vitepress/dist/vendor/prae/ | (grep praetorius.es.js || true)
+          test -f docs/.vitepress/dist/prae-lib/praetorius.umd.js
+          test -f docs/.vitepress/dist/prae-lib/praetorius.es.js
           test -f docs/.vitepress/dist/vendor/pdfjs/pdf.worker.min.js
           test -f docs/.vitepress/dist/samples/works.playground.json
 
       - name: Inspect UMD wrapper (heuristic)
         run: |
           set -euo pipefail
-          head -c 220 docs/.vitepress/dist/vendor/prae/praetorius.umd.js | sed 's/[^[:print:]]/ /g'
-          (grep -E "typeof exports|module|factory" docs/.vitepress/dist/vendor/prae/praetorius.umd.js && echo "Looks like UMD") || (echo "UMD wrapper not detected" && exit 1)
+          head -c 220 docs/.vitepress/dist/prae-lib/praetorius.umd.js | sed 's/[^[:print:]]/ /g'
+          (grep -E "typeof exports|module|factory" docs/.vitepress/dist/prae-lib/praetorius.umd.js && echo "Looks like UMD") || (echo "UMD wrapper not detected" && exit 1)
 
       - name: List components (debug)
         run: |
