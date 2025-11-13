@@ -31,7 +31,7 @@ Praetorius reads a simple JSON list of works plus optional page-follow config.
 
 `pdf` (string|null) — direct URL to PDF score (optional)
 
-`cues` (array<string>) — times like "mm:ss" or "s" (optional)
+`cues` (`array<string>`) — times like "mm:ss" or "s" (optional)
 
 `pageFollow` (optional)
 
