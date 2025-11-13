@@ -3,7 +3,7 @@ export default defineConfig({
   build: {
     lib: {
       entry: 'src/boot.js',
-      name: 'PraetoriusPortfolio',
+      name: 'PRAE', 
       fileName: (fmt) => `praetorius.${fmt}.js`,
       formats: ['umd','es']
     },
