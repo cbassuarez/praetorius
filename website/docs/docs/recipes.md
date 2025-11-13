@@ -67,7 +67,7 @@ Minimal JSON works file
   }
 }
 ```
-See: [Page Follow](/website/docs/docs/recipes.md)
+See: [Page Follow](docs/page-follow)
 
 # Squarespace embed (hosted build)
 ```
@@ -81,4 +81,4 @@ prae preview
   ```html
   <section id="works-group"></section>
   ```
-See: [Squarespace Embed](/website/docs/docs/recipes.md)
+See: [Squarespace Embed](docs/squarespace)
