@@ -18,4 +18,4 @@ prae generate --skin typescatter
 prae generate --skin vite-breeze
 prae generate
 ```
-See also: [Recipes](/website/docs/docs/recipes.md)
+See also: [Recipes](https://cbassuarez.github.io/praetorius/docs/recipes)
