@@ -64,29 +64,10 @@
   .prae-viewer__meta{ flex-direction: column; align-items: flex-start; }
 }
 
-/* widen VitePress content area */
-:root{
-  --vp-layout-max-width: 1600px;     /* overall container */
-  --vp-content-max-width: 1280px;    /* article/markdown column */
+/* widen VitePress content area (docs pages only) */
+.VPDoc{
+  --vp-layout-max-width: 1600px;
+  --vp-content-max-width: 1280px;
 }
 
-/* ensure the page itself can scroll even if the embedded console tries to lock scroll */
-html, body{
-  overflow-y: auto !important;
-}
-
-/* embedded console should not use fixed/inset takeover in docs */
-#prae-host, .prae-host, #works-console, .works-console{
-  position: relative !important;
-  inset: auto !important;
-  width: 100% !important;
-  max-width: 1280px !important;
-  margin-inline: auto !important;
-  box-sizing: border-box;
-}
-
-/* remove excessive inner padding/margins if the console adds them */
-#prae-host .prae-root, .works-console .prae-root{
-  margin: 0 !important;
-  padding: 0 !important;
-}
+/* no global overrides of Console takeover in docs theme */
