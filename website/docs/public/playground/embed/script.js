@@ -9,8 +9,8 @@
       "id": 1,
       "slug": "demo-satie-gymnopedie-1",
       "title": "Gymnopédies — Satie",
-      "one": "Minimal piano works exploring poise and space.",
-      "description": "Erik Satie’s Gymnopédies (1888) are three piano pieces noted for their floating harmonies and suspended time. This demo pairs the Mutopia engraving with a Wikimedia Commons recording so you can explore PDF-follow and cue playback in Praetorius.",
+      "one": "Erik Satie’s Gymnopédies are three short piano pieces built from slow, floating melodies over gently shifting, unresolved harmonies. Their spacious pacing and soft, almost whispered dynamics create a sense of suspended time, making them iconic examples of intimate, minimalist piano writing. They’re ideal for showcasing clear notation, pedaling detail, and subtle rubato in a demo.",
+      "description": "Composed in 1888, Satie’s Gymnopédies distill piano writing down to its essentials: a single, cantabile line supported by simple, gently rocking chords. Each piece unfolds at a very slow tempo, with wide registral spacing and unresolved sonorities that feel more like open questions than cadences. The music invites the listener into a quiet, interior space, where small changes in voicing, touch, and pedaling become expressive events. For a demo site, Gymnopédies are perfect for showing off legible score rendering, expressive playback, and page-follow in a calm, non-dense texture that works beautifully on any device.",
       "audio": "https://upload.wikimedia.org/wikipedia/commons/b/b7/Gymnopedie_No._1..ogg",
       "pdf": "https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf",
       "cues": [
@@ -42,16 +42,16 @@
           }
         ]
       },
-      "oneliner": "Minimal piano works exploring poise and space.",
-      "onelinerEffective": "Minimal piano works exploring poise and space.",
-      "descriptionEffective": "Erik Satie’s Gymnopédies (1888) are three piano pieces noted for their floating harmonies and suspended time. This demo pairs the Mutopia engraving with a Wikimedia Commons recording so you can explore PDF-follow and cue playback in Praetorius.",
+      "oneliner": "Erik Satie’s Gymnopédies are three short piano pieces built from slow, floating melodies over gently shifting, unresolved harmonies. Their spacious pacing and soft, almost whispered dynamics create a sense of suspended time, making them iconic examples of intimate, minimalist piano writing. They’re ideal for showcasing clear notation, pedaling detail, and subtle rubato in a demo.",
+      "onelinerEffective": "Erik Satie’s Gymnopédies are three short piano pieces built from slow, floating melodies over gently shifting, unresolved harmonies. Their spacious pacing and soft, almost whispered dynamics create a sense of suspended time, making them iconic examples of intimate, minimalist piano writing. They’re ideal for showcasing clear notation, pedaling detail, and subtle rubato in a demo.",
+      "descriptionEffective": "Composed in 1888, Satie’s Gymnopédies distill piano writing down to its essentials: a single, cantabile line supported by simple, gently rocking chords. Each piece unfolds at a very slow tempo, with wide registral spacing and unresolved sonorities that feel more like open questions than cadences. The music invites the listener into a quiet, interior space, where small changes in voicing, touch, and pedaling become expressive events. For a demo site, Gymnopédies are perfect for showing off legible score rendering, expressive playback, and page-follow in a calm, non-dense texture that works beautifully on any device.",
     },
     {
       "id": 2,
-      "slug": "demo-us-army-band-lo-how-a-rose",
+      "slug": "es-ist-ein-praetorius",
       "title": "Es ist ein Ros entsprungen – Praetorius",
-      "oneliner": "Brass chorale with lyrical warmth and traditional scoring.",
-      "description": "The United States Army Band’s public-domain rendition of “Lo, How a Rose E’er Blooming” demonstrates how an ensemble recording and Mutopia score can combine inside Praetorius. Use it to test audio playback, cue navigation, and PDF syncing.",
+      "oneliner": "Michael Praetorius’s setting of Es ist ein Ros entsprungen is a four-part chorale built from smooth, hymn-like lines and gently glowing harmonies. The melody unfolds in long phrases over a supportive, mostly syllabic texture, giving the piece a sense of quiet radiance rather than showy virtuosity. It’s a classic example of early 17th-century choral writing that reads clearly on the page and sounds rich even at modest playback levels.",
+      "description": "Praetorius’s Es ist ein Ros entsprungen (early 1600s) takes a simple Christmas chorale tune and surrounds it with balanced SATB counterpoint. The voices move mostly stepwise, with careful spacing and occasional suspensions that bloom into consonance, creating an atmosphere that is both devotional and surprisingly modern in its clarity. Because the texture is transparent and the ranges are comfortable, the piece translates well across ensembles—choir, small vocal consort, or even instrumental quartet. On a demo site, it’s an excellent work for showcasing choral engraving, lyric alignment, transpositions or alternate voicings, and synchronized score-follow playback that lets users visually track each voice as the harmony blossoms.",
       "audio": "https://upload.wikimedia.org/wikipedia/commons/c/c9/U.S._Army_Band_-_Lo_How_a_Rose.ogg",
       "pdf": "https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf",
       "cues": [
@@ -83,9 +83,9 @@
           }
         ]
       },
-      "one": "Brass chorale with lyrical warmth and traditional scoring.",
-      "onelinerEffective": "Brass chorale with lyrical warmth and traditional scoring.",
-      "descriptionEffective": "The United States Army Band’s public-domain rendition of “Lo, How a Rose E’er Blooming” demonstrates how an ensemble recording and Mutopia score can combine inside Praetorius. Use it to test audio playback, cue navigation, and PDF syncing."
+      "one": "Michael Praetorius’s setting of Es ist ein Ros entsprungen is a four-part chorale built from smooth, hymn-like lines and gently glowing harmonies. The melody unfolds in long phrases over a supportive, mostly syllabic texture, giving the piece a sense of quiet radiance rather than showy virtuosity. It’s a classic example of early 17th-century choral writing that reads clearly on the page and sounds rich even at modest playback levels.",
+      "onelinerEffective": "Michael Praetorius’s setting of Es ist ein Ros entsprungen is a four-part chorale built from smooth, hymn-like lines and gently glowing harmonies. The melody unfolds in long phrases over a supportive, mostly syllabic texture, giving the piece a sense of quiet radiance rather than showy virtuosity. It’s a classic example of early 17th-century choral writing that reads clearly on the page and sounds rich even at modest playback levels.",
+      "descriptionEffective": "Praetorius’s Es ist ein Ros entsprungen (early 1600s) takes a simple Christmas chorale tune and surrounds it with balanced SATB counterpoint. The voices move mostly stepwise, with careful spacing and occasional suspensions that bloom into consonance, creating an atmosphere that is both devotional and surprisingly modern in its clarity. Because the texture is transparent and the ranges are comfortable, the piece translates well across ensembles—choir, small vocal consort, or even instrumental quartet. On a demo site, it’s an excellent work for showcasing choral engraving, lyric alignment, transpositions or alternate voicings, and synchronized score-follow playback that lets users visually track each voice as the harmony blossoms."
     }
   ],
   "pageFollowMaps": {
@@ -126,24 +126,24 @@
       "links": [
         {
           "label": "Home",
-          "href": "#",
-          "external": false
+          "href": "cbassuarez.github.io/praetorius",
+          "external": true
         },
         {
-          "label": "Projects",
+          "label": "Demo",
           "href": "#",
           "external": false
         },
         {
           "label": "Contact",
-          "href": "#",
-          "external": false
+          "href": "cbassuarez.github.io",
+          "external": true
         }
       ]
     }
   },
   "source": "starter",
-  "seeded": false,
+  "seeded": true,
   "count": 2,
   "schemaVersion": "0.2.5",
   "warnings": []
