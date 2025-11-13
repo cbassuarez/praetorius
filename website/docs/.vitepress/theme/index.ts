@@ -4,7 +4,7 @@ import './custom.css'
 // Global components available in markdown
 import PraePlayground from '../../components/PraePlayground.vue'
 import GitHubMeta from '../../components/GitHubMeta.vue'
-import NpmBadge from '../../components/NpmBadge.vue'
+import NpmBadge from '../components/NpmBadge.vue'
 import GitHubChangelog from '../../components/GitHubChangelog.vue'
 import CLIBlock from '../../components/CLIBlock.vue'
 import SchemaViewer from '../../components/SchemaViewer.vue'
