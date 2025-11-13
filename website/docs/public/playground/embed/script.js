@@ -7,52 +7,12 @@
   "works": [
     {
       "id": 1,
-      "slug": "test1",
-      "title": "test 1",
-      "one": "test1 oneliner",
-      "audio": "example.com/audio-url-1",
-      "pdf": "example.com/pdf-url-1",
-      "cues": [
-        {
-          "label": "@5:30",
-          "at": 0
-        }
-      ],
-      "score": {
-        "pdfStartPage": 1,
-        "mediaOffsetSec": 0,
-        "pageMap": [
-          {
-            "at": "0:00",
-            "page": 1
-          }
-        ]
-      },
-      "audioUrl": "example.com/audio-url-1",
-      "pdfUrl": "example.com/pdf-url-1",
-      "audioId": "wc-a1",
-      "pageFollow": {
-        "pdfStartPage": 1,
-        "mediaOffsetSec": 0,
-        "pageMap": [
-          {
-            "at": "0:00",
-            "page": 1
-          }
-        ]
-      },
-      "oneliner": "test1 oneliner",
-      "onelinerEffective": "test1 oneliner",
-      "descriptionEffective": null
-    },
-    {
-      "id": 2,
-      "slug": "test2",
-      "title": "test 2",
-      "oneliner": "oneliner 2",
-      "description": "descr 2",
-      "audio": "example.com/audio-url-2",
-      "pdf": "example.com/pdf-url-1",
+      "slug": "demo-satie-gymnopedie-1",
+      "title": "Gymnopédies — Satie",
+      "one": "Minimal piano works exploring poise and space.",
+      "description": "Erik Satie’s Gymnopédies (1888) are three piano pieces noted for their floating harmonies and suspended time. This demo pairs the Mutopia engraving with a Wikimedia Commons recording so you can explore PDF-follow and cue playback in Praetorius.",
+      "audio": "https://upload.wikimedia.org/wikipedia/commons/b/b7/Gymnopedie_No._1..ogg",
+      "pdf": "https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf",
       "cues": [
         {
           "label": "@0:00",
@@ -69,8 +29,49 @@
           }
         ]
       },
-      "audioUrl": "example.com/audio-url-2",
-      "pdfUrl": "example.com/pdf-url-1",
+      "audioUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b7/Gymnopedie_No._1..ogg",
+      "pdfUrl": "https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf",
+      "audioId": "wc-a1",
+      "pageFollow": {
+        "pdfStartPage": 1,
+        "mediaOffsetSec": 0,
+        "pageMap": [
+          {
+            "at": "0:00",
+            "page": 1
+          }
+        ]
+      },
+      "oneliner": "Minimal piano works exploring poise and space.",
+      "onelinerEffective": "Minimal piano works exploring poise and space.",
+      "descriptionEffective": "Erik Satie’s Gymnopédies (1888) are three piano pieces noted for their floating harmonies and suspended time. This demo pairs the Mutopia engraving with a Wikimedia Commons recording so you can explore PDF-follow and cue playback in Praetorius.",
+    },
+    {
+      "id": 2,
+      "slug": "demo-us-army-band-lo-how-a-rose",
+      "title": "Es ist ein Ros entsprungen – Praetorius",
+      "oneliner": "Brass chorale with lyrical warmth and traditional scoring.",
+      "description": "The United States Army Band’s public-domain rendition of “Lo, How a Rose E’er Blooming” demonstrates how an ensemble recording and Mutopia score can combine inside Praetorius. Use it to test audio playback, cue navigation, and PDF syncing.",
+      "audio": "https://upload.wikimedia.org/wikipedia/commons/c/c9/U.S._Army_Band_-_Lo_How_a_Rose.ogg",
+      "pdf": "https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf",
+      "cues": [
+        {
+          "label": "@0:00",
+          "at": 0
+        }
+      ],
+      "score": {
+        "pdfStartPage": 1,
+        "mediaOffsetSec": 0,
+        "pageMap": [
+          {
+            "at": "0:00",
+            "page": 1
+          }
+        ]
+      },
+      "audioUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c9/U.S._Army_Band_-_Lo_How_a_Rose.ogg",
+      "pdfUrl": "https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf",
       "audioId": "wc-a2",
       "pageFollow": {
         "pdfStartPage": 1,
@@ -82,9 +83,9 @@
           }
         ]
       },
-      "one": "oneliner 2",
-      "onelinerEffective": "oneliner 2",
-      "descriptionEffective": "descr 2"
+      "one": "Brass chorale with lyrical warmth and traditional scoring.",
+      "onelinerEffective": "Brass chorale with lyrical warmth and traditional scoring.",
+      "descriptionEffective": "The United States Army Band’s public-domain rendition of “Lo, How a Rose E’er Blooming” demonstrates how an ensemble recording and Mutopia score can combine inside Praetorius. Use it to test audio playback, cue navigation, and PDF syncing."
     }
   ],
   "pageFollowMaps": {
