@@ -35,6 +35,6 @@ Praetorius reads a simple JSON list of works plus optional page-follow config.
 
 `pageFollow` (optional)
 
-See: [Page-Follow](/docs/page-follow)
+See: [Page-Follow](https://cbassuarez.github.io/praetorius/docs/pdf-audio)
 
 
