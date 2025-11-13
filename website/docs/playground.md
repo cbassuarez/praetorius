@@ -1,10 +1,17 @@
-# Playground
+---
+sidebar: false
+outline: false
+layout: page
+---
+
+<!-- Hide site nav on this page only and remove padding for true “minus nav” look -->
+<style>
+  .VPNav { display: none; }
+  .VPDoc .container { max-width: 100vw; padding: 0; }
+  .VPDoc .container > .content,
+  .VPDoc .container > .content .vp-doc { padding: 0; margin: 0; }
+</style>
 
 <ClientOnly>
-<PraePlayground
-  pdf="https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/STRING%20QUARTET%20NO.%202%20_soundnoisemusic_%20-%20Score-min.pdf"
-  audio="https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/audio/SSS_soundnoisemusic_audio.mp3"
-  fallback-pdf="/samples/demo.pdf"
-  fallback-audio="/samples/demo.mp3"
-/>
+  <PraeConsoleExact />
 </ClientOnly>

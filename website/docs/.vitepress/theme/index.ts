@@ -2,6 +2,7 @@ import DefaultTheme from 'vitepress/theme'
 import './custom.css'
 
 // Global components available in markdown
+import PraeConsoleExact from '@components/PraeConsoleExact.vue'
 import GitHubMeta from '@components/GitHubMeta.vue'
 import NpmBadge from '@components/NpmBadge.vue'
 import GitHubChangelog from '@components/GitHubChangelog.vue'
@@ -27,6 +28,7 @@ export default {
     app.component('PraePlayground', PraePlayground)
     app.component('PraeViewer', PraeViewer)
     app.component('PraeConsoleDemo', PraeConsoleDemo)
+    app.component('PraeConsoleExact', PraeConsoleExact)
     app.component('PraeConsoleExact', PraeConsoleExact)
   }
 }
