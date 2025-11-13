@@ -2,14 +2,14 @@ import DefaultTheme from 'vitepress/theme'
 import './custom.css'
 
 // Global components available in markdown
-import PraePlayground from 'website/docs/components/PraePlayground.vue'
-import GitHubMeta from 'website/docs/components/GitHubMeta.vue'
-import NpmBadge from 'website/docs/components/NpmBadge.vue'
-import GitHubChangelog from 'website/docs/components/GitHubChangelog.vue'
-import CLIBlock from 'website/docs/components/CLIBlock.vue'
-import SchemaViewer from 'website/docs/components/SchemaViewer.vue'
-import ErrorGlossary from 'website/docs/components/ErrorGlossary.vue'
-import SinceBadge from 'website/docs/components/SinceBadge.vue'
+import PraePlayground from '../../components/PraePlayground.vue'
+import GitHubMeta from '../../components/GitHubMeta.vue'
+import NpmBadge from '../../components/NpmBadge.vue'
+import GitHubChangelog from '../../components/GitHubChangelog.vue'
+import CLIBlock from '../../components/CLIBlock.vue'
+import SchemaViewer from '../../components/SchemaViewer.vue'
+import ErrorGlossary from '../../components/ErrorGlossary.vue'
+import SinceBadge from '../../components/SinceBadge.vue'
 
 export default {
   ...DefaultTheme,
