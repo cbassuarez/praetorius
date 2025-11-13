@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref, watch, nextTick } from 'vue'
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-dist'
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker?worker'
-
-GlobalWorkerOptions.workerSrc = pdfjsWorker
+// Defer PDF.js to the browser; SSR lacks DOMMatrix.
+let getDocument: any
+let GlobalWorkerOptions: any
+type PDFDocumentProxy = any
 
 const props = defineProps<{
   pdf: string
@@ -75,6 +75,15 @@ function scrollToPage(p:number){
 function copyDeepLink(){ navigator.clipboard.writeText(linkFromState()) }
 
 onMounted(async ()=>{
+  // Load PDF.js only in the browser
+  const [pdfjs, worker] = await Promise.all([
+    import('pdfjs-dist'),
+    import('pdfjs-dist/build/pdf.worker?worker')
+  ])
+  getDocument = pdfjs.getDocument
+  GlobalWorkerOptions = pdfjs.GlobalWorkerOptions
+  GlobalWorkerOptions.workerSrc = (worker as any).default
+
   await renderPdf()
   await nextTick()
   const audio = audioRef.value!
