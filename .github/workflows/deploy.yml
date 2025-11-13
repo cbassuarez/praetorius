@@ -80,6 +80,17 @@ jobs:
           head -c 220 docs/.vitepress/dist/vendor/prae/praetorius.umd.js | sed 's/[^[:print:]]/ /g'
           (grep -E "typeof exports|module|factory" docs/.vitepress/dist/vendor/prae/praetorius.umd.js && echo "Looks like UMD") || (echo "UMD wrapper not detected" && exit 1)
 
+      - name: List components (debug)
+        run: |
+          git ls-files website/docs/components | sort
+          ls -la website/docs/components
+        working-directory: .
+
+      - name: Ensure dist has index.html
+        run: test -f docs/.vitepress/dist/index.html
+
+      - run: touch docs/.vitepress/dist/.nojekyll
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

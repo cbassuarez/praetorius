@@ -1,7 +1,8 @@
 # Playground
 
-<iframe
-  src="/praetorius/embed.html?works=%2Fpraetorius%2Fsamples%2Fworks.playground.json&skin=typefolio&pageFollow=1"
-  title="Praetorius Playground"
-  style="width:100%;height:72vh;border:1px solid var(--vp-c-divider);border-radius:12px;">
-</iframe>
+<ClientOnly>
+<PraePlayground
+  pdf="https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/STRING%20QUARTET%20NO.%202%20_soundnoisemusic_%20-%20Score-min.pdf"
+  audio="https://cdn.jsdelivr.net/gh/cbassuarez/website-blog/audio/SSS_soundnoisemusic_audio.mp3"
+/>
+</ClientOnly>
