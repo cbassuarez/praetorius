@@ -120,3 +120,73 @@
 
 /* If the theme renders a decorative image backdrop, hide it for GIF clarity */
 .VPHome .VPHero .image-bg{ display: none !important; }
+
+
+
+
+
+/* Place in your works-console CSS, **after** the existing THEME MAPS block. */ /* Tokens: blue→purple gradient (keeps solid --accent for safety) */
+
+/* Dark /
+#works-group[data-theme="dark"] #works-console{
+--accent0: #3B82F6; / blue 500 /
+--accent1: #8B5CF6; / violet 500 */
+--accent0a40: rgba(59,130,246,.40);
+--accent1a40: rgba(139,92,246,.40);
+--accent-grad: linear-gradient(135deg, var(--accent0), var(--accent1));
+}
+
+/* Light /
+#works-group[data-theme="light"] #works-console{
+--accent0: #2563EB; / blue 600 /
+--accent1: #7C3AED; / violet 600 */
+--accent0a40: rgba(37,99,235,.40);
+--accent1a40: rgba(124,58,237,.40);
+--accent-grad: linear-gradient(135deg, var(--accent0), var(--accent1));
+
+/* Optional: make hover borders pick up the accent hue */
+--border-hover: var(--accent1);
+}
+
+
+```css
+/* Place in the same works-console CSS, near component styles. */
+/* Use the gradient on key accents without breaking existing color usage. */
+
+/* 1) Prompt “$” mark — gradient text */
+#works-console .cmd-echo .prompt{
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;                  /* preserves layout; text is the gradient */
+}
+
+/* 2) Progress meter fill — blue→purple sweep */
+#works-console .meter > span{
+  background: linear-gradient(90deg, var(--accent0), var(--accent1));
+}
+
+/* 3) Chips & links underlines — subtle gradient rule */
+#works-group .wc-crumbs .wb-chip::after,
+#works-group .wc-crumbs .wb-link::after{
+  background: linear-gradient(90deg, var(--accent0), var(--accent1));
+}
+
+/* 4) Button hover glow + focus ring — tinted by accent */
+#works-console .btn:hover{
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.10),
+    0 0 6px var(--accent1a40);
+  border-color: var(--border-hover);
+}
+#works-console .btn:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent0a40);
+}
+
+/* 5) “Now playing” pill divider shimmer (optional, subtle) */
+#works-console .wc-hud .tag.is-marquee .scroll{
+  /* keep your animation; this only sets a masked sheen */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+}
