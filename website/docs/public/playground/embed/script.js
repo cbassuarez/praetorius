@@ -158,6 +158,12 @@
   if (!hasWindow) return;
   var works = Array.isArray(data.works) ? data.works : [];
   var pageFollowMaps = data.pageFollowMaps || {};
+// Force data.source to honor HTML tag, if present
+try {
+  var __tagSource = (document.querySelector('meta[name="prae-data-source"]')?.getAttribute('content'))
+    || (document.getElementById('prae-data')?.getAttribute('data-source'));
+  if (__tagSource && data) data.source = __tagSource;
+} catch(_) {}
 
   function ensureAudioTags() {
     works.forEach(function(w){
