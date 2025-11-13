@@ -40,21 +40,14 @@
     }
   }
 
-  function hasAPI(x){
-    return !!x && (
-      typeof x.mount === 'function' ||
-      typeof x.init  === 'function' ||
-      (x.App && typeof x.App === 'function')
-    );
-  }
+  const hasAPI = (x) => !!x && (typeof x.mount === 'function' || typeof x.init === 'function' || x.App);
   function unwrapAPI(x){
     if (!x) return null;
     if (hasAPI(x)) return x;
-    if (x.default && hasAPI(x.default)) return x.default;
-    if (x.default && x.default.default && hasAPI(x.default.default)) return x.default.default;
-    // If the module default is a FUNCTION, treat it as mount()
+    if (hasAPI(x.default)) return x.default;
+    if (x.default && hasAPI(x.default.default)) return x.default.default;
     if (typeof x === 'function') return { mount: x, init: x };
-    if (typeof x.default === 'function') return { mount: x.default, init: x.default };
+    if (typeof x?.default === 'function') return { mount: x.default, init: x.default };
     return null;
   }
 
@@ -72,42 +65,32 @@
     try {
       const mod = await import(new URL(esmUrl, location.href).toString());
       const api = unwrapAPI(mod) || unwrapAPI(mod?.PRAE);
-      if (api) { return api; }
-      if (debug) console.warn('[Embed] ESM loaded but no API surface found', Object.keys(mod||{}));
-    } catch (e) {
-      if (debug) console.warn('[Embed] ESM import failed', String(e));
-    }
+      if (api) return api;
+    } catch {}
     return null;
   }
 
   async function tryUMD() {
+    // 1) Classic script path
     try {
       await loadScript(new URL(umdUrl, location.href).toString());
       const g = window;
-      const candidates = [
-        g.PRAE, g.PraetoriusPortfolio, g.Praetorius, g.praetorius, g.Prae
-      ];
+      const candidates = [g.PRAE, g.PraetoriusPortfolio, g.Praetorius, g.praetorius, g.Prae];
       for (const c of candidates) {
         const api = unwrapAPI(c);
         if (api) return api;
       }
-      if (debug) console.warn('[Embed] UMD loaded but known globals missing; scanning window…');
-      // Brutal scan for likely symbols
-      const found = [];
-      for (const k of Object.getOwnPropertyNames(g)) {
-        if (!/prae|praet|portfol|works|score/i.test(k)) continue;
-        const api = unwrapAPI(g[k]);
-        if (api) { if (debug) found.push(k); return api; }
-      }
-      if (debug) console.warn('[Embed] window scan found no usable API');
-    } catch (e) {
-      if (debug) console.warn('[Embed] UMD load failed', String(e));
-    }
+    } catch {}
+    // 2) Fallback: import the same file as a module (covers mis-labeled ESM)
+    try {
+      const mod = await import(new URL(umdUrl, location.href).toString());
+      const api = unwrapAPI(mod) || unwrapAPI(mod?.PRAE);
+      if (api) return api;
+    } catch {}
     return null;
   }
 
   async function mount(API) {
-    // Probe works JSON so failures are explicit
     const ping = await fetch(works, { cache: 'no-store' });
     if (!ping.ok) throw new Error(`Works JSON not found (${ping.status}) at ${new URL(works, location.href)}`);
 
@@ -123,15 +106,11 @@
   (async () => {
     try {
       const API = await tryESM() || await tryUMD();
-      if (!API) {
-        return fail('window.PRAE not found after ESM and UMD attempts', null, { tried: { esmUrl, umdUrl }});
-      }
-      // Normalize for downstream tools
-      window.PRAE = API;
+      if (!API) return fail('window.PRAE not found after ESM/UMD attempts', null, { tried: { esmUrl, umdUrl }});
+      window.PRAE = API; // normalize
       await mount(API);
-    } catch (e) {
-      fail(e?.message || String(e));
-    }
+    } catch (e) { fail(e?.message || String(e)); }
   })();
 </script>
+
 </body></html>

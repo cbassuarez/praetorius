@@ -48,10 +48,8 @@ jobs:
           set -euo pipefail
           mkdir -p docs/public/vendor/prae
           mkdir -p docs/public/vendor/pdfjs
-          # Copy BOTH builds from repo root dist/
           cp ../dist/praetorius.umd.js docs/public/vendor/prae/
-          if [ -f ../dist/praetorius.es.js ]; then cp ../dist/praetorius.es.js docs/public/vendor/prae/; fi
-          # pdf.js worker from website node_modules
+          cp ../dist/praetorius.es.js  docs/public/vendor/prae/ || true
           cp node_modules/pdfjs-dist/build/pdf.worker.min.js docs/public/vendor/pdfjs/
 
       - name: Assert vendored inputs exist
@@ -59,7 +57,7 @@ jobs:
           set -euo pipefail
           test -f docs/public/embed.html
           test -f docs/public/vendor/prae/praetorius.umd.js
-          # ESM is optional but preferred
+          # ESM optional but preferred
           ls -la docs/public/vendor/prae/ | (grep praetorius.es.js || true)
           test -f docs/public/vendor/pdfjs/pdf.worker.min.js
           test -f docs/public/samples/works.playground.json
@@ -72,10 +70,15 @@ jobs:
           set -euo pipefail
           test -f docs/.vitepress/dist/embed.html
           test -f docs/.vitepress/dist/vendor/prae/praetorius.umd.js
-          # ESM optional
           ls -la docs/.vitepress/dist/vendor/prae/ | (grep praetorius.es.js || true)
           test -f docs/.vitepress/dist/vendor/pdfjs/pdf.worker.min.js
           test -f docs/.vitepress/dist/samples/works.playground.json
+
+      - name: Inspect UMD wrapper (heuristic)
+        run: |
+          set -euo pipefail
+          head -c 220 docs/.vitepress/dist/vendor/prae/praetorius.umd.js | sed 's/[^[:print:]]/ /g'
+          (grep -E "typeof exports|module|factory" docs/.vitepress/dist/vendor/prae/praetorius.umd.js && echo "Looks like UMD") || (echo "UMD wrapper not detected" && exit 1)
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

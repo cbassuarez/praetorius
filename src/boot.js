@@ -36,4 +36,13 @@ export class App {
 }
 
 // Library surface (UMD: window.PRAE; ESM: default export)
-export default { mount, init, App };
+const API = { mount, init, App };
+// 🔒 Guarantee a global for any loader that fails to wire UMD properly
+try {
+  const g = (typeof globalThis !== 'undefined' ? globalThis
+           : typeof window !== 'undefined'    ? window
+           : typeof self !== 'undefined'      ? self
+           : {});
+  if (g && !g.PRAE) g.PRAE = API;
+} catch {}
+export default API;

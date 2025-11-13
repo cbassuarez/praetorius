@@ -10,7 +10,8 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        assetFileNames: `praetorius.[name].[ext]`
+        assetFileNames: `praetorius.[name].[ext]`,
+        exports: 'named'    // ensure UMD exposes named props (mount/init/App) cleanly
       }
     }
   }
