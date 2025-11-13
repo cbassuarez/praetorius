@@ -1,4 +1,5 @@
 import DefaultTheme from 'vitepress/theme'
+import { h } from 'vue'
 import './custom.css'
 
 // Global components available in markdown
@@ -14,9 +15,15 @@ import PraePlayground from '@components/PraePlayground.vue'
 import PraeViewer from '@components/PraeViewer.vue'
 import PraeConsoleDemo from '@components/PraeConsoleDemo.vue'
 import PraeConsoleExact from '@components/PraeConsoleExact.vue'
+import NavLogo from './components/NavLogo.vue'
 
 export default {
   ...DefaultTheme,
+  Layout() {
+    return h(DefaultTheme.Layout, null, {
+      'nav-bar-title-before': () => h(NavLogo),
+    })
+  },
   enhanceApp({ app }) {
     app.component('GitHubMeta', GitHubMeta)
     app.component('NpmBadge', NpmBadge)
