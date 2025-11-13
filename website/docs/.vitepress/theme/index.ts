@@ -9,6 +9,7 @@ import CLIBlock from '@components/CLIBlock.vue'
 import SchemaViewer from '@components/SchemaViewer.vue'
 import ErrorGlossary from '@components/ErrorGlossary.vue'
 import SinceBadge from '@components/SinceBadge.vue'
+import PraePlayground from '@components/PraePlayground.vue'
 
 export default {
   ...DefaultTheme,
@@ -20,5 +21,6 @@ export default {
     app.component('SchemaViewer', SchemaViewer)
     app.component('ErrorGlossary', ErrorGlossary)
     app.component('SinceBadge', SinceBadge)
+    app.component('PraePlayground', PraePlayground)
   }
 }

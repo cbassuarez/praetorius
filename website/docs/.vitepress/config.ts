@@ -13,6 +13,7 @@ export default defineConfig({
   cleanUrls: true,
   appearance: 'light', // default light per preference
   base: '/praetorius/', // project page on GitHub Pages
+  outDir: './.vitepress/dist',
 
   head: [
     ['meta', { name: 'theme-color', content: '#ffffff' }],
@@ -102,6 +103,7 @@ export default defineConfig({
 
   vite: {
     optimizeDeps: { include: ['pdfjs-dist'] },
-    resolve: { alias: { '@components': componentsDir } }
+    resolve: { alias: { '@components': componentsDir } },
+    build: { chunkSizeWarningLimit: 1024 }
   }
 })
