@@ -10,6 +10,8 @@ import SchemaViewer from '@components/SchemaViewer.vue'
 import ErrorGlossary from '@components/ErrorGlossary.vue'
 import SinceBadge from '@components/SinceBadge.vue'
 import PraePlayground from '@components/PraePlayground.vue'
+import PraeViewer from '@components/PraeViewer.vue'
+import PraeConsoleDemo from '@components/PraeConsoleDemo.vue'
 
 export default {
   ...DefaultTheme,
@@ -22,5 +24,7 @@ export default {
     app.component('ErrorGlossary', ErrorGlossary)
     app.component('SinceBadge', SinceBadge)
     app.component('PraePlayground', PraePlayground)
+    app.component('PraeViewer', PraeViewer)
+    app.component('PraeConsoleDemo', PraeConsoleDemo)
   }
 }
