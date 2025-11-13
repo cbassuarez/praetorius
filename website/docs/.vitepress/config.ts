@@ -32,7 +32,6 @@ export default defineConfig({
   ],
 
   themeConfig: {
-    logo: { src: '/logo.svg', alt: 'Praetorius' },
 
     nav: [
       { text: 'Home', link: '/' },
