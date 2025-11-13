@@ -71,3 +71,35 @@
 }
 
 /* no global overrides of Console takeover in docs theme */
+/* Bigger hero media on Home (keeps right-align behavior from frontmatter) */
+:root{
+  /* Tweak these two to taste */
+  --prae-hero-w: clamp(520px, 40vw, 880px);
+  --prae-hero-w-m: clamp(260px, 70vw, 560px);
+}
+
+.VPHome .VPHero .image{
+  width: var(--prae-hero-w);
+  max-width: var(--prae-hero-w);
+  flex: 0 0 auto; /* prevent shrinking */
+}
+.VPHome .VPHero .image img{
+  display:block;
+  width: 100%;
+  height: auto;
+}
+
+/* Tighten text/media balance a touch so the right media has room */
+.VPHome .VPHero .name,
+.VPHome .VPHero .text,
+.VPHome .VPHero .tagline{
+  max-width: 48ch; /* keep copy readable; optional */
+}
+
+/* Mobile/tablet: scale down the media for comfort */
+@media (max-width: 960px){
+  .VPHome .VPHero .image{
+    width: var(--prae-hero-w-m);
+    max-width: var(--prae-hero-w-m);
+  }
+}
