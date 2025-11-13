@@ -20,38 +20,42 @@
   const skin  = q.get('skin')  || 'typefolio';
   const pf    = q.get('pageFollow');
   const pageFollow = pf === null ? true : (pf === '1' || pf === 'true');
+  const debug = q.get('debug') === '1';
 
   const worker = 'vendor/pdfjs/pdf.worker.min.js';
   const esmUrl = 'vendor/prae/praetorius.es.js';
   const umdUrl = 'vendor/prae/praetorius.umd.js';
 
-  // pdf.js worker must be a STRING URL
   window.PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: worker };
 
-  function fail(msg, url){
+  function fail(msg, url, extra){
     const box = document.getElementById('err');
     box.hidden = false;
     box.innerHTML = `<strong>Embed failed:</strong> ${msg}${url ? `<br/><code>${url}</code>` : ''}`;
+    if (debug && extra) {
+      const pre = document.createElement('pre');
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.textContent = JSON.stringify(extra, null, 2);
+      box.appendChild(pre);
+    }
   }
 
-  // Pick the real API surface (handles default-wrapped UMD/ESM)
-  function pickAPI(x) {
+  function hasAPI(x){
+    return !!x && (
+      typeof x.mount === 'function' ||
+      typeof x.init  === 'function' ||
+      (x.App && typeof x.App === 'function')
+    );
+  }
+  function unwrapAPI(x){
     if (!x) return null;
-    const has = (o) => o && (typeof o.mount === 'function' || typeof o.init === 'function' || o.App);
-    if (has(x)) return x;
-    if (has(x.default)) return x.default;
-    // Some bundlers wrap one more layer (e.g., { default: { default: API }})
-    if (x.default && has(x.default.default)) return x.default.default;
+    if (hasAPI(x)) return x;
+    if (x.default && hasAPI(x.default)) return x.default;
+    if (x.default && x.default.default && hasAPI(x.default.default)) return x.default.default;
+    // If the module default is a FUNCTION, treat it as mount()
+    if (typeof x === 'function') return { mount: x, init: x };
+    if (typeof x.default === 'function') return { mount: x.default, init: x.default };
     return null;
-  }
-
-  async function tryESM() {
-    try {
-      const mod = await import(new URL(esmUrl, location.href).toString());
-      const api = pickAPI(mod) || pickAPI(mod?.PRAE);
-      if (api) { window.PRAE = api; return true; }
-    } catch { /* no-op */ }
-    return false;
   }
 
   function loadScript(src) {
@@ -64,21 +68,45 @@
     });
   }
 
-  async function tryUMD() {
-    await loadScript(new URL(umdUrl, location.href).toString());
-    const g = window;
-    const candidates = [g.PRAE, g.PraetoriusPortfolio, g.Praetorius, g.praetorius];
-    for (const c of candidates) {
-      const api = pickAPI(c);
-      if (api) { window.PRAE = api; return true; }
+  async function tryESM() {
+    try {
+      const mod = await import(new URL(esmUrl, location.href).toString());
+      const api = unwrapAPI(mod) || unwrapAPI(mod?.PRAE);
+      if (api) { return api; }
+      if (debug) console.warn('[Embed] ESM loaded but no API surface found', Object.keys(mod||{}));
+    } catch (e) {
+      if (debug) console.warn('[Embed] ESM import failed', String(e));
     }
-    return false;
+    return null;
   }
 
-  async function mount() {
-    const PRAE = window.PRAE;
-    if (!PRAE) throw new Error('PRAE API missing');
+  async function tryUMD() {
+    try {
+      await loadScript(new URL(umdUrl, location.href).toString());
+      const g = window;
+      const candidates = [
+        g.PRAE, g.PraetoriusPortfolio, g.Praetorius, g.praetorius, g.Prae
+      ];
+      for (const c of candidates) {
+        const api = unwrapAPI(c);
+        if (api) return api;
+      }
+      if (debug) console.warn('[Embed] UMD loaded but known globals missing; scanning window…');
+      // Brutal scan for likely symbols
+      const found = [];
+      for (const k of Object.getOwnPropertyNames(g)) {
+        if (!/prae|praet|portfol|works|score/i.test(k)) continue;
+        const api = unwrapAPI(g[k]);
+        if (api) { if (debug) found.push(k); return api; }
+      }
+      if (debug) console.warn('[Embed] window scan found no usable API');
+    } catch (e) {
+      if (debug) console.warn('[Embed] UMD load failed', String(e));
+    }
+    return null;
+  }
 
+  async function mount(API) {
     // Probe works JSON so failures are explicit
     const ping = await fetch(works, { cache: 'no-store' });
     if (!ping.ok) throw new Error(`Works JSON not found (${ping.status}) at ${new URL(works, location.href)}`);
@@ -86,17 +114,21 @@
     const host = document.getElementById('app');
     const opts = { worksUrl: works, skin, pageFollow, pdfWorkerSrc: worker, deepLinking: true };
 
-    if (typeof PRAE.mount === 'function')      await PRAE.mount(host, opts);
-    else if (typeof PRAE.init  === 'function') await PRAE.init(host, opts);
-    else if (PRAE?.App)                        { const app = new PRAE.App(opts); await app?.mount?.(host); }
-    else throw new Error('Unsupported PRAE API (no mount/init/App)');
+    if (typeof API.mount === 'function')      return API.mount(host, opts);
+    if (typeof API.init  === 'function')      return API.init(host, opts);
+    if (API?.App)                              { const app = new API.App(opts); return app?.mount?.(host); }
+    throw new Error('Unsupported PRAE API (no mount/init/App)');
   }
 
   (async () => {
     try {
-      const ok = await tryESM() || await tryUMD();
-      if (!ok) throw new Error('window.PRAE not found after ESM and UMD attempts');
-      await mount();
+      const API = await tryESM() || await tryUMD();
+      if (!API) {
+        return fail('window.PRAE not found after ESM and UMD attempts', null, { tried: { esmUrl, umdUrl }});
+      }
+      // Normalize for downstream tools
+      window.PRAE = API;
+      await mount(API);
     } catch (e) {
       fail(e?.message || String(e));
     }
