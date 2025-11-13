@@ -38,8 +38,10 @@ jobs:
 
       - name: Stage library for docs artifact
         run: |
+          rm -rf docs/public/prae-lib
           mkdir -p docs/public/prae-lib
           cp -R ../dist/* docs/public/prae-lib/
+          echo "Staged files:" && ls -la docs/public/prae-lib
 
       # --- WEBSITE (VitePress) ---
       - name: Install deps (website/)
