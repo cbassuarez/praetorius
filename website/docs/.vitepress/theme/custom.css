@@ -70,7 +70,6 @@
   --vp-content-max-width: 1280px;
 }
 
-/* no global overrides of Console takeover in docs theme */
 /* Bigger hero media on Home (keeps right-align behavior from frontmatter) */
 :root{
   /* Tweak these two to taste */

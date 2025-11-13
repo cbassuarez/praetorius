@@ -6,7 +6,7 @@ hero:
   text: Score-centric works pages with synchronized audio and page-follow PDFs.
   tagline: Deep links, skins, and a drop-in block for Squarespace or any static host.
   image:
-    src: /praetorius_example_video_typefolio.gif
+    src: /praetorius_example_video.gif
     alt: "Praetorius (Typefolio skin) — page-follow & audio demo"
     align: right
   actions:
