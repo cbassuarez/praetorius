@@ -1,153 +1,136 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, nextTick } from 'vue'
-// Defer PDF.js to the browser; SSR lacks DOMMatrix.
-let getDocument: any
-let GlobalWorkerOptions: any
-type PDFDocumentProxy = any
+import { onMounted, ref } from 'vue'
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 
-const props = defineProps<{
-  pdf: string
-  audio: string
-  fallbackPdf?: string
-  fallbackAudio?: string
-}>()
+// ✅ Local UMD path served by your Pages site
+const UMD_URL = new URL('vendor/prae/praetorius.umd.js', location.href).toString()
+
+// Works JSON (already good)
+const WORKS_URL = 'samples/works.playground.json'
 
 type Skin = 'typefolio' | 'console' | 'vite-breeze'
 const skin = ref<Skin>('typefolio')
 const pageFollow = ref(true)
-const currentPage = ref(1)
-const totalPages = ref(0)
-const duration = ref(0)
-const audioRef = ref<HTMLAudioElement|null>(null)
-const container = ref<HTMLDivElement|null>(null)
-let pdfDoc: PDFDocumentProxy | null = null
-let io: IntersectionObserver | null = null
+let prae: any = null
 
-function fmtTime(t: number){ const m=Math.floor(t/60); const s=Math.floor(t%60); return `${m}:${String(s).padStart(2,'0')}` }
-function computePageFor(time:number, dur:number, pages:number){
-  if (!dur || !pages) return 1
-  const idx = Math.max(0, Math.min(pages-1, Math.floor((time/dur)*pages)))
-  return idx+1
-}
-function linkFromState(){
-  const url = new URL(window.location.href)
-  url.searchParams.set('page', String(currentPage.value))
-  const t = audioRef.value?.currentTime ?? 0
-  url.searchParams.set('time', fmtTime(t))
-  return url.toString()
-}
-async function tryGetDocument(src: string){
-  try { return await getDocument(src).promise } 
-  catch { return null }
-}
-async function renderPdf(){
-  if (!container.value) return
-  container.value.innerHTML = ''
-  pdfDoc = await tryGetDocument(props.pdf) || (props.fallbackPdf ? await tryGetDocument(props.fallbackPdf) : null)
-  if (!pdfDoc) { container.value.textContent = 'Unable to load PDF.'; return }
-  totalPages.value = pdfDoc.numPages
-  for (let i=1;i<=pdfDoc.numPages;i++){
-    const page = await pdfDoc.getPage(i)
-    const viewport = page.getViewport({ scale: 1.5 })
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')!
-    canvas.width = viewport.width
-    canvas.height = viewport.height
-    canvas.dataset.page = String(i)
-    container.value.appendChild(canvas)
-    await page.render({ canvasContext: ctx, viewport }).promise
-  }
-  if (io) io.disconnect()
-  io = new IntersectionObserver((entries)=>{
-    const vis = entries.filter(e=>e.isIntersecting)
-      .sort((a,b)=>b.intersectionRatio - a.intersectionRatio)[0]
-    if (vis?.target){
-      const p = Number((vis.target as HTMLCanvasElement).dataset.page)
-      if (p) currentPage.value = p
-    }
-  }, { root: container.value?.parentElement ?? null, threshold: [0.25,0.5,0.75] })
-  container.value.querySelectorAll('canvas').forEach(c=>io!.observe(c))
-}
-function scrollToPage(p:number){
-  const el = container.value?.querySelector(`canvas[data-page="${p}"]`) as HTMLCanvasElement|undefined
-  el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-function copyDeepLink(){ navigator.clipboard.writeText(linkFromState()) }
+const loading = ref(true)
+const err = ref<string | null>(null)
 
-onMounted(async ()=>{
-  // Load PDF.js only in the browser
-  const [pdfjs, worker] = await Promise.all([
-    import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker?worker')
-  ])
-  getDocument = pdfjs.getDocument
-  GlobalWorkerOptions = pdfjs.GlobalWorkerOptions
-  GlobalWorkerOptions.workerSrc = (worker as any).default
-
-  await renderPdf()
-  await nextTick()
-  const audio = audioRef.value!
-  const primary = props.audio
-  const fallback = props.fallbackAudio
-  audio.src = primary
-  audio.addEventListener('error', ()=>{
-    if (fallback && audio.src !== fallback) audio.src = fallback
-  }, { once: true })
-  audio.addEventListener('loadedmetadata', ()=> duration.value = audio.duration || 0)
-
-  const url = new URL(window.location.href)
-  const qPage = Number(url.searchParams.get('page') || '0') || 0
-  const qTime = url.searchParams.get('time')
-  if (qTime){
-    const [m='0', s='0'] = qTime.split(':')
-    audio.currentTime = (Number(m)||0)*60 + (Number(s)||0)
-  }
-  if (qPage) { currentPage.value = Math.max(1, Math.min(totalPages.value, qPage)); scrollToPage(currentPage.value) }
-
-  audio.addEventListener('timeupdate', ()=>{
-    if (!pageFollow.value) return
-    const p = computePageFor(audio.currentTime, duration.value, totalPages.value)
-    if (p !== currentPage.value){ currentPage.value = p; scrollToPage(p) }
+function loadScript(src: string) {
+  return new Promise<void>((resolve, reject) => {
+    const s = document.createElement('script')
+    s.src = src
+    s.async = true
+    s.crossOrigin = 'anonymous'
+    s.onload = () => resolve()
+    s.onerror = () => reject(new Error('Failed to load ' + src))
+    document.head.appendChild(s)
   })
-})
+}
+function parseTime(q: string | null) {
+  if (!q) return 0
+  if (/^\d+(\.\d+)?$/.test(q)) return Number(q)
+  const m = q.split(':').map(Number)
+  if (m.length === 2) return (m[0]||0)*60 + (m[1]||0)
+  if (m.length === 3) return (m[0]||0)*3600 + (m[1]||0)*60 + (m[2]||0)
+  return 0
+}
 
-watch(skin, ()=> document.documentElement.setAttribute('data-prae-skin', skin.value))
+async function mountPrae() {
+  ;(window as any).PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: pdfWorkerUrl }
+
+  // Probe works JSON (GET to avoid flaky HEAD on static hosts)
+  const probe = await fetch(WORKS_URL, { method: 'GET', cache: 'no-store' })
+  if (!probe.ok) throw new Error(`works JSON not found (${probe.status}) at ${new URL(WORKS_URL, location.href)}`)
+
+  // ✅ Load ONLY the local UMD (no CSS injection, no link scanning)
+  await loadScript(UMD_URL)
+  const PRAE = (window as any).PRAE
+  if (!PRAE) throw new Error('window.PRAE not found after UMD load')
+
+  const qs = new URLSearchParams(location.search)
+  const initial = {
+    work: qs.get('work') || undefined,
+    page: Math.max(1, Number(qs.get('page') || 0) || 1),
+    time: parseTime(qs.get('time'))
+  }
+
+  const host = document.getElementById('prae-host')!
+  const opts = {
+    worksUrl: WORKS_URL,
+    skin: skin.value,
+    pageFollow: pageFollow.value,
+    pdfWorkerSrc: pdfWorkerUrl,
+    deepLinking: true,
+    initial
+  }
+
+  if (typeof PRAE.mount === 'function') {
+    prae = await PRAE.mount(host, opts)
+  } else if (typeof PRAE.init === 'function') {
+    prae = await PRAE.init(host, opts)
+  } else if (PRAE?.App) {
+    prae = new PRAE.App(opts); await prae.mount?.(host)
+  } else {
+    throw new Error('Unsupported PRAE UMD API surface (no mount/init/App)')
+  }
+}
+
+async function remountWith(next: Partial<{ skin: Skin; pageFollow: boolean }>) {
+  try {
+    if (prae?.setOption) {
+      if (next.skin !== undefined) prae.setOption('skin', next.skin)
+      if (next.pageFollow !== undefined) prae.setOption('pageFollow', next.pageFollow)
+      return
+    }
+    if (prae?.setSkin && next.skin !== undefined) { prae.setSkin(next.skin); return }
+    const host = document.getElementById('prae-host')!
+    host.innerHTML = ''
+    if (next.skin !== undefined) skin.value = next.skin
+    if (next.pageFollow !== undefined) pageFollow.value = next.pageFollow
+    await mountPrae()
+  } catch (e:any) { err.value = String(e?.message || e) }
+}
+
+onMounted(async () => {
+  try { await mountPrae() }
+  catch (e:any) { err.value = String(e?.message || e) }
+  finally { loading.value = false }
+})
 </script>
 
 <template>
-  <div class="prae">
+  <div class="runtime">
     <div class="toolbar">
       <label>Skin
-        <select v-model="skin" aria-label="Skin">
+        <select v-model="skin" @change="remountWith({ skin })" aria-label="Skin">
           <option value="typefolio">Typefolio</option>
           <option value="console">Console</option>
           <option value="vite-breeze">Vite-Breeze</option>
         </select>
       </label>
-      <label><input type="checkbox" v-model="pageFollow" /> Page-follow</label>
-      <button @click="copyDeepLink">Copy deep link</button>
-      <span class="state">Page {{ currentPage }} / {{ totalPages }}</span>
+      <label class="pf"><input type="checkbox" v-model="pageFollow" @change="remountWith({ pageFollow })" /> Page-follow</label>
+      <span v-if="loading" class="muted">Loading…</span>
+      <span v-else-if="!err" class="muted">Ready</span>
+      <span v-else class="error">Error: {{ err }}</span>
     </div>
-    <div class="pane">
-      <div class="pdfwrap" aria-label="PDF viewer">
-        <div ref="container" class="pdf"></div>
-      </div>
-      <div class="audio">
-        <audio ref="audioRef" controls preload="metadata"></audio>
-        <small><a :href="pdf" target="_blank" rel="noreferrer">Download PDF</a></small>
-      </div>
+
+    <div id="prae-host" class="host" aria-label="Praetorius viewer host"></div>
+
+    <div v-if="err" class="overlay">
+      <strong>Playground failed to mount.</strong>
+      <div>{{ err }}</div>
+      <div style="margin-top:.5rem;">UMD URL: <code>{{ new URL('vendor/prae/praetorius.umd.js', location.href).toString() }}</code></div>
+      <div>Works URL: <code>{{ new URL('samples/works.playground.json', location.href).toString() }}</code></div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.prae{display:grid;gap:12px}
-.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.pane{display:grid;grid-template-columns: 1fr; gap:12px}
-.pdfwrap{max-height:60vh; overflow:auto; border:1px solid var(--vp-c-divider); border-radius:12px}
-.pdf{display:grid;gap:8px;padding:8px;background:var(--vp-c-bg-alt)}
-.audio{display:flex;flex-direction:column;gap:6px}
-:global([data-prae-skin="console"]) .pdfwrap{background:#000}
-:global([data-prae-skin="console"]) .pdf{background:#111}
-:global([data-prae-skin="vite-breeze"]) .pdfwrap{backdrop-filter: blur(12px); background: color-mix(in oklab, var(--vp-c-bg), transparent 70%)}
+.runtime{ display:grid; gap:12px }
+.toolbar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap }
+.muted{ opacity:.7 }
+.error{ color:#b00020 }
+.host{ min-height:520px; border:1px solid var(--vp-c-divider); border-radius:12px; overflow:hidden; background: var(--vp-c-bg-alt) }
+.overlay{ margin-top:8px; padding:10px; border:1px solid var(--vp-c-divider); border-radius:12px; background: color-mix(in oklab, var(--vp-c-bg), transparent 70%) }
 </style>
