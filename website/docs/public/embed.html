@@ -22,9 +22,20 @@
   const pageFollow = pf === null ? true : (pf === '1' || pf === 'true');
   const debug = q.get('debug') === '1';
 
-  const worker = 'vendor/pdfjs/pdf.worker.min.js';
-  const esmUrl = 'vendor/prae/praetorius.es.js';
-  const umdUrl = 'vendor/prae/praetorius.umd.js';
+  const baseDir = (() => {
+    const path = location.pathname.replace(/\/[^/]*$/, '');
+    if (!path || path === '/') return '';
+    return path;
+  })();
+  const withBase = (path) => {
+    if (!path) return baseDir;
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return `${baseDir}${normalized}`;
+  };
+
+  const worker = withBase('/vendor/pdfjs/pdf.worker.min.js');
+  const esmUrl = withBase('/prae-lib/praetorius.es.js');
+  const umdUrl = withBase('/prae-lib/praetorius.umd.js');
 
   window.PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: worker };
 
