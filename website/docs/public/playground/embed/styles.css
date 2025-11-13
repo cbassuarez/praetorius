@@ -21,3 +21,41 @@
 #wc-hud[data-component="prae-hud"] [data-part="toggle"]{padding:6px 10px;border-radius:8px;border:1px solid var(--chip-bd,rgba(255,255,255,.16));background:var(--chip-bg,rgba(255,255,255,.06));color:inherit;cursor:pointer;}
 #wc-hud[data-component="prae-hud"] [data-part="toggle"]:hover{background:var(--chip-bg-h,rgba(255,255,255,.1));}
 #wc-hud[data-component="prae-hud"]:empty{display:none!important;}
+/* ---- Praetorius embed layout caps ---- */
+:root{
+  --prae-container-max: 1440px;         /* overall max width on large screens */
+  --prae-gutter: clamp(16px, 3vw, 32px); /* side padding */
+  --pdf-min: 320px;                      /* sidebar lower bound */
+  --pdf-ideal: 36vw;                     /* responsive target */
+  --pdf-max: 560px;                      /* hard cap so it never gets too wide */
+}
+
+/* Main two-pane split */
+#works-console .wc-split{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(var(--pdf-min), var(--pdf-ideal), var(--pdf-max));
+  gap: clamp(16px, 3vw, 28px);
+  max-width: var(--prae-container-max);
+  margin-inline: auto;
+  padding-inline: var(--prae-gutter);
+}
+
+/* Ensure the right pane never exceeds the cap */
+#works-console .wc-pdfpane{
+  max-width: var(--pdf-max);
+  width: auto;
+}
+
+/* Make the PDF frame fill its pane without overflow */
+#works-console .wc-pdf-frame{
+  display: block;
+  width: 100%;
+  height: clamp(50vh, 72vh, 85vh);
+  border: 0;
+}
+
+/* Stack on smaller screens */
+@media (max-width: 960px){
+  #works-console .wc-split{ grid-template-columns: 1fr; }
+  #works-console .wc-pdfpane{ max-width: none; }
+}
