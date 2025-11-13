@@ -28,36 +28,45 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install deps
+      # --- Install + build the LIB at REPO ROOT (overrides defaults) ---
+      - name: Install deps (repo root)
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm i; fi
+        working-directory: .
 
-      - name: Build library (produces dist/)
-        run: |
-        # If your lib build is "vite build" or "npm run build", call it here.
-          npm run build || true
+      - name: Build library (repo root → dist/)
+        run: npm run build
+        working-directory: .
 
-      - name: Vendor PRAE UMD into docs
+      # --- Vendor the UMD into the docs public folder ---
+      - name: Vendor PRAE UMD into docs/public
         run: |
-        mkdir -p docs/public/vendor/prae
-        if [ -f dist/praetorius.umd.js ]; then cp dist/praetorius.umd.js docs/public/vendor/prae/; fi
-        # Optional: only if you actually ship a standalone CSS file
-        if [ -f dist/praetorius.css ]; then cp dist/praetorius.css docs/public/vendor/prae/; fi
+          mkdir -p website/docs/public/vendor/prae
+          cp dist/praetorius.umd.js website/docs/public/vendor/prae/
+          # Optional CSS only if it actually exists
+          if [ -f dist/praetorius.css ]; then cp dist/praetorius.css website/docs/public/vendor/prae/; fi
+        working-directory: .
+
+      - name: Assert UMD exists (fail early if missing)
+        run: test -f docs/public/vendor/prae/praetorius.umd.js
+
+      # --- Now build the VitePress site inside website/ ---
+      - name: Install deps (website/)
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm i; fi
 
       - name: Build VitePress
         run: npm run build
 
-      - name: Debug build tree (optional)
+      - name: Debug tree (optional)
         run: |
-          ls -la
-          ls -la docs
-          ls -la docs/.vitepress || true
-          ls -la docs/.vitepress/dist || true
+          echo "--- website root ---"; ls -la
+          echo "--- docs/public/vendor/prae ---"; ls -la docs/public/vendor/prae || true
+          echo "--- dist ---"; ls -la docs/.vitepress/dist || true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # NOTE: this path is from the repo root, not the working-directory
           path: website/docs/.vitepress/dist
 
   deploy:

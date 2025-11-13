@@ -1,20 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-
-// Always pass a STRING URL to pdf.js worker (fixes "Invalid workerSrc type")
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 
-// UMD + CSS candidates
-const UMD_CANDIDATES = [
-  'https://cdn.jsdelivr.net/npm/praetorius@latest/dist/praetorius.umd.js',
-  'https://unpkg.com/praetorius@latest/dist/praetorius.umd.js'
-]
-const CSS_CANDIDATES = [
-  'https://cdn.jsdelivr.net/npm/praetorius@latest/dist/praetorius.css',
-  'https://unpkg.com/praetorius@latest/dist/praetorius.css'
-]
-
-// Works JSON (served from docs/public/samples/)
+const UMD_URL = new URL('vendor/prae/praetorius.umd.js', location.href).toString()
 const WORKS_URL = 'samples/works.playground.json'
 
 type Skin = 'typefolio' | 'console' | 'vite-breeze'
@@ -25,18 +13,6 @@ let prae: any = null
 const loading = ref(true)
 const err = ref<string | null>(null)
 
-function addCssWithFallback(urls: string[]) {
-  if (document.getElementById('prae-css')) return
-  const link = document.createElement('link')
-  link.id = 'prae-css'
-  link.rel = 'stylesheet'
-  link.href = urls[0]
-  link.crossOrigin = 'anonymous'
-  link.onerror = () => {
-    if (urls[1]) link.href = urls[1]
-  }
-  document.head.appendChild(link)
-}
 function loadScript(src: string) {
   return new Promise<void>((resolve, reject) => {
     const s = document.createElement('script')
@@ -48,11 +24,6 @@ function loadScript(src: string) {
     document.head.appendChild(s)
   })
 }
-async function loadFirst(urls: string[]) {
-  let last: any
-  for (const u of urls) { try { await loadScript(u); return u } catch (e) { last = e } }
-  throw last || new Error('All script candidates failed')
-}
 function parseTime(q: string | null) {
   if (!q) return 0
   if (/^\d+(\.\d+)?$/.test(q)) return Number(q)
@@ -63,20 +34,14 @@ function parseTime(q: string | null) {
 }
 
 async function mountPrae() {
-  // Robust worker wiring
   ;(window as any).PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: pdfWorkerUrl }
 
-  // Preflight JSON with GET (HEAD can be flaky on static hosts)
+  // Preflight works JSON
   const probe = await fetch(WORKS_URL, { method: 'GET', cache: 'no-store' })
-  if (!probe.ok) throw new Error(`works JSON not found at ${new URL(WORKS_URL, location.href)} (${probe.status})`)
+  if (!probe.ok) throw new Error(`works JSON not found (${probe.status}) at ${new URL(WORKS_URL, location.href)}`)
 
-  // Ensure CSS without touching existing link.href
-  addCssWithFallback(CSS_CANDIDATES)
-
-  // Load UMD → window.PRAE
-  const used = await loadFirst(UMD_CANDIDATES)
-  // console.debug('PRAE UMD loaded from', used)
-
+  // ✅ Load ONLY the local UMD (no CSS injection)
+  await loadScript(UMD_URL)
   const PRAE = (window as any).PRAE
   if (!PRAE) throw new Error('window.PRAE not found after UMD load')
 
@@ -116,7 +81,6 @@ async function remountWith(next: Partial<{ skin: Skin; pageFollow: boolean }>) {
       return
     }
     if (prae?.setSkin && next.skin !== undefined) { prae.setSkin(next.skin); return }
-    // hard remount if APIs aren’t present
     const host = document.getElementById('prae-host')!
     host.innerHTML = ''
     if (next.skin !== undefined) skin.value = next.skin
@@ -131,46 +95,3 @@ onMounted(async () => {
   finally { loading.value = false }
 })
 </script>
-
-<template>
-  <div class="runtime">
-    <div class="toolbar">
-      <label>Skin
-        <select v-model="skin" @change="remountWith({ skin })" aria-label="Skin">
-          <option value="typefolio">Typefolio</option>
-          <option value="console">Console</option>
-          <option value="vite-breeze">Vite-Breeze</option>
-        </select>
-      </label>
-      <label class="pf"><input type="checkbox" v-model="pageFollow" @change="remountWith({ pageFollow })" /> Page-follow</label>
-      <span v-if="loading" class="muted">Loading…</span>
-      <span v-else-if="!err" class="muted">Ready</span>
-      <span v-else class="error">Error: {{ err }}</span>
-    </div>
-
-    <div id="prae-host" class="host" aria-label="Praetorius viewer host"></div>
-
-    <div v-if="err" class="overlay">
-      <strong>Playground failed to mount.</strong>
-      <div>{{ err }}</div>
-      <div style="margin-top:.5rem;">Resolved URL: <code>{{ new URL('samples/works.playground.json', location.href).toString() }}</code></div>
-      <ol>
-        <li>Confirm <code>docs/public/samples/works.playground.json</code> exists and is valid JSON.</li>
-        <li>DevTools → Network: ensure one <code>praetorius.umd.js</code> loads (200).</li>
-        <li>Audio/PDF come from public-domain hosts; they may require a click to start.</li>
-      </ol>
-    </div>
-  </div>
-</template>
-
-<style scoped>
-.runtime{ display:grid; gap:12px }
-.toolbar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap }
-.muted{ opacity:.7 }
-.error{ color:#b00020 }
-.host{ min-height:520px; border:1px solid var(--vp-c-divider); border-radius:12px; overflow:hidden; background:var(--vp-c-bg-alt) }
-.overlay{
-  margin-top:8px; padding:10px; border:1px solid var(--vp-c-divider);
-  border-radius:12px; background: color-mix(in oklab, var(--vp-c-bg), transparent 70%);
-}
-</style>
