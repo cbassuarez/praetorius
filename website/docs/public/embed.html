@@ -24,11 +24,14 @@
       const pf    = q.get('pageFollow');
       const pageFollow = pf === null ? true : (pf === '1' || pf === 'true');
 
+      // Same-origin worker & UMD that CI copied for us
       const worker = 'vendor/pdfjs/pdf.worker.min.js';
+      const umd    = 'vendor/prae/praetorius.umd.js';
+
       window.PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: worker };
 
       const s = document.createElement('script');
-      s.src = 'vendor/prae/praetorius.umd.js';
+      s.src = umd;
       s.async = true;
       s.onload = () => mount();
       s.onerror = () => fail('Failed to load viewer UMD', s.src);
@@ -44,11 +47,14 @@
           if (!probe.ok) throw new Error(`Works JSON not found (${probe.status}) at ${new URL(works, location.href)}`);
 
           const opts = { worksUrl: works, skin, pageFollow, pdfWorkerSrc: worker, deepLinking: true };
-          if (typeof PRAE.mount === 'function') await PRAE.mount(host, opts);
-          else if (typeof PRAE.init === 'function') await PRAE.init(host, opts);
-          else if (PRAE && PRAE.App) { const app = new PRAE.App(opts); await (app.mount && app.mount(host)); }
+
+          if (typeof PRAE.mount === 'function')       await PRAE.mount(host, opts);
+          else if (typeof PRAE.init === 'function')   await PRAE.init(host, opts);
+          else if (PRAE && PRAE.App)                  { const app = new PRAE.App(opts); await (app.mount && app.mount(host)); }
           else throw new Error('Unsupported PRAE UMD API (no mount/init/App).');
-        } catch (e) { fail(e && e.message ? e.message : String(e)); }
+        } catch (e) {
+          fail(e && e.message ? e.message : String(e));
+        }
       }
 
       function fail(msg, url) {

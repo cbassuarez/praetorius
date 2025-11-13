@@ -1,6 +1,6 @@
 # Playground
 
-Real Praetorius runtime (same-origin embed). If you see a blank area, open the iframe src directly.
+Real Praetorius runtime (same-origin embed). If the box is blank, open the iframe URL directly.
 
 <iframe
   src="/praetorius/embed.html?works=%2Fpraetorius%2Fsamples%2Fworks.playground.json&skin=typefolio&pageFollow=1"

@@ -24,9 +24,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+        with:
+          node-version: 20
 
-      # Build the LIB at repo root → dist/ (override working-directory)
+      # ---- LIB @ REPO ROOT ----
       - name: Install deps (repo root)
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm i; fi
@@ -36,26 +37,28 @@ jobs:
         run: npm run build
         working-directory: .
 
-      # Vendor UMD + pdf.js worker into the website docs/public
-      - name: Vendor viewer + worker
+      # ---- WEBSITE (VitePress) ----
+      - name: Install deps (website/)
         run: |
-          mkdir -p website/docs/public/vendor/prae
-          mkdir -p website/docs/public/vendor/pdfjs
-          cp dist/praetorius.umd.js website/docs/public/vendor/prae/
-          if [ -f dist/praetorius.css ]; then cp dist/praetorius.css website/docs/public/vendor/prae/; fi
-          # copy worker from the docs site deps (website/)
-          cp website/node_modules/pdfjs-dist/build/pdf.worker.min.js website/docs/public/vendor/pdfjs/
-        working-directory: .
+          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+
+      # Vendor viewer UMD + pdf.js worker into website docs/public
+      - name: Vendor viewer + worker (same-origin)
+        run: |
+          mkdir -p docs/public/vendor/prae
+          mkdir -p docs/public/vendor/pdfjs
+          # UMD from repo-root dist
+          cp ../dist/praetorius.umd.js docs/public/vendor/prae/
+          # Optional CSS if you actually output it
+          if [ -f ../dist/praetorius.css ]; then cp ../dist/praetorius.css docs/public/vendor/prae/; fi
+          # Worker from website/node_modules
+          cp node_modules/pdfjs-dist/build/pdf.worker.min.js docs/public/vendor/pdfjs/
 
       - name: Assert vendored files exist
         run: |
           test -f docs/public/vendor/prae/praetorius.umd.js
           test -f docs/public/vendor/pdfjs/pdf.worker.min.js
-
-      # Build the VitePress site in /website
-      - name: Install deps (website/)
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+          test -f docs/public/samples/works.playground.json
 
       - name: Build VitePress
         run: npm run build
