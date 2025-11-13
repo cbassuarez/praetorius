@@ -73,8 +73,8 @@
 /* —— Oversize the Home hero media —— */
 :root{
   /* tune freely */
-  --prae-hero-desktop: clamp(720px, 52vw, 1280px);
-  --prae-hero-mobile:  clamp(280px, 86vw, 680px);
+  --prae-hero-desktop: clamp(640px, 52vw, 1000px);
+  --prae-hero-mobile:  clamp(280px, 86vw, 640px);
 }
 
 /* High-specificity overrides to beat default theme sizing */
