@@ -32,6 +32,18 @@ jobs:
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm i; fi
 
+      - name: Build library (produces dist/)
+        run: |
+        # If your lib build is "vite build" or "npm run build", call it here.
+          npm run build || true
+
+      - name: Vendor PRAE UMD into docs
+        run: |
+        mkdir -p docs/public/vendor/prae
+        if [ -f dist/praetorius.umd.js ]; then cp dist/praetorius.umd.js docs/public/vendor/prae/; fi
+        # Optional: only if you actually ship a standalone CSS file
+        if [ -f dist/praetorius.css ]; then cp dist/praetorius.css docs/public/vendor/prae/; fi
+
       - name: Build VitePress
         run: npm run build
 
