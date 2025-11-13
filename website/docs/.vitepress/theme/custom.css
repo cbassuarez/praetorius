@@ -70,39 +70,53 @@
   --vp-content-max-width: 1280px;
 }
 
-/* —— Oversize the Home hero media —— */
-:root{
-  /* tune freely */
-  --prae-hero-desktop: clamp(640px, 52vw, 1000px);
-  --prae-hero-mobile:  clamp(280px, 86vw, 640px);
+/* === Equal columns for the Home hero; stack on small screens === */
+.VPHome .VPHero .container{
+  /* Replace the theme's mixed flex with an explicit 2-col grid */
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  align-items: center;
+  gap: clamp(16px, 3vw, 40px);
 }
 
-/* High-specificity overrides to beat default theme sizing */
-.VPHome .VPHero.has-image .container .image{
-  width: var(--prae-hero-desktop) !important;
+/* Remove any column width caps the theme applies */
+.VPHome .VPHero .container .main,
+.VPHome .VPHero .container .image{
   max-width: none !important;
-  flex: 0 0 auto !important;
+  width: auto !important;
+  flex: initial !important; /* neutralize DefaultTheme flex-basis */
 }
-.VPHome .VPHero.has-image .container .image img{
-  display: block;
-  width: 100% !important;
+
+/* Keep the hero page width roomy so both columns can breathe */
+.VPHome .VPContent .container{
+  max-width: min(1320px, 95vw) !important;
+}
+
+/* Center the media inside its column */
+.VPHome .VPHero .container .image{
+  display: grid;
+  place-items: center;
+}
+
+/* Never stretch the GIF: preserve intrinsic aspect and avoid squish */
+.VPHome .VPHero .container .image img{
+  /* Let the image size itself by its own dimensions */
+  width: auto !important;
+  max-width: 100% !important;  /* but don't overflow the column */
   height: auto !important;
-  max-width: none !important;
+  object-fit: contain;         /* safety if a height is ever imposed */
+  /* No fixed heights here; we want natural aspect ratio */
 }
 
-/* Give the text column breathing room but don’t cap the media */
-.VPHome .VPHero .container .main .name,
-.VPHome .VPHero .container .main .text,
-.VPHome .VPHero .container .main .tagline{
-  max-width: 54ch;
-}
-
-/* Tablet/phone scaling */
+/* Stack to a single column on smaller screens */
 @media (max-width: 960px){
-  .VPHome .VPHero.has-image .container .image{
-    width: var(--prae-hero-mobile) !important;
+  .VPHome .VPHero .container{
+    grid-template-columns: 1fr !important;
   }
+  /* Put text first, image second when stacked */
+  .VPHome .VPHero .container .main{ order: 1; }
+  .VPHome .VPHero .container .image{ order: 2; }
 }
 
-/* If your theme shows a decorative background “image-bg”, hide it for GIFs */
-.VPHome .VPHero .image-bg{ display:none !important; }
+/* If the theme renders a decorative image backdrop, hide it for GIF clarity */
+.VPHome .VPHero .image-bg{ display: none !important; }
