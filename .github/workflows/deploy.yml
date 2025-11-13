@@ -27,47 +27,64 @@ jobs:
         with:
           node-version: 20
 
-            # LIB at repo root → build UMD
+      # --- LIB @ REPO ROOT ---
       - name: Install deps (repo root)
-        run: if [ -f package-lock.json ]; then npm ci; else npm i; fi
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm i; fi
         working-directory: .
 
       - name: Build library (repo root → dist/)
         run: npm run build
         working-directory: .
 
-      # WEBSITE → install deps so pdfjs-dist exists
+      # --- WEBSITE (VitePress) ---
       - name: Install deps (website/)
-        run: if [ -f package-lock.json ]; then npm ci; else npm i; fi
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm i; fi
 
-      # Vendor UMD + worker into docs/public (same-origin)
+      # --- Vendor UMD + worker into docs/public (same-origin) ---
       - name: Vendor viewer + worker
         run: |
+          set -euo pipefail
           mkdir -p docs/public/vendor/prae
           mkdir -p docs/public/vendor/pdfjs
+          # UMD from repo-root dist
           cp ../dist/praetorius.umd.js docs/public/vendor/prae/
-          # copy only if you actually ship a separate CSS file
+          # Only if you actually output a separate CSS:
           if [ -f ../dist/praetorius.css ]; then cp ../dist/praetorius.css docs/public/vendor/prae/; fi
-          # copy the worker from website/node_modules
+          # Worker from website/node_modules
           cp node_modules/pdfjs-dist/build/pdf.worker.min.js docs/public/vendor/pdfjs/
 
-      # PROVE they exist before building the site
-      - name: Assert vendored files exist
+      # --- Assert vendored inputs exist BEFORE build ---
+      - name: Assert vendored inputs exist
         run: |
-          ls -la docs/public/vendor/prae
-          ls -la docs/public/vendor/pdfjs
+          set -euo pipefail
+          test -f docs/public/embed.html
           test -f docs/public/vendor/prae/praetorius.umd.js
           test -f docs/public/vendor/pdfjs/pdf.worker.min.js
+          test -f docs/public/samples/works.playground.json
+          echo "Inputs OK"
 
-      # Build & then prove they made it into dist
+      # --- Build the site ---
       - name: Build VitePress
         run: npm run build
 
-      - name: List in dist (debug)
+      # --- Assert outputs in final dist (fail loudly if missing) ---
+      - name: Assert dist outputs exist
         run: |
-          ls -la docs/.vitepress/dist/vendor/prae || true
-          ls -la docs/.vitepress/dist/vendor/pdfjs || true
+          set -euo pipefail
+          ls -la docs/.vitepress/dist || true
+          ls -la docs/.vitepress/dist/vendor || true
+          test -f docs/.vitepress/dist/embed.html
+          test -f docs/.vitepress/dist/vendor/prae/praetorius.umd.js
+          test -f docs/.vitepress/dist/vendor/pdfjs/pdf.worker.min.js
+          test -f docs/.vitepress/dist/samples/works.playground.json
+          echo "Dist OK"
 
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/docs/.vitepress/dist
 
   deploy:
     needs: build
