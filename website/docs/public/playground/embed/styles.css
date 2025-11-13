@@ -26,8 +26,7 @@
   --prae-container-max: 1440px;         /* overall max width on large screens */
   --prae-gutter: clamp(16px, 3vw, 32px); /* side padding */
   --pdf-min: 320px;                      /* sidebar lower bound */
-  --pdf-ideal: 36vw;                     /* responsive target */
-  --pdf-max: 560px;                      /* hard cap so it never gets too wide */
+  --pdf-max: 320px;                      /* hard cap so it never gets too wide */
 }
 
 /* Main two-pane split */
