@@ -19,6 +19,9 @@ const props = withDefaults(defineProps<{
   fallbackAudio: undefined
 })
 
+type Skin = 'typefolio' | 'console' | 'vitebreeze'
+
+const skin = ref<Skin>('vitebreeze')
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 const loading = ref(true)
 const rendering = ref(false)
@@ -204,10 +207,18 @@ function goNext() {
   void renderPage(target)
 }
 
+function copyDeepLink() {
+  try {
+    const url = new URL(window.location.href)
+    url.searchParams.set('page', String(currentPage.value))
+    navigator.clipboard.writeText(url.toString())
+  } catch {}
+}
+
 </script>
 
 <template>
-  <div class="prae-playground">
+  <div :class="['prae-playground', 'prae-skin-' + skin]">
     <div v-if="error" class="prae-playground__error">
       <p>We couldn't load the PDF demo.</p>
       <p class="prae-playground__error-details">{{ error }}</p>
@@ -223,6 +234,14 @@ function goNext() {
           <span class="prae-playground__page-indicator">Page {{ currentPage }} / {{ pageCount }}</span>
           <button type="button" @click="goNext" :disabled="!canNext">Next</button>
         </div>
+        <label class="prae-playground__skin">
+          Skin
+          <select v-model="skin" aria-label="Skin">
+            <option value="typefolio">Typefolio</option>
+            <option value="console">Console</option>
+            <option value="vitebreeze">Vite-Breeze</option>
+          </select>
+        </label>
         <label class="prae-playground__zoom">
           Zoom
           <input
@@ -235,6 +254,7 @@ function goNext() {
             aria-label="Zoom"
           />
         </label>
+        <button type="button" class="prae-playground__copy" @click="copyDeepLink">Copy deep link</button>
       </div>
       <div class="prae-playground__audio">
         <audio
@@ -305,6 +325,20 @@ function goNext() {
   justify-content: space-between;
 }
 
+.prae-playground__skin {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.prae-playground__skin select {
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+}
+
 .prae-playground__pager {
   display: flex;
   align-items: center;
@@ -343,6 +377,20 @@ function goNext() {
   font-size: 0.9rem;
 }
 
+.prae-playground__copy {
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg);
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.prae-playground__copy:hover {
+  background: var(--vp-c-bg-soft);
+}
+
 .prae-playground__audio audio {
   width: 100%;
 }
@@ -359,5 +407,19 @@ function goNext() {
   margin: 0.35rem 0 0;
   font-size: 0.9rem;
   color: rgba(0, 0, 0, 0.65);
+}
+
+/* map existing tokens to playground scope */
+.prae-skin-typefolio .prae-playground__viewer {
+  background: rgba(240, 236, 228, 0.35);
+}
+
+.prae-skin-console .prae-playground__viewer {
+  background: radial-gradient(circle at 20% -20%, rgba(16, 185, 129, 0.18), transparent 60%);
+}
+
+.prae-skin-vitebreeze .prae-playground__viewer {
+  background: rgba(100, 108, 255, 0.08);
+  backdrop-filter: blur(10px);
 }
 </style>
