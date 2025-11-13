@@ -142,7 +142,7 @@
       ]
     }
   },
-  "source": "user",
+  "source": "starter",
   "seeded": false,
   "count": 2,
   "schemaVersion": "0.2.5",
