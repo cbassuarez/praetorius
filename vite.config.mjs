@@ -1,12 +1,17 @@
 import { defineConfig } from 'vite';
+
 export default defineConfig({
   build: {
     lib: {
       entry: 'src/boot.js',
-      name: 'PRAE', 
+      name: 'PRAE',                              // ← UMD global: window.PRAE
       fileName: (fmt) => `praetorius.${fmt}.js`,
-      formats: ['umd','es']
+      formats: ['es', 'umd']                     // ← produce both
     },
-    rollupOptions: { output: { assetFileNames: `praetorius.[name].[ext]` } }
+    rollupOptions: {
+      output: {
+        assetFileNames: `praetorius.[name].[ext]`
+      }
+    }
   }
 });

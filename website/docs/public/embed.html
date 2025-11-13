@@ -15,7 +15,7 @@
   <div id="app" aria-label="Praetorius host"></div>
   <div id="err" hidden></div>
   <script type="module">
-  const q = new URLSearchParams(location.search);
+  const q  = new URLSearchParams(location.search);
   const works = q.get('works') || 'samples/works.playground.json';
   const skin  = q.get('skin')  || 'typefolio';
   const pf    = q.get('pageFollow');
@@ -25,66 +25,56 @@
   const esmUrl = 'vendor/prae/praetorius.es.js';
   const umdUrl = 'vendor/prae/praetorius.umd.js';
 
-  // pdf.js worker must be a STRING URL
   window.PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: worker };
 
-  async function tryESM() {
-    try {
-      const mod = await import(new URL(esmUrl, location.href).toString());
-      const PRAE = mod?.default || mod?.PRAE || mod;
-      if (PRAE) { window.PRAE = PRAE; return true; }
-    } catch (_) {}
-    return false;
-  }
-
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = src; s.async = true;
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('Failed to load ' + src));
-      document.head.appendChild(s);
-    });
-  }
-
-  async function tryUMD() {
-    await loadScript(new URL(umdUrl, location.href).toString());
-    const g = window;
-    const PRAE = g.PRAE || g.Praetorius || g.praetorius || g.Prae;
-    if (PRAE) { window.PRAE = PRAE; return true; }
-    return false;
-  }
-
-  async function mount() {
-    const PRAE = window.PRAE;
-    if (!PRAE) throw new Error('PRAE API missing');
-
-    // Probe works JSON so failures are loud & clear
-    const ping = await fetch(works, { cache: 'no-store' });
-    if (!ping.ok) throw new Error(`Works JSON not found (${ping.status}) at ${new URL(works, location.href)}`);
-
-    const host = document.getElementById('app');
-    const opts = { worksUrl: works, skin, pageFollow, pdfWorkerSrc: worker, deepLinking: true };
-
-    if (typeof PRAE.mount === 'function')      await PRAE.mount(host, opts);
-    else if (typeof PRAE.init === 'function')  await PRAE.init(host, opts);
-    else if (PRAE && PRAE.App)                 { const app = new PRAE.App(opts); await (app.mount && app.mount(host)); }
-    else throw new Error('Unsupported PRAE API (no mount/init/App)');
-  }
-
-  function fail(msg, url) {
+  function fail(msg, url){
     const box = document.getElementById('err');
     box.hidden = false;
     box.innerHTML = `<strong>Embed failed:</strong> ${msg}${url ? `<br/><code>${url}</code>` : ''}`;
   }
 
+  async function preferESMThenUMD() {
+    // Try ESM
+    try {
+      const mod = await import(new URL(esmUrl, location.href).toString());
+      const candidate = mod?.default || mod?.PRAE || mod;
+      if (candidate) return candidate;
+    } catch {}
+    // Fallback UMD
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = new URL(umdUrl, location.href).toString();
+      s.async = true;
+      s.onload = res;
+      s.onerror = () => rej(new Error('Failed to load ' + umdUrl));
+      document.head.appendChild(s);
+    });
+    const g = window;
+    // Accept your former name too, and default-exported UMDs
+    return g.PRAE || g.PraetoriusPortfolio || g.Praetorius || g.praetorius || (g.PRAE && g.PRAE.default);
+  }
+
   (async () => {
     try {
-      const ok = await tryESM() || await tryUMD();
-      if (!ok) throw new Error('window.PRAE not found after ESM and UMD attempts');
-      await mount();
+      const API = await preferESMThenUMD();
+      if (!API) throw new Error('window.PRAE not found after ESM/UMD attempts');
+
+      // Normalize to window.PRAE for downstream scripts/tools.
+      window.PRAE = API;
+
+      // Probe works JSON so failures are explicit
+      const ping = await fetch(works, { cache: 'no-store' });
+      if (!ping.ok) throw new Error(`Works JSON not found (${ping.status}) at ${new URL(works, location.href)}`);
+
+      const host = document.getElementById('app');
+      const opts = { worksUrl: works, skin, pageFollow, pdfWorkerSrc: worker, deepLinking: true };
+
+      if (typeof API.mount === 'function')      await API.mount(host, opts);
+      else if (typeof API.init  === 'function') await API.init(host, opts);
+      else if (API?.App)                        { const app = new API.App(opts); await app?.mount?.(host); }
+      else throw new Error('Unsupported PRAE API (no mount/init/App)');
     } catch (e) {
-      fail(e && e.message ? e.message : String(e));
+      fail(e?.message || String(e));
     }
   })();
 </script>
