@@ -48,38 +48,34 @@ jobs:
           set -euo pipefail
           mkdir -p docs/public/vendor/prae
           mkdir -p docs/public/vendor/pdfjs
-          # UMD from repo-root dist
+          # Copy BOTH builds from repo root dist/
           cp ../dist/praetorius.umd.js docs/public/vendor/prae/
-          # Only if you actually output a separate CSS:
-          if [ -f ../dist/praetorius.css ]; then cp ../dist/praetorius.css docs/public/vendor/prae/; fi
-          # Worker from website/node_modules
+          if [ -f ../dist/praetorius.es.js ]; then cp ../dist/praetorius.es.js docs/public/vendor/prae/; fi
+          # pdf.js worker from website node_modules
           cp node_modules/pdfjs-dist/build/pdf.worker.min.js docs/public/vendor/pdfjs/
 
-      # --- Assert vendored inputs exist BEFORE build ---
       - name: Assert vendored inputs exist
         run: |
           set -euo pipefail
           test -f docs/public/embed.html
           test -f docs/public/vendor/prae/praetorius.umd.js
+          # ESM is optional but preferred
+          ls -la docs/public/vendor/prae/ | (grep praetorius.es.js || true)
           test -f docs/public/vendor/pdfjs/pdf.worker.min.js
           test -f docs/public/samples/works.playground.json
-          echo "Inputs OK"
 
-      # --- Build the site ---
       - name: Build VitePress
         run: npm run build
 
-      # --- Assert outputs in final dist (fail loudly if missing) ---
       - name: Assert dist outputs exist
         run: |
           set -euo pipefail
-          ls -la docs/.vitepress/dist || true
-          ls -la docs/.vitepress/dist/vendor || true
           test -f docs/.vitepress/dist/embed.html
           test -f docs/.vitepress/dist/vendor/prae/praetorius.umd.js
+          # ESM optional
+          ls -la docs/.vitepress/dist/vendor/prae/ | (grep praetorius.es.js || true)
           test -f docs/.vitepress/dist/vendor/pdfjs/pdf.worker.min.js
           test -f docs/.vitepress/dist/samples/works.playground.json
-          echo "Dist OK"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

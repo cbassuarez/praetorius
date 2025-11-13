@@ -14,47 +14,78 @@
 <body>
   <div id="app" aria-label="Praetorius host"></div>
   <div id="err" hidden></div>
-  <script>
-    (function () {
-      const q = new URLSearchParams(location.search);
-      const works = q.get('works') || 'samples/works.playground.json';
-      const skin  = q.get('skin')  || 'typefolio';
-      const pf    = q.get('pageFollow');
-      const pageFollow = pf === null ? true : (pf === '1' || pf === 'true');
+  <script type="module">
+  const q = new URLSearchParams(location.search);
+  const works = q.get('works') || 'samples/works.playground.json';
+  const skin  = q.get('skin')  || 'typefolio';
+  const pf    = q.get('pageFollow');
+  const pageFollow = pf === null ? true : (pf === '1' || pf === 'true');
 
-      const worker = 'vendor/pdfjs/pdf.worker.min.js';
-      const umd    = 'vendor/prae/praetorius.umd.js';
+  const worker = 'vendor/pdfjs/pdf.worker.min.js';
+  const esmUrl = 'vendor/prae/praetorius.es.js';
+  const umdUrl = 'vendor/prae/praetorius.umd.js';
 
-      window.PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: worker };
+  // pdf.js worker must be a STRING URL
+  window.PDFJS_GLOBAL_WORKER_OPTIONS = { workerSrc: worker };
 
+  async function tryESM() {
+    try {
+      const mod = await import(new URL(esmUrl, location.href).toString());
+      const PRAE = mod?.default || mod?.PRAE || mod;
+      if (PRAE) { window.PRAE = PRAE; return true; }
+    } catch (_) {}
+    return false;
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = umd; s.async = true;
-      s.onload = () => mount();
-      s.onerror = () => fail('Failed to load viewer UMD', s.src);
+      s.src = src; s.async = true;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Failed to load ' + src));
       document.head.appendChild(s);
+    });
+  }
 
-      async function mount() {
-        try {
-          const PRAE = window.PRAE;
-          if (!PRAE) throw new Error('window.PRAE not found after UMD load');
+  async function tryUMD() {
+    await loadScript(new URL(umdUrl, location.href).toString());
+    const g = window;
+    const PRAE = g.PRAE || g.Praetorius || g.praetorius || g.Prae;
+    if (PRAE) { window.PRAE = PRAE; return true; }
+    return false;
+  }
 
-          const ping = await fetch(works, { cache: 'no-store' });
-          if (!ping.ok) throw new Error(`Works JSON not found (${ping.status}) at ${new URL(works, location.href)}`);
+  async function mount() {
+    const PRAE = window.PRAE;
+    if (!PRAE) throw new Error('PRAE API missing');
 
-          const host = document.getElementById('app');
-          const opts = { worksUrl: works, skin, pageFollow, pdfWorkerSrc: worker, deepLinking: true };
+    // Probe works JSON so failures are loud & clear
+    const ping = await fetch(works, { cache: 'no-store' });
+    if (!ping.ok) throw new Error(`Works JSON not found (${ping.status}) at ${new URL(works, location.href)}`);
 
-          if (typeof PRAE.mount === 'function') await PRAE.mount(host, opts);
-          else if (typeof PRAE.init === 'function') await PRAE.init(host, opts);
-          else if (PRAE && PRAE.App) { const app = new PRAE.App(opts); await (app.mount && app.mount(host)); }
-          else throw new Error('Unsupported PRAE UMD API (no mount/init/App).');
-        } catch (e) { fail(e && e.message ? e.message : String(e)); }
-      }
-      function fail(msg, url) {
-        const box = document.getElementById('err');
-        box.hidden = false;
-        box.innerHTML = `<strong>Embed failed:</strong> ${msg}${url ? `<br/><code>${url}</code>` : ''}`;
-      }
-    })();
-  </script>
+    const host = document.getElementById('app');
+    const opts = { worksUrl: works, skin, pageFollow, pdfWorkerSrc: worker, deepLinking: true };
+
+    if (typeof PRAE.mount === 'function')      await PRAE.mount(host, opts);
+    else if (typeof PRAE.init === 'function')  await PRAE.init(host, opts);
+    else if (PRAE && PRAE.App)                 { const app = new PRAE.App(opts); await (app.mount && app.mount(host)); }
+    else throw new Error('Unsupported PRAE API (no mount/init/App)');
+  }
+
+  function fail(msg, url) {
+    const box = document.getElementById('err');
+    box.hidden = false;
+    box.innerHTML = `<strong>Embed failed:</strong> ${msg}${url ? `<br/><code>${url}</code>` : ''}`;
+  }
+
+  (async () => {
+    try {
+      const ok = await tryESM() || await tryUMD();
+      if (!ok) throw new Error('window.PRAE not found after ESM and UMD attempts');
+      await mount();
+    } catch (e) {
+      fail(e && e.message ? e.message : String(e));
+    }
+  })();
+</script>
 </body></html>
