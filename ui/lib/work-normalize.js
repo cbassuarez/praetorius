@@ -43,6 +43,23 @@ function truncateWithEllipsis(text, limit) {
   return `${text.slice(0, limit - 1).trim()}…`;
 }
 
+function normalizeTags(value) {
+  if (Array.isArray(value)) {
+    return value.map((tag) => coerceString(tag).trim()).filter(Boolean);
+  }
+  const raw = coerceString(value).trim();
+  if (!raw) return [];
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((tag) => coerceString(tag).trim()).filter(Boolean);
+      }
+    } catch (_) {}
+  }
+  return raw.split(',').map((tag) => tag.trim()).filter(Boolean);
+}
+
 function deriveOnelinerFromDescription(description) {
   if (!description) return '';
   const plain = stripMarkdown(description);
@@ -61,6 +78,20 @@ function deriveOnelinerFromDescription(description) {
 export function normalizeWork(work = {}) {
   const source = work || {};
   const normalized = { ...source };
+  const coverRaw = source.cover ?? source.coverUrl ?? null;
+  const cover = coverRaw == null ? null : coerceString(coverRaw).trim();
+  const tags = normalizeTags(source.tags);
+
+  if (cover) {
+    normalized.cover = cover;
+    normalized.coverUrl = cover;
+  } else if ('cover' in normalized) {
+    normalized.cover = null;
+    delete normalized.coverUrl;
+  }
+  if ('tags' in normalized || tags.length) {
+    normalized.tags = tags;
+  }
 
   const onelinerInput = source.oneliner ?? source.one ?? '';
   const onelinerRaw = coerceString(onelinerInput);
@@ -200,4 +231,5 @@ export const __workModelInternals = {
   stripMarkdown,
   deriveOnelinerFromDescription,
   truncateWithEllipsis,
+  normalizeTags,
 };

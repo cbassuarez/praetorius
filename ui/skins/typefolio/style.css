@@ -566,18 +566,10 @@ body *::selection {
   content: '';
 }
 
-.tf-foot-badge {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: color-mix(in srgb, var(--muted) 85%, transparent);
-  text-decoration: none;
+#tf-foot-brand {
+  display: inline-flex;
+  align-items: center;
   margin-left: clamp(0.75rem, 2vw, 1.5rem);
-}
-
-.tf-foot-badge:hover {
-  color: var(--accent);
 }
 
 @media (max-width: 900px) {

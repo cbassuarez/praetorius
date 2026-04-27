@@ -29,6 +29,9 @@ export interface Work {
   audioUrl?: string | null;
   pdf?: string | null;
   pdfUrl?: string | null;
+  cover?: string | null;
+  coverUrl?: string | null;
+  tags?: string[];
   cues?: WorkCue[];
   pageFollow?: WorkPageFollow | null;
   score?: WorkPageFollow | null;

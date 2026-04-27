@@ -38,6 +38,7 @@ export default defineConfig({
       { text: 'Docs', link: '/docs/getting-started' },
       { text: 'Playground', link: '/playground' },
       { text: 'Showcase', link: '/showcase' },
+      { text: 'Press', link: '/press/' },
       { text: 'Changelog', link: '/changelog' }
     ],
 
@@ -76,6 +77,7 @@ export default defineConfig({
           items: [
             { text: 'Recipes', link: '/docs/recipes' },
             { text: 'Troubleshooting', link: '/docs/troubleshooting' },
+            { text: 'Branding & Press Kit', link: '/press/' },
             { text: 'Contribute', link: '/docs/contribute' },
             { text: 'Archive (v0.1)', link: '/docs/archive-v0-1' },
           ]
@@ -87,6 +89,7 @@ export default defineConfig({
           items: [
             { text: 'Playground', link: '/playground' },
             { text: 'Showcase',  link: '/showcase'  },
+            { text: 'Press Kit', link: '/press/' },
             { text: 'Changelog', link: '/changelog' }
           ]
         }

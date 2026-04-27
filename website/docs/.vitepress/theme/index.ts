@@ -1,4 +1,5 @@
 import DefaultTheme from 'vitepress/theme'
+import './brand.css'
 import './custom.css'
 import Layout from './Layout.vue'
 
@@ -6,6 +7,7 @@ import Layout from './Layout.vue'
 import PraeConsoleExact from '@components/PraeConsoleExact.vue'
 import GitHubMeta from '@components/GitHubMeta.vue'
 import NpmBadge from '@components/NpmBadge.vue'
+import GitHubBadge from '@components/GitHubBadge.vue'
 import GitHubChangelog from '@components/GitHubChangelog.vue'
 import CLIBlock from '@components/CLIBlock.vue'
 import SchemaViewer from '@components/SchemaViewer.vue'
@@ -21,6 +23,7 @@ export default {
   enhanceApp({ app }) {
     app.component('GitHubMeta', GitHubMeta)
     app.component('NpmBadge', NpmBadge)
+    app.component('GitHubBadge', GitHubBadge)
     app.component('GitHubChangelog', GitHubChangelog)
     app.component('CLIBlock', CLIBlock)
     app.component('SchemaViewer', SchemaViewer)

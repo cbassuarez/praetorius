@@ -43,6 +43,20 @@ describe('normalizeWork', () => {
     expect(view.onelinerEffective).toBeNull();
     expect(view.descriptionEffective).toBeNull();
   });
+
+  it('normalizes cover and tags metadata', () => {
+    const view = normalizeWork({
+      cover: ' https://cdn.example.com/cover.jpg ',
+      tags: [' electroacoustic ', ' premiere ', '']
+    });
+    expect(view.cover).toBe('https://cdn.example.com/cover.jpg');
+    expect(view.tags).toEqual(['electroacoustic', 'premiere']);
+  });
+
+  it('parses comma-separated tags strings', () => {
+    const view = normalizeWork({ tags: 'orchestral, chamber, 2026' });
+    expect(view.tags).toEqual(['orchestral', 'chamber', '2026']);
+  });
 });
 
 describe('works schema validation', () => {
@@ -61,5 +75,14 @@ describe('works schema validation', () => {
     expect(validate(db)).toBe(true);
     const warnings = collectWorkWarnings(db.works[0]);
     expect(warnings.some(msg => msg.includes('legacy "one"'))).toBe(true);
+  });
+
+  it('accepts optional cover and tags fields', () => {
+    const db = buildDb({
+      oneliner: 'Primary',
+      cover: 'https://cdn.example.com/cover.jpg',
+      tags: ['portfolio', 'string quartet']
+    });
+    expect(validate(db)).toBe(true);
   });
 });

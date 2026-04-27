@@ -14,13 +14,84 @@ import updateNotifier from 'update-notifier';
 import { normalizeWork, collectWorkWarnings } from '../work-model.js';
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
-// Theme tokens (light/dark only; no auto)
-const THEME_CSS = `/* Praetorius — theme tokens (strict light/dark) */
-#works-console.prae-theme-dark, body.prae-theme-dark{
-  --bg:#0f0f0f; --fg:#fff; --dim:#8a8a8a; --line:rgba(255,255,255,.18);
+const APPEARANCE_CSS = `/* Praetorius — global appearance tokens + presets */
+:root{
+  --prae-bg:#0f1728;
+  --prae-surface:#eef2f8;
+  --prae-surface-2:#d8e1ee;
+  --prae-text:#112745;
+  --prae-muted:#536b86;
+  --prae-border:#4a6588;
+  --prae-border-strong:#2f4a70;
+  --prae-accent:#ff8f2f;
+  --prae-accent-2:#2f7df0;
+  --prae-hover-card-x:-2px;
+  --prae-hover-card-y:-3px;
+  --prae-hover-card-shadow:11px 11px 0 rgba(7,26,48,.28);
+  --prae-hover-sheen-opacity:.52;
+  --prae-hover-spot-opacity:.32;
+  --prae-button-hover-x:-1px;
+  --prae-button-hover-y:-1px;
+  --prae-button-hover-shadow:4px 4px 0 rgba(7,26,48,.2);
 }
-#works-console.prae-theme-light, body.prae-theme-light{
-  --bg:#ffffff; --fg:#0d0d0d; --dim:#555; --line:rgba(0,0,0,.18);
+body[data-hover-effect='minimal']{
+  --prae-hover-card-x:0px;
+  --prae-hover-card-y:0px;
+  --prae-hover-card-shadow:var(--ct-shadow-hard, var(--k-shadow-hard, var(--vb-shadow, 8px 8px 0 rgba(7,26,48,.2))));
+  --prae-hover-sheen-opacity:.12;
+  --prae-hover-spot-opacity:.08;
+}
+body[data-hover-effect='high-drama']{
+  --prae-hover-card-x:-4px;
+  --prae-hover-card-y:-6px;
+  --prae-hover-card-shadow:16px 16px 0 rgba(7,26,48,.34);
+  --prae-hover-sheen-opacity:.78;
+  --prae-hover-spot-opacity:.56;
+}
+body[data-button-effect='minimal']{
+  --prae-button-hover-x:0px;
+  --prae-button-hover-y:0px;
+  --prae-button-hover-shadow:none;
+}
+body[data-button-effect='high-drama']{
+  --prae-button-hover-x:-2px;
+  --prae-button-hover-y:-2px;
+  --prae-button-hover-shadow:7px 7px 0 rgba(7,26,48,.28);
+}
+body[data-cursor='block-square'],
+body[data-cursor='block-square'] *{
+  cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Crect x='4' y='4' width='12' height='12' fill='%23061018'/%3E%3C/svg%3E") 2 2, auto;
+}
+body[data-cursor='ring'],
+body[data-cursor='ring'] *{
+  cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='6' fill='none' stroke='%23061018' stroke-width='2'/%3E%3Ccircle cx='12' cy='12' r='1.2' fill='%23ffffff'/%3E%3C/svg%3E") 12 12, auto;
+}
+body[data-cursor='prism-diamond'],
+body[data-cursor='prism-diamond'] *{
+  cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M12 3.8L20.2 12 12 20.2 3.8 12 12 3.8Z' fill='none' stroke='%23040d1b' stroke-width='2'/%3E%3Cpath d='M12 7.2 16.8 12 12 16.8 7.2 12 12 7.2Z' fill='none' stroke='%238ec3ff' stroke-width='1.1'/%3E%3Crect x='11.2' y='11.2' width='1.6' height='1.6' fill='%23ffffff'/%3E%3C/svg%3E") 12 12, auto;
+}
+@media (pointer: coarse){
+  body[data-cursor],
+  body[data-cursor] *{ cursor:auto !important; }
+}
+`;
+// Theme tokens (light/dark only; no auto)
+const THEME_CSS = `/* Praetorius — theme tokens */
+#works-console.prae-theme-dark,
+body.prae-theme-dark,
+body[data-theme='dark']{
+  --bg:var(--prae-bg,#0f1728);
+  --fg:color-mix(in srgb, var(--prae-surface,#eef2f8) 90%, white);
+  --dim:color-mix(in srgb, var(--prae-surface-2,#d8e1ee) 76%, var(--prae-muted,#64748b));
+  --line:color-mix(in srgb, var(--prae-border,#4a6588) 40%, transparent);
+}
+#works-console.prae-theme-light,
+body.prae-theme-light,
+body[data-theme='light']{
+  --bg:var(--prae-bg,#ffffff);
+  --fg:var(--prae-text,#10213b);
+  --dim:var(--prae-muted,#536b86);
+  --line:color-mix(in srgb, var(--prae-border,#4a6588) 50%, transparent);
 }
 `;
 const STARTER_CSS = `/* Praetorius Works Console — minimal CSS seed (merge with your global/page CSS) */
@@ -199,7 +270,7 @@ const EMBED_RENDER = `(function(){
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render);
   else render();
 })();`;
-function buildCssBundle(){ return THEME_CSS + '\n' + STARTER_CSS + '\n' + HUD_EMBED_CSS; }
+function buildCssBundle(){ return APPEARANCE_CSS + '\n' + THEME_CSS + '\n' + STARTER_CSS + '\n' + HUD_EMBED_CSS; }
 const STARTER_JS_NOTE = `/** Praetorius Works Console — starter v0
  * This is a seed file. The wizard-driven flow uses:
  *   - .prae/works.json  (your data)
@@ -311,6 +382,21 @@ function buildRuntimeWorks(rawWorks = []) {
       work.pdfUrl = pdf;
       if (!work.pdf) work.pdf = pdf;
     }
+    const cover = coalesceUrl(work, 'cover', ['coverUrl', 'coverURL', 'image', 'thumbnail', 'poster']);
+    if (cover) {
+      work.cover = cover;
+      work.coverUrl = cover;
+    }
+    if (Array.isArray(work.tags)) {
+      work.tags = work.tags
+        .map((tag) => String(tag ?? '').trim())
+        .filter(Boolean);
+    } else if (typeof work.tags === 'string') {
+      work.tags = work.tags
+        .split(',')
+        .map((tag) => String(tag || '').trim())
+        .filter(Boolean);
+    }
     work.audioId = work.audioId || `wc-a${numericId}`;
     const pageFollow = normalizePageFollowConfig(work);
     if (pageFollow) {
@@ -336,6 +422,8 @@ function createRuntimePayload(db, opts = {}) {
   const pageFollowMaps = buildPageFollowMaps(works);
   const theme = opts.theme === 'light' ? 'light' : 'dark';
   const site = opts.site || {};
+  const appearance = normalizeAppearance(opts.appearance || {}, { strict: false });
+  const branding = normalizeBranding(opts.branding || {}, { strict: false });
   const warnings = Array.isArray(opts.warnings) ? opts.warnings.slice() : [];
   for (const work of works) {
     const workWarnings = collectWorkWarnings(work);
@@ -347,7 +435,7 @@ function createRuntimePayload(db, opts = {}) {
   return {
     works,
     pageFollowMaps,
-    config: { theme, site },
+    config: { theme, site, appearance, branding },
     source: opts.source || 'user',
     seeded: !!opts.seeded,
     count: Number.isInteger(opts.count) ? opts.count : works.length,
@@ -361,6 +449,8 @@ function renderScriptFromDb(db, opts = {}) {
   const payload = createRuntimePayload(db, {
     worksOverride: opts.worksOverride,
     theme: opts.theme,
+    appearance: opts.appearance,
+    branding: opts.branding,
     site: opts.site,
     source: opts.source,
     seeded: opts.seeded,
@@ -416,10 +506,497 @@ function renderScriptFromDb(db, opts = {}) {
   window.PRAE.worksById = worksById;
   window.PRAE.pageFollowMaps = pageFollowMaps;
   window.PRAE.ensureAudioTags = ensureAudioTags;
+  window.PRAE.pauseAllAudio = function(exceptId){
+    var keep = exceptId == null ? null : String(exceptId);
+    var audios = Array.prototype.slice.call(document.querySelectorAll('audio[id^="wc-a"]'));
+    audios.forEach(function(audio){
+      if (!audio) return;
+      var id = String(audio.id || '');
+      var workId = id.indexOf('wc-a') === 0 ? id.slice(4) : '';
+      if (keep != null && workId === keep) return;
+      try {
+        if (!audio.paused) audio.pause();
+      } catch (_) {}
+    });
+  };
   window.PRAE.config = window.PRAE.config || {};
   window.PRAE.config.theme = data.config ? data.config.theme : ${JSON.stringify(opts.theme === 'light' ? 'light' : 'dark')};
   window.PRAE.config.site  = data.config ? data.config.site  : ${JSON.stringify(opts.site || {})};
+  window.PRAE.config.appearance = data.config ? data.config.appearance : ${JSON.stringify(DEFAULT_APPEARANCE)};
+  window.PRAE.config.branding = data.config ? data.config.branding : ${JSON.stringify(DEFAULT_BRANDING)};
   window.PRAE.warnings = Array.isArray(data.warnings) ? data.warnings : [];
+
+  function praeNormalizeBranding(input){
+    var src = input && typeof input === 'object' ? input : {};
+    var attribution = src.attribution && typeof src.attribution === 'object' ? src.attribution : {};
+    return {
+      attribution: { enabled: attribution.enabled !== false }
+    };
+  }
+
+  function praeBrandSvgMark(){
+    return '<svg class=\"prae-brand-mark\" viewBox=\"0 0 64 64\" fill=\"none\" aria-hidden=\"true\" focusable=\"false\">'+
+      '<g stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">'+
+        '<circle cx=\"32\" cy=\"32\" r=\"21\"></circle>'+
+        '<circle cx=\"32\" cy=\"32\" r=\"5\" fill=\"currentColor\"></circle>'+
+        '<path d=\"M32 12c7 6 12 12 14 20\"></path>'+
+        '<path d=\"M32 12c7 6 12 12 14 20\" transform=\"rotate(60 32 32)\"></path>'+
+        '<path d=\"M32 12c7 6 12 12 14 20\" transform=\"rotate(120 32 32)\"></path>'+
+        '<path d=\"M32 12c7 6 12 12 14 20\" transform=\"rotate(180 32 32)\"></path>'+
+        '<path d=\"M32 12c7 6 12 12 14 20\" transform=\"rotate(240 32 32)\"></path>'+
+        '<path d=\"M32 12c7 6 12 12 14 20\" transform=\"rotate(300 32 32)\"></path>'+
+      '</g>'+
+    '</svg>';
+  }
+
+  function praeSafeHref(value){
+    var raw = String(value || '').trim();
+    if (!raw) return '#';
+    if (/^javascript:/i.test(raw)) return '#';
+    return raw;
+  }
+
+  function praeResolveBrandModel(siteCfg, brandingCfg){
+    var site = siteCfg && typeof siteCfg === 'object' ? siteCfg : {};
+    var branding = praeNormalizeBranding(brandingCfg || {});
+    var fullName = String(site.fullName || '').trim();
+    if (!fullName) {
+      fullName = [site.firstName, site.lastName].filter(Boolean).join(' ').trim();
+    }
+    var ownerName = String(site.copyrightName || '').trim() || fullName || 'Praetorius';
+    var links = Array.isArray(site.links) ? site.links.filter(function(link){
+      return link && (link.label || link.title) && link.href;
+    }).map(function(link){
+      return {
+        label: String(link.label || link.title || '').trim(),
+        href: praeSafeHref(link.href || '#'),
+        external: !!link.external
+      };
+    }) : [];
+    var updated = '';
+    if (site.updated && site.updated.mode === 'manual' && site.updated.value) {
+      updated = String(site.updated.value);
+    } else {
+      try {
+        updated = new Date().toLocaleDateString();
+      } catch (_) {
+        updated = '';
+      }
+    }
+    return {
+      ownerName: ownerName,
+      updated: updated,
+      links: links,
+      attributionEnabled: branding.attribution.enabled !== false,
+      npmHref: 'https://www.npmjs.com/package/praetorius',
+      githubHref: 'https://github.com/cbassuarez/praetorius',
+      year: new Date().getFullYear()
+    };
+  }
+
+  function praeBrandCallout(type, href, hint){
+    var a = document.createElement('a');
+    a.className = 'prae-brand-callout prae-brand-callout--' + type;
+    a.href = praeSafeHref(href);
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    var label = document.createElement('span');
+    label.className = 'prae-brand-callout-label';
+    label.textContent = type === 'npm' ? 'npm' : 'GitHub';
+    var hintEl = document.createElement('span');
+    hintEl.className = 'prae-brand-callout-hint';
+    hintEl.textContent = hint || '';
+    a.append(label, hintEl);
+    return a;
+  }
+
+  function praeRenderBrandFooter(root, options){
+    if (!root) return null;
+    var site = options && options.site ? options.site : (window.PRAE.config ? window.PRAE.config.site : {});
+    var branding = options && options.branding ? options.branding : (window.PRAE.config ? window.PRAE.config.branding : {});
+    var model = praeResolveBrandModel(site, branding);
+    root.innerHTML = '';
+    root.setAttribute('data-prae-brand-footer', '1');
+    root.setAttribute('data-brand-system', '${BRAND_SYSTEM_VERSION}');
+    root.setAttribute('data-brand-attribution', model.attributionEnabled ? 'on' : 'off');
+
+    var shell = document.createElement('div');
+    shell.className = 'prae-brand-footer';
+
+    var main = document.createElement('div');
+    main.className = 'prae-brand-footer-main';
+
+    var ownerRow = document.createElement('div');
+    ownerRow.className = 'prae-brand-owner-row';
+    var owner = document.createElement('span');
+    owner.className = 'prae-brand-owner';
+    owner.textContent = '© ' + model.ownerName + ' ' + model.year;
+    ownerRow.append(owner);
+    if (model.updated) {
+      var updated = document.createElement('span');
+      updated.className = 'prae-brand-updated';
+      updated.textContent = 'Updated ' + model.updated;
+      ownerRow.append(updated);
+    }
+
+    var links = document.createElement('nav');
+    links.className = 'prae-brand-links';
+    links.setAttribute('aria-label', 'Site links');
+    model.links.forEach(function(link){
+      var a = document.createElement('a');
+      a.className = 'prae-brand-link';
+      a.href = praeSafeHref(link.href);
+      a.textContent = link.label || 'Link';
+      if (link.external) {
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+      }
+      links.append(a);
+    });
+    main.append(ownerRow);
+    if (model.links.length) {
+      main.append(links);
+    }
+
+    var meta = document.createElement('div');
+    meta.className = 'prae-brand-footer-meta';
+    if (model.attributionEnabled) {
+      var powered = document.createElement('a');
+      powered.className = 'prae-brand-powered';
+      powered.href = model.npmHref;
+      powered.target = '_blank';
+      powered.rel = 'noopener noreferrer';
+      var prefix = document.createElement('span');
+      prefix.className = 'prae-brand-powered-prefix';
+      prefix.textContent = 'Powered by';
+      var lockup = document.createElement('span');
+      lockup.className = 'prae-brand-lockup';
+      lockup.innerHTML = praeBrandSvgMark() + '<span class=\"prae-brand-wordmark\">Praetorius</span>';
+      powered.append(prefix, lockup);
+      meta.append(powered);
+    }
+    var callouts = document.createElement('div');
+    callouts.className = 'prae-brand-callouts';
+    callouts.append(
+      praeBrandCallout('npm', model.npmHref, 'package'),
+      praeBrandCallout('github', model.githubHref, 'source')
+    );
+    meta.append(callouts);
+
+    shell.append(main, meta);
+    root.append(shell);
+    return { root: root, model: model };
+  }
+
+  window.PRAE.config.branding = praeNormalizeBranding(window.PRAE.config.branding || {});
+  window.PRAE.branding = Object.assign({}, window.PRAE.branding || {}, {
+    version: '${BRAND_SYSTEM_VERSION}',
+    normalize: praeNormalizeBranding,
+    resolveModel: praeResolveBrandModel,
+    renderFooter: praeRenderBrandFooter,
+    markSvg: praeBrandSvgMark
+  });
+
+  function praeNormalizeAppearance(input){
+    var src = input && typeof input === 'object' ? input : {};
+    var theme = src.theme && typeof src.theme === 'object' ? src.theme : {};
+    var cursor = src.cursor && typeof src.cursor === 'object' ? src.cursor : {};
+    var effects = src.effects && typeof src.effects === 'object' ? src.effects : {};
+    var palettes = ${JSON.stringify(APPEARANCE_PALETTES)};
+    var cursors = ${JSON.stringify(CURSOR_PRESETS)};
+    var fx = ${JSON.stringify(EFFECT_PRESETS)};
+    var palette = String(theme.palette || '${DEFAULT_APPEARANCE.theme.palette}').toLowerCase();
+    if (palettes.indexOf(palette) < 0) palette = '${DEFAULT_APPEARANCE.theme.palette}';
+    var preset = String(cursor.preset || '${DEFAULT_APPEARANCE.cursor.preset}').toLowerCase();
+    if (cursors.indexOf(preset) < 0) preset = '${DEFAULT_APPEARANCE.cursor.preset}';
+    var hover = String(effects.hover || '${DEFAULT_APPEARANCE.effects.hover}').toLowerCase();
+    if (fx.indexOf(hover) < 0) hover = '${DEFAULT_APPEARANCE.effects.hover}';
+    var button = String(effects.button || '${DEFAULT_APPEARANCE.effects.button}').toLowerCase();
+    if (fx.indexOf(button) < 0) button = '${DEFAULT_APPEARANCE.effects.button}';
+    var mono = String(theme.monoBaseOklch || '${DEFAULT_MONO_BASE_OKLCH}').trim();
+    return {
+      theme: { palette: palette, monoBaseOklch: mono || '${DEFAULT_MONO_BASE_OKLCH}' },
+      cursor: { preset: preset },
+      effects: { hover: hover, button: button }
+    };
+  }
+
+  function praeNormalizeHue(v){
+    var n = Number(v);
+    if (!isFinite(n)) n = 0;
+    return ((n % 360) + 360) % 360;
+  }
+
+  function praeFmt(v, d){
+    var n = Number(v);
+    if (!isFinite(n)) n = 0;
+    var out = n.toFixed(d || 3);
+    return out.replace(/\\.?0+$/, '');
+  }
+
+  function praeClamp(v, min, max){
+    return Math.min(max, Math.max(min, Number(v)));
+  }
+
+  function praeParseOklch(input){
+    var raw = String(input || '').trim();
+    var m = raw.match(/^oklch\\(\\s*([0-9]*\\.?[0-9]+%?)\\s+([0-9]*\\.?[0-9]+)\\s+([0-9]*\\.?[0-9]+)(?:deg)?(?:\\s*\\/\\s*[0-9]*\\.?[0-9]+%?)?\\s*\\)$/i);
+    if (!m) return null;
+    var lRaw = m[1];
+    var l = Number(lRaw.replace('%', ''));
+    if (!isFinite(l)) return null;
+    if (/%/.test(lRaw)) l = l / 100;
+    var c = Number(m[2]);
+    var h = Number(m[3]);
+    if (!isFinite(c) || !isFinite(h)) return null;
+    return { l: praeClamp(l, 0, 1), c: praeClamp(c, 0, 0.6), h: praeNormalizeHue(h) };
+  }
+
+  function praeOklch(l, c, h){
+    return 'oklch(' + praeFmt(praeClamp(l, 0, 1), 3) + ' ' + praeFmt(praeClamp(c, 0, 0.6), 3) + ' ' + praeFmt(praeNormalizeHue(h), 1) + ')';
+  }
+
+  function praeHexToRgb(input){
+    var raw = String(input || '').trim();
+    var m = raw.match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+    if (!m) return null;
+    var hex = m[1];
+    if (hex.length === 3) {
+      hex = hex.split('').map(function(ch){ return ch + ch; }).join('');
+    }
+    if (hex.length === 8) hex = hex.slice(0, 6);
+    var n = parseInt(hex, 16);
+    return {
+      r: ((n >> 16) & 255) / 255,
+      g: ((n >> 8) & 255) / 255,
+      b: (n & 255) / 255
+    };
+  }
+
+  function praeLinearToSrgb(v){
+    if (v <= 0.0031308) return 12.92 * v;
+    return 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+  }
+
+  function praeSrgbToLinear(v){
+    if (v <= 0.04045) return v / 12.92;
+    return Math.pow((v + 0.055) / 1.055, 2.4);
+  }
+
+  function praeOklchToRgb(input){
+    var parsed = praeParseOklch(input);
+    if (!parsed) return null;
+    var hr = parsed.h * Math.PI / 180;
+    var a = parsed.c * Math.cos(hr);
+    var b = parsed.c * Math.sin(hr);
+
+    var l_ = parsed.l + 0.3963377774 * a + 0.2158037573 * b;
+    var m_ = parsed.l - 0.1055613458 * a - 0.0638541728 * b;
+    var s_ = parsed.l - 0.0894841775 * a - 1.2914855480 * b;
+
+    var l = l_ * l_ * l_;
+    var m = m_ * m_ * m_;
+    var s = s_ * s_ * s_;
+
+    var lr = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    var lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    var lb = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+
+    return {
+      r: praeClamp(praeLinearToSrgb(lr), 0, 1),
+      g: praeClamp(praeLinearToSrgb(lg), 0, 1),
+      b: praeClamp(praeLinearToSrgb(lb), 0, 1)
+    };
+  }
+
+  function praeColorToRgb(input){
+    return praeHexToRgb(input) || praeOklchToRgb(input);
+  }
+
+  function praeRelativeLuminance(rgb){
+    if (!rgb) return 0;
+    var r = praeSrgbToLinear(praeClamp(rgb.r, 0, 1));
+    var g = praeSrgbToLinear(praeClamp(rgb.g, 0, 1));
+    var b = praeSrgbToLinear(praeClamp(rgb.b, 0, 1));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function praeContrastRatio(a, b){
+    var rgbA = praeColorToRgb(a);
+    var rgbB = praeColorToRgb(b);
+    if (!rgbA || !rgbB) return 1;
+    var la = praeRelativeLuminance(rgbA);
+    var lb = praeRelativeLuminance(rgbB);
+    var hi = Math.max(la, lb);
+    var lo = Math.min(la, lb);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  function praeMinContrast(color, backgrounds){
+    var list = Array.isArray(backgrounds) ? backgrounds : [];
+    if (!list.length) return 1;
+    var min = Infinity;
+    list.forEach(function(bg){
+      var ratio = praeContrastRatio(color, bg);
+      if (ratio < min) min = ratio;
+    });
+    return isFinite(min) ? min : 1;
+  }
+
+  function praePickColorForContrast(preferred, backgrounds, candidates, target){
+    var seen = {};
+    var pool = [];
+    function add(value){
+      var key = String(value || '').trim();
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      pool.push(key);
+    }
+    add(preferred);
+    (candidates || []).forEach(add);
+
+    var want = Number(target) > 0 ? Number(target) : 4.5;
+    var best = pool[0] || '#0b1f38';
+    var bestScore = -1;
+
+    for (var i = 0; i < pool.length; i += 1) {
+      var cand = pool[i];
+      var score = praeMinContrast(cand, backgrounds);
+      if (score >= want) return cand;
+      if (score > bestScore) {
+        bestScore = score;
+        best = cand;
+      }
+    }
+    return best;
+  }
+
+  function praeEnsureAaText(tokens){
+    var next = Object.assign({}, tokens || {});
+    var backgrounds = [next.surface, next.surface2].filter(Boolean);
+    next.text = praePickColorForContrast(
+      next.text,
+      backgrounds,
+      ['#081a32', '#102746', '#1a1a1a', '#f4f8ff', '#ffffff'],
+      4.5
+    );
+    var textRgb = praeColorToRgb(next.text);
+    var textLum = praeRelativeLuminance(textRgb);
+    var usesDarkText = textLum < 0.45;
+    var mutedCandidates = usesDarkText
+      ? [next.muted, '#425a77', '#4d6785', '#587291', next.text]
+      : [next.muted, '#d8e2f1', '#c8d5e8', '#bacade', next.text];
+    next.muted = praePickColorForContrast(next.muted, backgrounds, mutedCandidates, 4.5);
+    return next;
+  }
+
+  function praePaletteTokens(palette, mode, monoBase){
+    var key = mode === 'light' ? 'light' : 'dark';
+    var table = {
+      'orange-blue-white-silver': {
+        dark: { bg:'#0f1728', surface:'#eef2f8', surface2:'#d8e1ee', text:'#112745', muted:'#536b86', border:'#4a6588', borderStrong:'#2f4a70', accent:'#ff8f2f', accent2:'#2f7df0' },
+        light:{ bg:'#e8eff8', surface:'#ffffff', surface2:'#f2f5fa', text:'#132845', muted:'#5d728d', border:'#8fa3be', borderStrong:'#6d86a8', accent:'#d36a0a', accent2:'#1f63ca' }
+      },
+      'gem-diamond': {
+        dark: { bg:'#071523', surface:'#d8ebff', surface2:'#c0dbfb', text:'#081b34', muted:'#33577f', border:'#0d3767', borderStrong:'#062a50', accent:'#2f80ff', accent2:'#18b1c6' },
+        light:{ bg:'#d9ecff', surface:'#f6fbff', surface2:'#e8f2ff', text:'#10284d', muted:'#4d6b8f', border:'#2b598e', borderStrong:'#214f84', accent:'#005ee6', accent2:'#0a94af' }
+      },
+      'ryb-tricolor': {
+        dark: { bg:'#1a1420', surface:'#f4efe6', surface2:'#eadfcd', text:'#2a1a12', muted:'#6b5444', border:'#8a3c2d', borderStrong:'#63241a', accent:'#df3427', accent2:'#2157d0' },
+        light:{ bg:'#f8f1e3', surface:'#fffdf7', surface2:'#f5ebd4', text:'#2f230f', muted:'#6e5b3b', border:'#a77a33', borderStrong:'#8c6424', accent:'#cc2d21', accent2:'#1c4ab8' }
+      },
+      'mono-bw': {
+        dark: { bg:'#111111', surface:'#ececec', surface2:'#d8d8d8', text:'#111111', muted:'#525252', border:'#666666', borderStrong:'#3a3a3a', accent:'#141414', accent2:'#5b5b5b' },
+        light:{ bg:'#f1f1f1', surface:'#ffffff', surface2:'#f3f3f3', text:'#1a1a1a', muted:'#666666', border:'#9a9a9a', borderStrong:'#7a7a7a', accent:'#141414', accent2:'#575757' }
+      }
+    };
+    if (palette === 'mono-one') {
+      var parsed = praeParseOklch(monoBase) || { l: 0.62, c: 0.09, h: 250 };
+      var l = parsed.l, c = parsed.c, h = parsed.h;
+      if (key === 'dark') {
+        return {
+          bg: praeOklch(l - 0.52, c * 0.2, h),
+          surface: praeOklch(l + 0.27, c * 0.18, h),
+          surface2: praeOklch(l + 0.18, c * 0.16, h),
+          text: praeOklch(l - 0.4, c * 0.22, h),
+          muted: praeOklch(l - 0.23, c * 0.12, h),
+          border: praeOklch(l - 0.11, c * 0.14, h),
+          borderStrong: praeOklch(l - 0.2, c * 0.12, h),
+          accent: praeOklch(l, Math.max(c, 0.03), h),
+          accent2: praeOklch(l, Math.max(c * 0.82, 0.025), h + 28)
+        };
+      }
+      return {
+        bg: praeOklch(l + 0.34, c * 0.08, h),
+        surface: praeOklch(l + 0.4, c * 0.07, h),
+        surface2: praeOklch(l + 0.3, c * 0.07, h),
+        text: praeOklch(l - 0.46, c * 0.2, h),
+        muted: praeOklch(l - 0.29, c * 0.11, h),
+        border: praeOklch(l - 0.19, c * 0.11, h),
+        borderStrong: praeOklch(l - 0.28, c * 0.11, h),
+        accent: praeOklch(l - 0.12, Math.max(c, 0.03), h),
+        accent2: praeOklch(l - 0.1, Math.max(c * 0.82, 0.025), h + 28)
+      };
+    }
+    return (table[palette] && table[palette][key]) || table['orange-blue-white-silver'][key];
+  }
+
+  function praeApplyAppearance(cfg){
+    var appearance = praeNormalizeAppearance((cfg && cfg.appearance) || {});
+    var mode = (cfg && cfg.theme) === 'light' ? 'light' : 'dark';
+    var doc = document.documentElement;
+    var body = document.body;
+    var host = document.getElementById('works-console');
+    var tokens = praeEnsureAaText(
+      praePaletteTokens(appearance.theme.palette, mode, appearance.theme.monoBaseOklch)
+    );
+    if (doc && doc.style) {
+      Object.keys(tokens).forEach(function(key){
+        doc.style.setProperty('--prae-' + key, tokens[key]);
+      });
+      doc.style.colorScheme = mode === 'dark' ? 'dark' : 'light';
+    }
+    [doc, body, host].forEach(function(node){
+      if (!node) return;
+      node.setAttribute('data-theme', mode);
+      node.setAttribute('data-palette', appearance.theme.palette);
+      node.setAttribute('data-cursor', appearance.cursor.preset);
+      node.setAttribute('data-hover-effect', appearance.effects.hover);
+      node.setAttribute('data-button-effect', appearance.effects.button);
+      node.classList.remove('prae-theme-light', 'prae-theme-dark');
+      node.classList.add(mode === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+    });
+    try {
+      if (window.localStorage && !window.localStorage.getItem('wc.theme')) {
+        window.localStorage.setItem('wc.theme', mode);
+      }
+    } catch (_) {}
+    window.PRAE.config.appearance = appearance;
+    return appearance;
+  }
+
+  function praeApplyAppearanceMode(mode, opts){
+    var eff = mode === 'light' ? 'light' : 'dark';
+    window.PRAE = window.PRAE || {};
+    window.PRAE.config = window.PRAE.config || {};
+    window.PRAE.config.theme = eff;
+    if (!window.PRAE.config.appearance && data && data.config) {
+      window.PRAE.config.appearance = data.config.appearance || {};
+    }
+    var appearance = praeApplyAppearance(window.PRAE.config);
+    if (!opts || opts.persist !== false) {
+      try {
+        if (window.localStorage) {
+          window.localStorage.setItem('wc.theme', eff);
+        }
+      } catch (_) {}
+    }
+    return { mode: eff, appearance: appearance };
+  }
+
+  window.PRAE.applyAppearanceMode = praeApplyAppearanceMode;
+
+  try { praeApplyAppearance(data.config || {}); } catch(_) {}
 
   try { ensureAudioTags(); } catch(_) {}
   try { console.info('[prae] data:', data.source || 'unknown', 'count:', data.count != null ? data.count : works.length); } catch(_) {}
@@ -478,14 +1055,44 @@ function renderScriptFromDb(db, opts = {}) {
 }
 
 /* ------------------ schema + helpers ------------------ */
+const APPEARANCE_PALETTES = Object.freeze([
+  'ryb-tricolor',
+  'mono-bw',
+  'mono-one',
+  'gem-diamond',
+  'orange-blue-white-silver'
+]);
+const CURSOR_PRESETS = Object.freeze(['system', 'block-square', 'ring', 'prism-diamond']);
+const EFFECT_PRESETS = Object.freeze(['minimal', 'balanced-neo', 'high-drama']);
+const DEFAULT_MONO_BASE_OKLCH = 'oklch(0.62 0.09 250)';
+const BRAND_SYSTEM_VERSION = 'praetorius-v1';
+
+const DEFAULT_APPEARANCE = Object.freeze({
+  theme: {
+    palette: 'orange-blue-white-silver',
+    monoBaseOklch: DEFAULT_MONO_BASE_OKLCH
+  },
+  cursor: { preset: 'system' },
+  effects: {
+    hover: 'balanced-neo',
+    button: 'balanced-neo'
+  }
+});
+
+const DEFAULT_BRANDING = Object.freeze({
+  attribution: { enabled: true }
+});
+
 // Config schema (light) – theme + output flags
 const DEFAULT_CONFIG = Object.freeze({
   theme: 'dark',
   output: { minify: false, embed: false },
   ui: {
-      skin: 'console',          // 'console' (current), 'vite-breeze', 'cards-tabs', 'docs-reader', 'kiosk', 'typefolio', 'typescatter'
-      allowUrlOverride: true    // ?skin=vite-breeze in preview/index.html
-    },
+    skin: 'console',          // 'console' (current), 'vite-breeze', 'cards-tabs', 'docs-reader', 'kiosk', 'typefolio', 'typescatter'
+    allowUrlOverride: true,   // ?skin=vite-breeze in preview/index.html
+    appearance: DEFAULT_APPEARANCE,
+    branding: DEFAULT_BRANDING
+  },
   site: {
     firstName: '',
     lastName:  '',
@@ -512,14 +1119,17 @@ const BUILTIN_SKINS = Object.freeze({
   'typescatter':  { label: 'TypeScatter', aliases: ['posterboard'] }
 });
 
+const UI_RUNTIMES = Object.freeze(['vanilla', 'react']);
+
 const GENERIC_STARTER_WORKS = Object.freeze([
   {
     id: 1,
     slug: 'demo-satie-gymnopedie-1',
     title: 'Gymnopédies — Satie',
-    oneliner: 'Erik Satie’s Gymnopédies are three short piano pieces built from slow, floating melodies over gently shifting, unresolved harmonies. Their spacious pacing and soft, almost whispered dynamics create a sense of suspended time, making them iconic examples of intimate, minimalist piano writing. They’re ideal for showcasing clear notation, pedaling detail, and subtle rubato in a demo.',
+    oneliner: 'Three calm piano miniatures with floating melody, soft harmonic drift, and spacious pacing that showcase clear notation, pedaling detail, and page-follow.',
     description: 'Composed in 1888, Satie’s Gymnopédies distill piano writing down to its essentials: a single, cantabile line supported by simple, gently rocking chords. Each piece unfolds at a very slow tempo, with wide registral spacing and unresolved sonorities that feel more like open questions than cadences. The music invites the listener into a quiet, interior space, where small changes in voicing, touch, and pedaling become expressive events. For a demo site, Gymnopédies are perfect for showing off legible score rendering, expressive playback, and page-follow in a calm, non-dense texture that works beautifully on any device.',
     cues: [{ label: '@0:00', t: 0 }],
+    cover: 'https://upload.wikimedia.org/wikipedia/commons/0/0f/Erik_Satie_by_Santiago_Rusi%C3%B1ol.jpg',
     audio: 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Gymnopedie_No._1..ogg',
     pdf: 'https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf'
   },
@@ -527,7 +1137,7 @@ const GENERIC_STARTER_WORKS = Object.freeze([
     id: 2,
     slug: 'es-ist-ein-praetorius',
     title: 'Es ist ein Ros entsprungen – Praetorius',
-    oneliner: 'Michael Praetorius’s setting of Es ist ein Ros entsprungen is a four-part chorale built from smooth, hymn-like lines and gently glowing harmonies. The melody unfolds in long phrases over a supportive, mostly syllabic texture, giving the piece a sense of quiet radiance rather than showy virtuosity. It’s a classic example of early 17th-century choral writing that reads clearly on the page and sounds rich even at modest playback levels.',
+    oneliner: 'A warm four-part chorale with smooth voice-leading and luminous cadences, ideal for showing clear SATB engraving and synchronized score-follow playback.',
     description: 'Praetorius’s Es ist ein Ros entsprungen (early 1600s) takes a simple Christmas chorale tune and surrounds it with balanced SATB counterpoint. The voices move mostly stepwise, with careful spacing and occasional suspensions that bloom into consonance, creating an atmosphere that is both devotional and surprisingly modern in its clarity. Because the texture is transparent and the ranges are comfortable, the piece translates well across ensembles—choir, small vocal consort, or even instrumental quartet. On a demo site, it’s an excellent work for showcasing choral engraving, lyric alignment, transpositions or alternate voicings, and synchronized score-follow playback that lets users visually track each voice as the harmony blossoms.',
     cues: [{ label: '@0:00', t: 0 }],
     audio: 'https://upload.wikimedia.org/wikipedia/commons/c/c9/U.S._Army_Band_-_Lo_How_a_Rose.ogg',
@@ -549,7 +1159,7 @@ const DEFAULT_DOCS_CONFIG = Object.freeze({
   frontMatter: { addIfMissing: true, tocDepth: 2, autoSummary: true },
   codeTabs: { enabled: false, strategy: 'fence', order: ['js', 'ts', 'bash'] },
   assets: { optimize: false, sizes: ['1x', '2x', 'webp'], altPolicy: 'warn' },
-  search: { enabled: true, engine: 'light', fields: ['title', 'headings', 'body', 'summary'], excludeSections: [] },
+  search: { enabled: true, engine: 'auto', fields: ['title', 'headings', 'body', 'summary'], excludeSections: [] },
   works: { includeInNav: false, includeOnHome: false, linkMode: 'auto' },
   paths: { root: 'docs/', homepage: '' }
 });
@@ -570,6 +1180,220 @@ function resolveBuiltinSkinKey(input) {
   const key = String(input).trim().toLowerCase();
   if (!key) return null;
   return SKIN_ALIAS_LOOKUP.get(key) || null;
+}
+
+function normalizeUiRuntime(input) {
+  const raw = String(input ?? 'vanilla').trim().toLowerCase();
+  return UI_RUNTIMES.includes(raw) ? raw : null;
+}
+
+function resolveUiRuntimeForSkin(skinKey, runtime) {
+  const requested = normalizeUiRuntime(runtime) || 'vanilla';
+  const reactSupportedSkins = new Set(['vite-breeze', 'cards-tabs', 'kiosk', 'docs-reader']);
+  if (requested === 'react' && reactSupportedSkins.has(skinKey)) {
+    return { runtime: 'react', warned: false };
+  }
+  if (requested === 'react') {
+    return { runtime: 'vanilla', warned: true };
+  }
+  return { runtime: 'vanilla', warned: false };
+}
+
+function resolveSkinUiVariant(skinKey, runtime) {
+  if (skinKey === 'vite-breeze' && runtime === 'react') return 'vite-breeze-react';
+  if (skinKey === 'cards-tabs' && runtime === 'react') return 'cards-tabs-react';
+  if (skinKey === 'kiosk' && runtime === 'react') return 'kiosk-react';
+  if (skinKey === 'docs-reader' && runtime === 'react') return 'docs-reader-react';
+  return skinKey;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function toFixedTrim(value, digits = 3) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '0';
+  const fixed = num.toFixed(digits);
+  return fixed.replace(/\.?0+$/, '');
+}
+
+function normalizeHue(value) {
+  let hue = Number(value);
+  if (!Number.isFinite(hue)) hue = 0;
+  hue = ((hue % 360) + 360) % 360;
+  return hue;
+}
+
+function parseHexColor(input) {
+  const raw = String(input ?? '').trim();
+  const match = raw.match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  if (!match) return null;
+  let hex = match[1];
+  if (hex.length === 3) {
+    hex = hex.split('').map((ch) => ch + ch).join('');
+  }
+  if (hex.length === 8) {
+    hex = hex.slice(0, 6);
+  }
+  const int = parseInt(hex, 16);
+  return {
+    r: (int >> 16) & 255,
+    g: (int >> 8) & 255,
+    b: int & 255
+  };
+}
+
+function srgbToLinear(u8) {
+  const v = clamp(Number(u8) / 255, 0, 1);
+  if (v <= 0.04045) return v / 12.92;
+  return Math.pow((v + 0.055) / 1.055, 2.4);
+}
+
+function hexToOklchString(input) {
+  const rgb = parseHexColor(input);
+  if (!rgb) return null;
+  const r = srgbToLinear(rgb.r);
+  const g = srgbToLinear(rgb.g);
+  const b = srgbToLinear(rgb.b);
+
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+  const lCube = Math.cbrt(Math.max(l, 0));
+  const mCube = Math.cbrt(Math.max(m, 0));
+  const sCube = Math.cbrt(Math.max(s, 0));
+
+  const L = 0.2104542553 * lCube + 0.793617785 * mCube - 0.0040720468 * sCube;
+  const a = 1.9779984951 * lCube - 2.428592205 * mCube + 0.4505937099 * sCube;
+  const bVal = 0.0259040371 * lCube + 0.7827717662 * mCube - 0.808675766 * sCube;
+  const C = Math.sqrt(a * a + bVal * bVal);
+  const h = normalizeHue(Math.atan2(bVal, a) * (180 / Math.PI));
+
+  return `oklch(${toFixedTrim(clamp(L, 0, 1), 3)} ${toFixedTrim(clamp(C, 0, 0.6), 3)} ${toFixedTrim(h, 1)})`;
+}
+
+function parseOklchString(input) {
+  const raw = String(input ?? '').trim();
+  const match = raw.match(/^oklch\(\s*([0-9]*\.?[0-9]+%?)\s+([0-9]*\.?[0-9]+)\s+([0-9]*\.?[0-9]+)(?:deg)?(?:\s*\/\s*([0-9]*\.?[0-9]+%?))?\s*\)$/i);
+  if (!match) return null;
+  let l = Number(match[1].replace('%', ''));
+  if (!Number.isFinite(l)) return null;
+  if (match[1].includes('%')) l = l / 100;
+  let c = Number(match[2]);
+  let h = Number(match[3]);
+  if (!Number.isFinite(c) || !Number.isFinite(h)) return null;
+  l = clamp(l, 0, 1);
+  c = clamp(c, 0, 0.6);
+  h = normalizeHue(h);
+  return { l, c, h };
+}
+
+function formatOklch({ l, c, h }) {
+  return `oklch(${toFixedTrim(clamp(l, 0, 1), 3)} ${toFixedTrim(clamp(c, 0, 0.6), 3)} ${toFixedTrim(normalizeHue(h), 1)})`;
+}
+
+function normalizeMonoBaseOklch(input, opts = {}) {
+  const fallback = opts.fallback || DEFAULT_MONO_BASE_OKLCH;
+  const raw = String(input ?? '').trim();
+  if (!raw) return fallback;
+  const parsed = parseOklchString(raw);
+  if (parsed) return formatOklch(parsed);
+  const fromHex = hexToOklchString(raw);
+  if (fromHex) return fromHex;
+  if (opts.throwOnError) {
+    throw new Error(`Invalid mono color "${raw}". Use HEX (#RRGGBB) or oklch(L C H).`);
+  }
+  return fallback;
+}
+
+function normalizeAppearance(input, opts = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  const strict = !!opts.strict;
+  const fail = (msg) => {
+    if (strict) throw new Error(msg);
+  };
+  const themeInput = source.theme && typeof source.theme === 'object' ? source.theme : {};
+  const cursorInput = source.cursor && typeof source.cursor === 'object' ? source.cursor : {};
+  const effectsInput = source.effects && typeof source.effects === 'object' ? source.effects : {};
+
+  const paletteRaw = String(themeInput.palette ?? '').trim().toLowerCase();
+  let palette = paletteRaw || DEFAULT_APPEARANCE.theme.palette;
+  if (!APPEARANCE_PALETTES.includes(palette)) {
+    fail(`Invalid palette "${paletteRaw}".`);
+    palette = DEFAULT_APPEARANCE.theme.palette;
+  }
+
+  const cursorRaw = String(cursorInput.preset ?? '').trim().toLowerCase();
+  let cursorPreset = cursorRaw || DEFAULT_APPEARANCE.cursor.preset;
+  if (!CURSOR_PRESETS.includes(cursorPreset)) {
+    fail(`Invalid cursor preset "${cursorRaw}".`);
+    cursorPreset = DEFAULT_APPEARANCE.cursor.preset;
+  }
+
+  const hoverRaw = String(effectsInput.hover ?? '').trim().toLowerCase();
+  let hoverEffect = hoverRaw || DEFAULT_APPEARANCE.effects.hover;
+  if (!EFFECT_PRESETS.includes(hoverEffect)) {
+    fail(`Invalid hover effect "${hoverRaw}".`);
+    hoverEffect = DEFAULT_APPEARANCE.effects.hover;
+  }
+
+  const buttonRaw = String(effectsInput.button ?? '').trim().toLowerCase();
+  let buttonEffect = buttonRaw || DEFAULT_APPEARANCE.effects.button;
+  if (!EFFECT_PRESETS.includes(buttonEffect)) {
+    fail(`Invalid button effect "${buttonRaw}".`);
+    buttonEffect = DEFAULT_APPEARANCE.effects.button;
+  }
+
+  const monoBaseOklch = normalizeMonoBaseOklch(themeInput.monoBaseOklch, { fallback: DEFAULT_MONO_BASE_OKLCH, throwOnError: strict });
+  return {
+    theme: { palette, monoBaseOklch },
+    cursor: { preset: cursorPreset },
+    effects: { hover: hoverEffect, button: buttonEffect }
+  };
+}
+
+function normalizeBranding(input, opts = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  const strict = !!opts.strict;
+  const fail = (msg) => {
+    if (strict) throw new Error(msg);
+  };
+  const attribution = source.attribution && typeof source.attribution === 'object' ? source.attribution : {};
+  const enabledRaw = attribution.enabled;
+  let enabled = true;
+  if (enabledRaw === undefined || enabledRaw === null) {
+    enabled = true;
+  } else if (typeof enabledRaw === 'boolean') {
+    enabled = enabledRaw;
+  } else {
+    fail('Invalid branding attribution.enabled value.');
+    enabled = true;
+  }
+  return {
+    attribution: { enabled }
+  };
+}
+
+function resolveAppearanceForGenerate(baseAppearance, overrides = {}) {
+  const merged = JSON.parse(JSON.stringify(normalizeAppearance(baseAppearance || {}, { strict: false })));
+  if (overrides.palette != null) {
+    merged.theme.palette = String(overrides.palette).trim().toLowerCase();
+  }
+  if (overrides.cursor != null) {
+    merged.cursor.preset = String(overrides.cursor).trim().toLowerCase();
+  }
+  if (overrides.hoverEffect != null) {
+    merged.effects.hover = String(overrides.hoverEffect).trim().toLowerCase();
+  }
+  if (overrides.buttonEffect != null) {
+    merged.effects.button = String(overrides.buttonEffect).trim().toLowerCase();
+  }
+  if (overrides.monoColor != null && String(overrides.monoColor).trim()) {
+    merged.theme.monoBaseOklch = normalizeMonoBaseOklch(overrides.monoColor, { throwOnError: true });
+  }
+  return normalizeAppearance(merged, { strict: true });
 }
 
 const WORK_FILE_REGEX = /\.work\.(json|ya?ml|md)$/i;
@@ -781,6 +1605,11 @@ const WORKS_SCHEMA = {
           ] },
           audio: { type: ['string','null'] },
           pdf:   { type: ['string','null'] },
+          cover: { type: ['string','null'] },
+          tags: {
+            type: 'array',
+            items: { type: 'string', minLength: 1 }
+          },
           cues: {
             type: 'array',
             items: {
@@ -940,6 +1769,13 @@ function migrate_v1_to_v2(db) {
     w.slug  = slugify(w.slug || w.title || '');
     const sanitizedMigration = sanitizeNarrativeFields(w);
     Object.assign(w, sanitizedMigration.sanitized);
+    if (w.cover != null) {
+      const cover = String(w.cover).trim();
+      w.cover = cover || null;
+    }
+    if (w.tags != null) {
+      w.tags = parseTagsInput(w.tags);
+    }
 
     // cues normalized (try to infer t from label/time if missing)
     if (Array.isArray(w.cues)) {
@@ -982,6 +1818,14 @@ function migrateDb(db) {
 /* ------------------ UI Bundling Helpers ------------------ */
 // ---- UI bundle helpers ----
 function existsFile(p){ try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; } }
+function resolveUiMainEntry(rootDir) {
+  const candidates = ['main.js', 'main.jsx', 'main.ts', 'main.tsx'];
+  for (const name of candidates) {
+    const candidate = path.join(rootDir, name);
+    if (existsFile(candidate)) return candidate;
+  }
+  return null;
+}
 function uiPaths(cwd){
   const SRC_DIR = path.resolve(cwd, 'ui'); // default project UI dir
   return {
@@ -1017,6 +1861,26 @@ function injectHead(html, lines) {
 }
 function injectBeforeBodyEnd(html, lines) {
   return html.replace(/<\/body>/i, (m) => `  ${lines.join('\n  ')}\n${m}`);
+}
+function extractBodyInnerHtml(html) {
+  const match = String(html || '').match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (match) return match[1].trim();
+  return String(html || '').trim();
+}
+function findBrandRoot(uiSrcDir, pkgUiDir) {
+  const roots = [
+    path.join(uiSrcDir, 'brand'),
+    path.join(pkgUiDir, 'brand')
+  ];
+  return roots.find((dir) => existsFile(path.join(dir, 'brand.css'))) || null;
+}
+function readBrandCss(brandRoot, { embed = false } = {}) {
+  if (!brandRoot) return '';
+  const cssPath = path.join(brandRoot, 'brand.css');
+  if (!existsFile(cssPath)) return '';
+  const css = fs.readFileSync(cssPath, 'utf8');
+  if (!embed) return css;
+  return css.replace(/@font-face\s*{[^}]*}\s*/g, '');
 }
 function buildIndexHtml({ templatePath, outPath, theme }) {
   if (!existsFile(templatePath)) return false;
@@ -1073,9 +1937,10 @@ function loadHistorySnapshot(filename) {
 
 // ---- Lightweight JSON "preview diff" (added/removed/modified works) ----
 function shallowWorkDiff(a, b) {
-  const fields = ['title','slug','one','oneliner','description','audio','pdf'];
+  const fields = ['title','slug','one','oneliner','description','audio','pdf','cover'];
   const changed = [];
   for (const k of fields) if (String(a?.[k] ?? '') !== String(b?.[k] ?? '')) changed.push(k);
+  if (JSON.stringify(a?.tags ?? []) !== JSON.stringify(b?.tags ?? [])) changed.push('tags');
   if (JSON.stringify(a?.cues ?? [])  !== JSON.stringify(b?.cues ?? []))  changed.push('cues');
   if (JSON.stringify(a?.score ?? null) !== JSON.stringify(b?.score ?? null)) changed.push('score');
   return changed;
@@ -1166,6 +2031,18 @@ function parseMaybeJSON(s) {
   if (!s || typeof s !== 'string') return null;
   try { return JSON.parse(s); } catch { return null; }
 }
+function parseTagsInput(value) {
+  if (Array.isArray(value)) {
+    return value.map((tag) => String(tag ?? '').trim()).filter(Boolean);
+  }
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+  const asJson = parseMaybeJSON(raw);
+  if (Array.isArray(asJson)) {
+    return asJson.map((tag) => String(tag ?? '').trim()).filter(Boolean);
+  }
+  return raw.split(',').map((tag) => tag.trim()).filter(Boolean);
+}
 function sanitizeNarrativeFields(work) {
   const normalized = normalizeWork(work);
   const sanitized = { ...work };
@@ -1180,6 +2057,13 @@ function sanitizeNarrativeFields(work) {
   }
   if ('one' in work) sanitized.one = normalized.one;
   else if ('one' in sanitized) delete sanitized.one;
+  if ('cover' in sanitized) {
+    const cover = sanitized.cover == null ? null : String(sanitized.cover).trim();
+    sanitized.cover = cover || null;
+  }
+  if ('tags' in sanitized) {
+    sanitized.tags = parseTagsInput(sanitized.tags);
+  }
   return { sanitized, normalized };
 }
 function normalizeImportedWork(row) {
@@ -1197,6 +2081,8 @@ function normalizeImportedWork(row) {
     title: String(row.title || '').trim(),
     audio: row.audio ? String(row.audio).trim() : null,
     pdf: row.pdf ? String(row.pdf).trim() : null,
+    cover: row.cover ? String(row.cover).trim() : null,
+    tags: parseTagsInput(row.tags ?? row.tags_csv),
     cues: Array.isArray(row.cues) ? row.cues
          : parseMaybeJSON(row.cues_json) || []
   };
@@ -1286,21 +2172,31 @@ async function lazyChokidar() {
 /* ------------------ Config I/O ------------------ */
 function loadConfig() {
   const raw = readJsonSafe(CONFIG_PATH, {});
-  // deep-merge with defaults and normalize theme
-  const theme = (raw.theme === 'light') ? 'light' : 'dark';
-  const out   = raw.output || {};
-    return {
+  const theme = raw.theme === 'light' ? 'light' : 'dark';
+  const out = raw.output || {};
+  const appearance = normalizeAppearance(raw.ui?.appearance || {}, { strict: false });
+  const hasBrandingConfig = !!(raw.ui && Object.prototype.hasOwnProperty.call(raw.ui, 'branding'));
+  const legacyBadgeDisabled = raw.site?.showBadge === false;
+  const branding = normalizeBranding(
+    hasBrandingConfig
+      ? (raw.ui?.branding || {})
+      : (legacyBadgeDisabled ? { attribution: { enabled: false } } : {}),
+    { strict: false }
+  );
+  return {
     ...DEFAULT_CONFIG,
     theme,
     output: {
       ...DEFAULT_CONFIG.output,
       minify: !!out.minify,
-      embed:  !!out.embed
+      embed: !!out.embed
     },
-ui: {
+    ui: {
       ...DEFAULT_CONFIG.ui,
       ...(raw.ui || {}),
-      skin: (raw.ui?.skin ?? DEFAULT_CONFIG.ui.skin)
+      skin: raw.ui?.skin ?? DEFAULT_CONFIG.ui.skin,
+      appearance,
+      branding
     },
     site: {
       ...DEFAULT_CONFIG.site,
@@ -1309,19 +2205,22 @@ ui: {
       links: Array.isArray(raw.site?.links) ? raw.site.links : DEFAULT_CONFIG.site.links
     }
   };
-
 }
 function saveConfig(cfg) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    const normalized = {
+  const appearance = normalizeAppearance(cfg?.ui?.appearance || {}, { strict: false });
+  const branding = normalizeBranding(cfg?.ui?.branding || {}, { strict: false });
+  const normalized = {
     theme: (cfg.theme === 'light') ? 'light' : 'dark',
     output: {
       minify: !!cfg.output?.minify,
       embed:  !!cfg.output?.embed
     },
-ui: {
+    ui: {
       skin: String(cfg.ui?.skin || 'console'),
-      allowUrlOverride: !!cfg.ui?.allowUrlOverride
+      allowUrlOverride: cfg.ui?.allowUrlOverride !== false,
+      appearance,
+      branding
     },
     site: {
       firstName: String(cfg.site?.firstName || ''),
@@ -1381,6 +2280,9 @@ function loadDocsConfig() {
     search: {
       ...DEFAULT_DOCS_CONFIG.search,
       ...(raw.search || {}),
+      engine: raw.search?.engine === 'fuse'
+        ? 'fuse'
+        : (raw.search?.engine === 'none' ? 'none' : (raw.search?.engine === 'auto' ? 'auto' : 'light')),
       fields: Array.isArray(raw.search?.fields) ? raw.search.fields : DEFAULT_DOCS_CONFIG.search.fields,
       excludeSections: Array.isArray(raw.search?.excludeSections) ? raw.search.excludeSections : []
     },
@@ -1433,7 +2335,9 @@ function saveDocsConfig(cfg) {
     },
     search: {
       enabled: !!cfg.search?.enabled,
-      engine: cfg.search?.engine === 'fuse' ? 'fuse' : (cfg.search?.engine === 'none' ? 'none' : 'light'),
+      engine: cfg.search?.engine === 'fuse'
+        ? 'fuse'
+        : (cfg.search?.engine === 'none' ? 'none' : (cfg.search?.engine === 'auto' ? 'auto' : 'light')),
       fields: Array.isArray(cfg.search?.fields) ? cfg.search.fields.map(String) : DEFAULT_DOCS_CONFIG.search.fields,
       excludeSections: Array.isArray(cfg.search?.excludeSections) ? cfg.search.excludeSections.map(String) : []
     },
@@ -1976,6 +2880,216 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
     return sectionLabelFromSegment(name);
   };
 
+  const ensureString = (value, fallback = '') => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length ? trimmed : fallback;
+    }
+    return fallback;
+  };
+
+  const ensureArrayStrings = (value) => {
+    if (!Array.isArray(value)) return [];
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean);
+  };
+
+  const normalizeDocBreadcrumbs = (relPath) => {
+    if (!relPath) return [];
+    let within = relPath;
+    const docsRootPrefix = `${docsRootNoSlash}/`;
+    if (within.startsWith(docsRootPrefix)) within = within.slice(docsRootPrefix.length);
+    const segments = within.split('/').filter(Boolean);
+    const crumbs = [];
+    let accumulated = '';
+    segments.forEach((segment, idx) => {
+      const isLast = idx === segments.length - 1;
+      let raw = segment;
+      if (isLast) raw = raw.replace(/\.md$/i, '');
+      if (!raw || raw.toLowerCase() === 'index') return;
+      accumulated = accumulated ? `${accumulated}/${segment}` : segment;
+      crumbs.push({
+        id: slugify(raw) || `crumb-${idx + 1}`,
+        label: sectionLabelFromSegment(raw),
+        path: accumulated
+      });
+    });
+    return crumbs;
+  };
+
+  const normalizeHeroConfig = (hero, docId) => {
+    if (!hero || typeof hero !== 'object') return null;
+    const normalized = {};
+    const kicker = ensureString(hero.kicker);
+    const title = ensureString(hero.title);
+    const lede = ensureString(hero.lede);
+    if (kicker) normalized.kicker = kicker;
+    if (title) normalized.title = title;
+    if (lede) normalized.lede = lede;
+    if (Array.isArray(hero.works) && hero.works.length) {
+      normalized.works = hero.works.map((work, idx) => {
+        if (!work || typeof work !== 'object') return null;
+        const workTitle = ensureString(work.title, 'Untitled');
+        const workSummary = ensureString(work.summary || work.snippet);
+        const workId = ensureString(work.id, slugify(workTitle || `work-${idx + 1}`));
+        return {
+          id: workId || `work-${idx + 1}`,
+          title: workTitle || `Work ${idx + 1}`,
+          summary: workSummary
+        };
+      }).filter(Boolean);
+      if (!normalized.works.length) delete normalized.works;
+    }
+    if (!Object.keys(normalized).length) return null;
+    return normalized;
+  };
+
+  const parseCueTime = (value) => {
+    if (Number.isFinite(Number(value))) return Number(value);
+    const asString = String(value ?? '').trim();
+    if (!asString) return null;
+    if (/^\d+:\d{2}(?::\d{2})?$/.test(asString)) {
+      const parts = asString.split(':').map((part) => Number(part));
+      if (parts.length === 2) return (parts[0] * 60) + parts[1];
+      if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+    }
+    return null;
+  };
+
+  const normalizeModuleMediaItems = (items, { docId, basePath }) => {
+    if (!Array.isArray(items)) return [];
+    return items.map((item, idx) => {
+      if (!item || typeof item !== 'object') return null;
+      const src = ensureString(item.src || item.url);
+      if (!src) {
+        warnings.push(`Doc "${docId}" media module item ${idx + 1} is missing src.`);
+        return null;
+      }
+      const alt = ensureString(item.alt);
+      if (!alt) {
+        warnings.push(`Doc "${docId}" media module item ${idx + 1} is missing alt text.`);
+      }
+      const caption = ensureString(item.caption);
+      const explicitType = ensureString(item.type).toLowerCase();
+      const inferredType = /\.(mp4|webm|ogg|mov|m4v)$/i.test(src) ? 'video' : 'image';
+      const type = explicitType === 'video' ? 'video' : (explicitType === 'image' ? 'image' : inferredType);
+      return {
+        src,
+        alt,
+        caption,
+        type,
+        path: basePath ? `${basePath}.items[${idx}]` : ''
+      };
+    }).filter(Boolean);
+  };
+
+  const normalizeModules = (input, { docId }) => {
+    if (!Array.isArray(input)) return [];
+    const normalized = [];
+    input.forEach((module, idx) => {
+      if (!module || typeof module !== 'object') return;
+      const type = ensureString(module.type).toLowerCase();
+      const title = ensureString(module.title);
+      const keyBase = `modules[${idx}]`;
+      if (!type) {
+        warnings.push(`Doc "${docId}" ${keyBase} is missing required "type".`);
+        return;
+      }
+
+      if (type === 'score') {
+        const pdf = ensureString(module.pdf);
+        if (!pdf) {
+          warnings.push(`Doc "${docId}" ${keyBase} (score) is missing required "pdf".`);
+          return;
+        }
+        const audio = ensureString(module.audio);
+        const cues = Array.isArray(module.cues) ? module.cues.map((cue, cueIdx) => {
+          if (!cue || typeof cue !== 'object') return null;
+          const label = ensureString(cue.label, `Cue ${cueIdx + 1}`);
+          const t = parseCueTime(cue.t ?? cue.time ?? cue.at);
+          if (t == null) {
+            warnings.push(`Doc "${docId}" ${keyBase}.cues[${cueIdx}] has invalid time.`);
+            return null;
+          }
+          const pageRaw = cue.page ?? cue.pdfPage;
+          const page = Number.isFinite(Number(pageRaw)) && Number(pageRaw) >= 1 ? Number(pageRaw) : null;
+          return { label, t, page };
+        }).filter(Boolean) : [];
+        normalized.push({
+          type,
+          title: title || 'Score',
+          pdf,
+          audio: audio || '',
+          pageFollow: module.pageFollow !== false,
+          cues
+        });
+        return;
+      }
+
+      if (type === 'media') {
+        const layout = ensureString(module.layout).toLowerCase();
+        const items = normalizeModuleMediaItems(module.items, { docId, basePath: keyBase });
+        if (!items.length) {
+          warnings.push(`Doc "${docId}" ${keyBase} (media) has no valid items.`);
+          return;
+        }
+        normalized.push({
+          type,
+          title: title || 'Media',
+          layout: layout === 'masonry' ? 'masonry' : 'grid',
+          items
+        });
+        return;
+      }
+
+      if (type === 'process') {
+        const steps = Array.isArray(module.steps) ? module.steps.map((step, stepIdx) => {
+          if (!step || typeof step !== 'object') return null;
+          const stepTitle = ensureString(step.title, `Step ${stepIdx + 1}`);
+          const bodyRaw = ensureString(step.body);
+          const body = bodyRaw ? renderMarkdown(bodyRaw).html : '';
+          const media = normalizeModuleMediaItems(step.media, { docId, basePath: `${keyBase}.steps[${stepIdx}].media` });
+          return { title: stepTitle, body, media };
+        }).filter(Boolean) : [];
+        if (!steps.length) {
+          warnings.push(`Doc "${docId}" ${keyBase} (process) has no valid steps.`);
+          return;
+        }
+        normalized.push({
+          type,
+          title: title || 'Process',
+          steps
+        });
+        return;
+      }
+
+      if (type === 'credits') {
+        const roles = Array.isArray(module.roles) ? module.roles.map((role, roleIdx) => {
+          if (!role || typeof role !== 'object') return null;
+          const roleLabel = ensureString(role.role, `Role ${roleIdx + 1}`);
+          const people = ensureArrayStrings(role.people);
+          if (!people.length) {
+            warnings.push(`Doc "${docId}" ${keyBase}.roles[${roleIdx}] has no people.`);
+            return null;
+          }
+          return { role: roleLabel, people };
+        }).filter(Boolean) : [];
+        if (!roles.length) {
+          warnings.push(`Doc "${docId}" ${keyBase} (credits) has no valid roles.`);
+          return;
+        }
+        normalized.push({
+          type,
+          title: title || 'Credits',
+          roles
+        });
+        return;
+      }
+
+      warnings.push(`Doc "${docId}" ${keyBase} uses unsupported module type "${type}" and was skipped.`);
+    });
+    return normalized;
+  };
+
   markdownSources.forEach(({ rel, abs }) => {
     const relPosix = rel.split('\\').join('/');
     const raw = readFileSafe(abs);
@@ -1997,6 +3111,14 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
     const rendered = renderMarkdown(body);
     const id = relPosix.replace(/\.md$/i, '');
     const url = `#/${id}`;
+    const status = ensureString(fmData.status).toLowerCase();
+    const updated = ensureString(fmData.updated);
+    const isNew = fmData.new === true || status === 'new';
+    const isUpdated = status === 'updated' || (!!updated && !isNew);
+    const tags = ensureArrayStrings(fmData.tags);
+    const modules = normalizeModules(fmData.modules, { docId: id });
+    const hero = normalizeHeroConfig(fmData.hero, id);
+    const breadcrumbs = normalizeDocBreadcrumbs(relPosix);
     const doc = {
       id,
       path: relPosix,
@@ -2006,6 +3128,14 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
       summary,
       headings: rendered.headings,
       html: rendered.html,
+      breadcrumbs,
+      tags,
+      hero,
+      modules,
+      meta: {
+        status: isNew ? 'new' : (isUpdated ? 'updated' : ''),
+        updated
+      },
       fm: fmData
     };
     docs.push(doc);
@@ -2031,6 +3161,11 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
         summary: works.length ? 'Browse the works catalogue.' : 'Auto-generated works listing.',
         headings: [],
         html: worksHtml,
+        breadcrumbs: [],
+        tags: [],
+        hero: null,
+        modules: [],
+        meta: { status: '', updated: '' },
         fm: {}
       };
       docs.push(worksDoc);
@@ -2104,6 +3239,7 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
   const nav = [];
   const usedDocIds = new Set();
   const docSearchGroup = new Map();
+  const docSearchGroupId = new Map();
 
   sectionsConfig.forEach((section) => {
     if (!section || section.hidden) return;
@@ -2120,9 +3256,17 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
         if (worksDoc) {
           const label = (page.title && page.title.trim()) || worksDoc.title;
           const snippet = (page.summary && page.summary.trim()) || worksDoc.summary || 'Works catalogue';
-          group.items.push({ id: worksDoc.id, label, href: worksDoc.url, snippet, docId: worksDoc.id });
+          group.items.push({
+            id: worksDoc.id,
+            label,
+            href: worksDoc.url,
+            snippet,
+            docId: worksDoc.id,
+            meta: { status: '', updated: '' }
+          });
           usedDocIds.add(worksDoc.id);
           docSearchGroup.set(worksDoc.id, group.label);
+          docSearchGroupId.set(worksDoc.id, group.id);
         }
         return;
       }
@@ -2133,9 +3277,17 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
       }
       usedDocIds.add(doc.id);
       docSearchGroup.set(doc.id, group.label);
+      docSearchGroupId.set(doc.id, group.id);
       const label = (page.title && page.title.trim()) || doc.title;
       const snippet = (page.summary && page.summary.trim()) || doc.summary || htmlToPlainText(doc.html).slice(0, 200);
-      group.items.push({ id: doc.id, label, href: doc.url, snippet, docId: doc.id });
+      group.items.push({
+        id: doc.id,
+        label,
+        href: doc.url,
+        snippet,
+        docId: doc.id,
+        meta: doc.meta || { status: '', updated: '' }
+      });
     });
     if (group.items.length) nav.push(group);
   });
@@ -2157,8 +3309,16 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
       autoGroups.set(groupId, { id: groupId, label: groupLabel, items: [] });
     }
     const snippet = doc.summary || htmlToPlainText(doc.html).slice(0, 200);
-    autoGroups.get(groupId).items.push({ id: doc.id, label: doc.title, href: doc.url, snippet, docId: doc.id });
+    autoGroups.get(groupId).items.push({
+      id: doc.id,
+      label: doc.title,
+      href: doc.url,
+      snippet,
+      docId: doc.id,
+      meta: doc.meta || { status: '', updated: '' }
+    });
     docSearchGroup.set(doc.id, groupLabel);
+    docSearchGroupId.set(doc.id, groupId);
   });
 
   Array.from(autoGroups.values())
@@ -2175,10 +3335,12 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
       label: worksDoc.title,
       href: worksDoc.url,
       snippet: worksDoc.summary || 'Works catalogue',
-      docId: worksDoc.id
+      docId: worksDoc.id,
+      meta: { status: '', updated: '' }
     }] };
     nav.push(group);
     docSearchGroup.set(worksDoc.id, group.label);
+    docSearchGroupId.set(worksDoc.id, groupId);
   }
 
   const homepageSource = (config.paths?.homepage || '').split('\\').join('/');
@@ -2202,25 +3364,85 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
   const siteDescription = config.site?.description?.trim() || '';
   const siteAccent = config.site?.accent?.trim() || '';
 
-  const searchIndex = docs.map((doc) => {
-    if (!doc) return null;
-    const snippet = doc.summary || htmlToPlainText(doc.html).slice(0, 200);
-    return {
-      title: doc.title,
-      url: doc.url,
-      snippet,
-      group: docSearchGroup.get(doc.id) || 'Docs',
-      docId: doc.id
-    };
-  }).filter(Boolean);
+  const searchSettings = config.search || {};
+  const requestedEngineRaw = ensureString(searchSettings.engine, 'auto').toLowerCase();
+  const requestedEngine = ['auto', 'light', 'fuse', 'none'].includes(requestedEngineRaw) ? requestedEngineRaw : 'auto';
+  const searchEnabled = searchSettings.enabled !== false && requestedEngine !== 'none';
+  const searchFields = Array.isArray(searchSettings.fields) && searchSettings.fields.length
+    ? searchSettings.fields.map((field) => String(field || '').toLowerCase()).filter(Boolean)
+    : ['title', 'headings', 'body', 'summary'];
+  const excludedSections = new Set(
+    Array.isArray(searchSettings.excludeSections)
+      ? searchSettings.excludeSections.map((id) => String(id || '').trim()).filter(Boolean)
+      : []
+  );
 
-  const ensureString = (value, fallback = '') => {
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      return trimmed.length ? trimmed : fallback;
-    }
-    return fallback;
-  };
+  const aggregateSearchBytes = docs.reduce((sum, doc) => {
+    if (!doc) return sum;
+    const text = `${doc.title || ''} ${doc.summary || ''} ${htmlToPlainText(doc.html || '')}`;
+    return sum + Buffer.byteLength(text, 'utf8');
+  }, 0);
+  const docCountForSearch = docs.filter((doc) => doc && doc.path !== 'works::auto').length;
+  const AUTO_DOC_THRESHOLD = 40;
+  const AUTO_BYTES_THRESHOLD = 250 * 1024;
+  let effectiveSearchEngine = requestedEngine;
+  if (!searchEnabled) {
+    effectiveSearchEngine = 'none';
+  } else if (requestedEngine === 'auto') {
+    effectiveSearchEngine = (docCountForSearch > AUTO_DOC_THRESHOLD || aggregateSearchBytes > AUTO_BYTES_THRESHOLD)
+      ? 'fuse'
+      : 'light';
+  } else if (!['light', 'fuse'].includes(requestedEngine)) {
+    effectiveSearchEngine = 'light';
+  }
+
+  const searchIndex = [];
+  if (effectiveSearchEngine !== 'none') {
+    docs.forEach((doc) => {
+      if (!doc) return;
+      const groupId = docSearchGroupId.get(doc.id) || '';
+      if (groupId && excludedSections.has(groupId)) return;
+      const group = docSearchGroup.get(doc.id) || 'Docs';
+      const snippet = doc.summary || htmlToPlainText(doc.html).slice(0, 220);
+      const bodyText = htmlToPlainText(doc.html);
+      const headingText = Array.isArray(doc.headings) ? doc.headings.map((h) => h.text).join(' ') : '';
+      const tokens = [];
+      if (searchFields.includes('title')) tokens.push(doc.title || '');
+      if (searchFields.includes('summary')) tokens.push(doc.summary || '');
+      if (searchFields.includes('body')) tokens.push(bodyText);
+      if (searchFields.includes('headings')) tokens.push(headingText);
+      if (searchFields.includes('tags') && Array.isArray(doc.tags)) tokens.push(doc.tags.join(' '));
+      const haystack = tokens.join(' ').trim();
+      if (!haystack) return;
+      searchIndex.push({
+        title: doc.title,
+        url: doc.url,
+        snippet,
+        group,
+        groupId,
+        docId: doc.id,
+        kind: 'doc',
+        headingId: '',
+        tokens: haystack
+      });
+      if (searchFields.includes('headings') && Array.isArray(doc.headings)) {
+        doc.headings.forEach((heading) => {
+          if (!heading || !heading.id || !heading.text) return;
+          searchIndex.push({
+            title: heading.text,
+            url: `${doc.url}?h=${encodeURIComponent(heading.id)}`,
+            snippet: doc.title,
+            group,
+            groupId,
+            docId: doc.id,
+            kind: 'heading',
+            headingId: heading.id,
+            tokens: `${heading.text} ${doc.title || ''} ${snippet || ''}`
+          });
+        });
+      }
+    });
+  }
 
   const heroData = (() => {
     const base = {
@@ -2321,6 +3543,14 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
       site: { title: siteTitle, subtitle: siteSubtitle, description: siteDescription, accent: siteAccent },
       nav,
       search: searchIndex,
+      searchConfig: {
+        enabled: effectiveSearchEngine !== 'none',
+        requestedEngine,
+        engine: effectiveSearchEngine,
+        fields: searchFields,
+        thresholds: { docs: AUTO_DOC_THRESHOLD, bytes: AUTO_BYTES_THRESHOLD },
+        stats: { docCount: docCountForSearch, bytes: aggregateSearchBytes }
+      },
       docs,
       homepage: homepageDoc ? homepageDoc.id : '',
       homepageMissing: !homepageDoc,
@@ -2383,11 +3613,17 @@ Supported skins:
   • kiosk (alias: presentation) — touch-first tiles for demos/galleries (oversized controls).
   • typefolio (alias: typography) — web-book reader: light header/footer, two-page spread, Caslon-style typography; portfolio actions intact.
   • typescatter (alias: posterboard) — type-only poster wall with draggable tiles; scatter → editorial grid toggle.
-Theme: light/dark via the built-in #wc-theme-toggle. No WAAPI.
+Theme: light/dark via the built-in #wc-theme-toggle.
+UI runtime:
+  • --ui-runtime vanilla (default)
+  • --ui-runtime react (vite-breeze, cards-tabs, kiosk, docs-reader; unsupported skins auto-fallback)
+  • --embed always uses vanilla fallback for CMS-friendly snippets.
 
 Narrative fields:
   • oneliner — optional single-line (~160 char) summary for tiles/lists. Markdown is stripped; newlines collapse.
   • description — optional Markdown body for detail views (paragraphs, headings, links allowed).
+  • cover — optional image URL used by visual skins.
+  • tags — optional string[] labels used by visual skins.
     Legacy projects without an oneliner keep working: compact views auto-derive from description/title.
 
 Validation:
@@ -2404,6 +3640,7 @@ Examples:
   $ prae generate --skin kiosk
   $ prae generate --skin typefolio
   $ prae generate --skin typescatter
+  $ prae generate --skin vite-breeze --ui-runtime react
 
   # Deep link the second spread of work ID 7:
   # (0-based pageIndex if you used p)
@@ -2644,6 +3881,7 @@ program
   .action(async () => {
     const cfg = loadConfig();
     const s0  = cfg.site || DEFAULT_CONFIG.site;
+    const b0 = normalizeBranding(cfg.ui?.branding || {}, { strict: false });
 
     const base = await prompt([
       { type:'input', name:'firstName', message:'First name', initial: s0.firstName },
@@ -2672,6 +3910,13 @@ program
       updated.value = d.value || '';
     }
 
+    const attributionPrompt = await prompt({
+      type: 'confirm',
+      name: 'enabled',
+      message: 'Show Powered by Praetorius attribution?',
+      initial: b0.attribution.enabled !== false
+    });
+
     // Links
     const links = [];
     let more = true;
@@ -2696,6 +3941,12 @@ program
     // Save
     const next = {
       ...cfg,
+      ui: {
+        ...(cfg.ui || {}),
+        branding: {
+          attribution: { enabled: attributionPrompt.enabled !== false }
+        }
+      },
       site: {
         ...s0,
         firstName: base.firstName.trim(),
@@ -3330,6 +4581,7 @@ async function runDocsWizard(opts = {}, meta = {}) {
   let search = { ...docsConfig.search };
   if (forcedSearch) {
     if (forcedSearch === 'none') search = { ...search, enabled: false, engine: 'none' };
+    else if (forcedSearch === 'auto') search = { ...search, enabled: true, engine: 'auto' };
     else search = { ...search, enabled: true, engine: forcedSearch === 'fuse' ? 'fuse' : 'light' };
   }
   if (forcedFields.length) {
@@ -3345,10 +4597,11 @@ async function runDocsWizard(opts = {}, meta = {}) {
         name: 'engine',
         message: 'Search indexer',
         choices: [
+          { name: 'auto', message: 'Auto (light for small docs, fuzzy for larger sets)' },
           { name: 'light', message: 'Lightweight keywords' },
-          { name: 'fuse', message: 'Fuse.js (fuzzy)' }
+          { name: 'fuse', message: 'Fuzzy ranking (force on)' }
         ],
-        initial: search.engine === 'fuse' ? 'fuse' : 'light'
+        initial: search.engine === 'fuse' ? 'fuse' : (search.engine === 'auto' ? 'auto' : 'light')
       });
       search.engine = engineAns.engine;
       const fieldAns = await prompt({
@@ -3573,7 +4826,7 @@ if (!program.commands.some(cmd => cmd.name() === 'docs')) {
     .option('--docs-scan <globs>', 'Comma-separated markdown globs to include', '')
     .option('--docs-home <source>', 'Homepage source (README.md, file path, or section slug)', '')
     .option('--docs-works <modes>', 'Works integration (nav,home,skip,auto,internal,external)', '')
-    .option('--docs-search <engine>', 'Search engine (light|fuse|none)', '')
+    .option('--docs-search <engine>', 'Search engine (auto|light|fuse|none)', '')
     .option('--docs-fields <fields>', 'Comma-separated search fields', '')
     .option('--docs-alt-policy <policy>', 'Alt text policy (require|warn|auto)', '')
     .option('--docs-tabs <mode>', 'Code tabs mode (off|fence|snippets)', '')
@@ -3607,6 +4860,8 @@ program
         { type: 'input', name: 'description', message: 'Long description (Markdown, optional)' },
         { type: 'input', name: 'audio', message: 'Audio URL (optional; leave blank if none)' },
         { type: 'input', name: 'pdf',   message: 'Score PDF URL (optional)' },
+        { type: 'input', name: 'cover', message: 'Cover image URL (optional)' },
+        { type: 'input', name: 'tags',  message: 'Tags (comma separated, optional)' },
       ]);
 
       const cues = [];
@@ -3673,6 +4928,8 @@ program
         description: base.description,
         audio: base.audio?.trim() || null,
         pdf: base.pdf?.trim() || null,
+        cover: base.cover?.trim() || null,
+        tags: parseTagsInput(base.tags),
         cues,
         ...(score ? { score } : {})
       };
@@ -3727,6 +4984,10 @@ program
       console.log('   ' + pc.dim(summary) + pc.gray(`   [order=${idx+1}]`));
       if (normalized.audio) console.log('   audio: ' + pc.gray(normalized.audio));
       if (normalized.pdf)   console.log('   pdf:   ' + pc.gray(normalized.pdf));
+      if (normalized.cover) console.log('   cover: ' + pc.gray(normalized.cover));
+      if (Array.isArray(normalized.tags) && normalized.tags.length) {
+        console.log('   tags:  ' + pc.gray(normalized.tags.join(', ')));
+      }
       if (w.cues?.length) {
         const cs = w.cues.map(c => `${c.label}=${c.t}s`).join(', ');
         console.log('   cues:  ' + pc.gray(cs));
@@ -3793,6 +5054,8 @@ program
   .option('--description <str>', 'Set description (Markdown)')
   .option('--audio <url>', 'Set audio URL (or empty to clear)')
   .option('--pdf <url>',   'Set score PDF URL (or empty to clear)')
+  .option('--cover <url>', 'Set cover image URL (or empty to clear)')
+  .option('--tags <list>', 'Set tags (comma-separated; empty to clear)')
   .option('--no-cues',     'Do not edit cues interactively')
   .option('--no-score',    'Do not edit score/page-follow interactively')
   .action(async (id, opts) => {
@@ -3808,11 +5071,13 @@ program
     if ('description' in opts) work.description = opts.description;
     if ('audio' in opts) work.audio = (opts.audio === '' ? null : opts.audio);
     if ('pdf'   in opts) work.pdf   = (opts.pdf   === '' ? null : opts.pdf);
+    if ('cover' in opts) work.cover = (opts.cover === '' ? null : opts.cover);
+    if ('tags' in opts) work.tags = parseTagsInput(opts.tags);
     Object.assign(work, sanitizeNarrativeFields(work).sanitized);
 
     // If no flags changed anything, run wizard
     const changedViaFlags =
-      !!(opts.title || opts.slug || opts.one || opts.oneliner || 'description' in opts || 'audio' in opts || 'pdf' in opts);
+      !!(opts.title || opts.slug || opts.one || opts.oneliner || 'description' in opts || 'audio' in opts || 'pdf' in opts || 'cover' in opts || 'tags' in opts);
     if (!changedViaFlags) {
       const base = await prompt([
         { type: 'input', name: 'title', message: 'Title', initial: work.title },
@@ -3820,7 +5085,9 @@ program
         { type: 'input', name: 'oneliner', message: 'Oneliner (optional, one sentence)', initial: work.oneliner || '' },
         { type: 'input', name: 'description', message: 'Long description (Markdown, optional)', initial: work.description || '' },
         { type: 'input', name: 'audio', message: 'Audio URL (blank to clear)', initial: work.audio || '' },
-        { type: 'input', name: 'pdf',   message: 'Score PDF URL (blank to clear)', initial: work.pdf || '' }
+        { type: 'input', name: 'pdf',   message: 'Score PDF URL (blank to clear)', initial: work.pdf || '' },
+        { type: 'input', name: 'cover', message: 'Cover image URL (blank to clear)', initial: work.cover || '' },
+        { type: 'input', name: 'tags',  message: 'Tags (comma-separated; blank to clear)', initial: Array.isArray(work.tags) ? work.tags.join(', ') : '' }
       ]);
       work.title = base.title.trim();
       work.slug  = base.slug.trim();
@@ -3828,6 +5095,8 @@ program
       work.description = base.description;
       work.audio = base.audio.trim() || null;
       work.pdf   = base.pdf.trim()   || null;
+      work.cover = base.cover.trim() || null;
+      work.tags = parseTagsInput(base.tags);
       const normalizedNarrative = sanitizeNarrativeFields(work);
       Object.assign(work, normalizedNarrative.sanitized);
       if (!base.oneliner?.trim()) {
@@ -4225,7 +5494,7 @@ program
     }
     if (fmt === 'csv') {
       // Stable columns; JSON-encode nested
-      const cols = ['id','slug','title','one','oneliner','description','audio','pdf','cues_json','score_json'];
+      const cols = ['id','slug','title','one','oneliner','description','audio','pdf','cover','tags_csv','cues_json','score_json'];
       const lines = [];
       lines.push(cols.join(','));
       for (const w of db.works||[]) {
@@ -4239,6 +5508,8 @@ program
           (view.description ?? '').replaceAll('"','""'),
           (view.audio ?? '').replaceAll('"','""'),
           (view.pdf ?? '').replaceAll('"','""'),
+          (view.cover ?? '').replaceAll('"','""'),
+          (Array.isArray(view.tags) ? view.tags.join(', ') : '').replaceAll('"','""'),
           JSON.stringify(view.cues ?? []).replaceAll('"','""'),
           JSON.stringify(view.score ?? null).replaceAll('"','""'),
         ].map(v => `"${String(v)}"`);
@@ -4285,9 +5556,19 @@ program
     if (dupIds.size)  errors.push({ type: 'duplicate', where: 'id',   msg: `duplicate ids: ${[...dupIds].join(', ')}` });
     if (dupSlugs.size)errors.push({ type: 'duplicate', where: 'slug', msg: `duplicate slugs: ${[...dupSlugs].join(', ')}` });
 
-    // config validation (theme only)
+    // config validation
     if (!(cfg.theme === 'light' || cfg.theme === 'dark')) {
       errors.push({ type: 'config', where: 'theme', msg: 'theme must be "light" or "dark"' });
+    }
+    try {
+      normalizeAppearance(cfg.ui?.appearance || {}, { strict: true });
+    } catch (err) {
+      errors.push({ type: 'config', where: 'ui.appearance', msg: err?.message || 'invalid appearance settings' });
+    }
+    try {
+      normalizeBranding(cfg.ui?.branding || {}, { strict: true });
+    } catch (err) {
+      errors.push({ type: 'config', where: 'ui.branding', msg: err?.message || 'invalid branding settings' });
     }
 
     const dbOk = errors.length === 0;
@@ -4297,8 +5578,9 @@ program
       console.log(JSON.stringify(report, null, 2));
     } else {
       if (dbOk && !opts.quiet) {
+        const appearance = normalizeAppearance(cfg.ui?.appearance || {}, { strict: false });
         console.log(pc.green('doctor: OK'));
-        console.log(pc.gray(`works: ${db.works?.length || 0}, theme: ${cfg.theme}, minify:${cfg.output.minify}, embed:${cfg.output.embed}`));
+        console.log(pc.gray(`works: ${db.works?.length || 0}, theme: ${cfg.theme}, palette:${appearance.theme.palette}, cursor:${appearance.cursor.preset}, hover:${appearance.effects.hover}, button:${appearance.effects.button}, minify:${cfg.output.minify}, embed:${cfg.output.embed}`));
       } else if (!dbOk) {
         console.log(pc.red('doctor: issues found'));
         errors.forEach(e => console.log(`  - ${e.type} ${pc.gray(e.where)}: ${e.msg}`));
@@ -4358,10 +5640,16 @@ program
   .option('--watch', 'watch .prae/{works,config}.json and regenerate on changes', false)
   .option('--ui-src <dir>', 'UI source dir containing template.html/main.js/style.css', 'ui')
   .option('--skin <name>',  'UI skin key (overrides .prae/config.json ui.skin). Supported: vite-breeze — Liquid Glass portfolio shell; docs-reader (alias: docs) — spacious docs UI; cards-tabs (alias: dashboard) — portfolio dashboard; kiosk (alias: presentation) — touch-first tiles; typescatter (alias: posterboard) — type-only poster wall with drag + scatter/grid toggle. All skins render PRAE.works only.', '')
+  .option('--ui-runtime <runtime>', 'UI runtime for supported skins (vanilla|react). React is available for vite-breeze, cards-tabs, kiosk, and docs-reader.', 'vanilla')
+  .option('--palette <name>', `appearance palette (${APPEARANCE_PALETTES.join('|')})`)
+  .option('--cursor <preset>', `cursor preset (${CURSOR_PRESETS.join('|')})`)
+  .option('--hover-effect <preset>', `hover effect preset (${EFFECT_PRESETS.join('|')})`)
+  .option('--button-effect <preset>', `button effect preset (${EFFECT_PRESETS.join('|')})`)
+  .option('--mono-color <value>', 'mono-one base color (HEX or oklch(L C H))')
   .option('--html <file>',  'template HTML filename within --ui-src', 'template.html')
   .option('--app-js <file>','UI JS output filename', 'app.js')
   .option('--app-css <file>','UI CSS output filename', 'app.css')
-  .option('--no-ui',        'skip building UI (HTML/JS/CSS) even if present', false)
+  .option('--no-ui',        'skip building UI (HTML/JS/CSS) even if present')
   .option('--seed <mode>', 'starter content seeding (auto|always|never)', 'auto')
   .option('--allow-fallback', 'Use starter seed when validation fails (prints warning banner)', false)
 
@@ -4380,16 +5668,68 @@ program
       console.log(pc.red(`Invalid --seed mode "${opts.seed}". Use auto, always, or never.`));
       process.exit(1);
     }
+    const requestedUiRuntime = normalizeUiRuntime(opts.uiRuntime);
+    if (!requestedUiRuntime) {
+      console.log(pc.red(`Invalid --ui-runtime "${opts.uiRuntime}". Use: ${UI_RUNTIMES.join(', ')}.`));
+      process.exit(1);
+    }
+    const appearanceOverrides = {
+      palette: opts.palette,
+      cursor: opts.cursor,
+      hoverEffect: opts.hoverEffect,
+      buttonEffect: opts.buttonEffect,
+      monoColor: opts.monoColor
+    };
 
     const buildOnce = async () => {
       try { fs.rmSync(outDir, { recursive: true, force: true }); } catch {}
       fs.mkdirSync(outDir, { recursive: true });
 
       const cfg = loadConfig();
+      let effectiveAppearance;
+      let effectiveBranding;
+      try {
+        effectiveAppearance = resolveAppearanceForGenerate(cfg.ui?.appearance || DEFAULT_APPEARANCE, appearanceOverrides);
+        effectiveBranding = normalizeBranding(cfg.ui?.branding || DEFAULT_BRANDING, { strict: true });
+      } catch (err) {
+        console.log(pc.red(err?.message || String(err)));
+        if (!opts.watch) process.exit(1);
+        process.exitCode = 1;
+        return false;
+      }
+      const brandRoot = findBrandRoot(uiSrcDir, pkgUiDir);
+      const brandCss = readBrandCss(brandRoot);
+      const brandCssEmbed = readBrandCss(brandRoot, { embed: true });
       const requestedSkinRaw = String(opts.skin || cfg.ui?.skin || 'console').trim();
       const normalizedSkin = requestedSkinRaw.toLowerCase();
       const builtinSkin = resolveBuiltinSkinKey(normalizedSkin);
       const effectiveSkin = builtinSkin || (normalizedSkin || 'console');
+      const runtimeResolution = resolveUiRuntimeForSkin(effectiveSkin, requestedUiRuntime);
+      const uiRuntime = runtimeResolution.runtime;
+      if (runtimeResolution.warned) {
+        console.log(pc.yellow(`--ui-runtime=react is not supported for skin "${effectiveSkin}" yet. Falling back to vanilla.`));
+      }
+      let runtimeAppearance = effectiveAppearance;
+      if (effectiveSkin === 'console') {
+        runtimeAppearance = {
+          theme: {
+            palette: effectiveAppearance.theme.palette,
+            monoBaseOklch: effectiveAppearance.theme.monoBaseOklch
+          },
+          cursor: { preset: DEFAULT_APPEARANCE.cursor.preset },
+          effects: {
+            hover: DEFAULT_APPEARANCE.effects.hover,
+            button: DEFAULT_APPEARANCE.effects.button
+          }
+        };
+        if (
+          effectiveAppearance.cursor.preset !== DEFAULT_APPEARANCE.cursor.preset ||
+          effectiveAppearance.effects.hover !== DEFAULT_APPEARANCE.effects.hover ||
+          effectiveAppearance.effects.button !== DEFAULT_APPEARANCE.effects.button
+        ) {
+          console.log(pc.gray('console skin uses palette + mode only; cursor and hover/button effect presets are ignored.'));
+        }
+      }
       const detection = await detectWorksState({ skin: effectiveSkin, config: cfg });
       const shouldAutoSeed = await shouldSeed({ skin: effectiveSkin, contentDir: detection.resolvedDir, config: cfg });
       let doSeed = false;
@@ -4457,6 +5797,8 @@ program
       const runtimeOpts = {
         worksOverride: fallbackWorks,
         theme: cfg.theme,
+        appearance: runtimeAppearance,
+        branding: effectiveBranding,
         site: cfg.site,
         source: dataSource,
         seeded: dataSource === 'seed',
@@ -4479,11 +5821,64 @@ program
         js  = minJS.code; css = minCSS.code;
       }
       if (opts.embed) {
+        const embedFallbackSkins = new Set(['vite-breeze', 'cards-tabs', 'kiosk', 'docs-reader']);
+        if (embedFallbackSkins.has(effectiveSkin)) {
+          if (uiRuntime === 'react') {
+            console.log(pc.gray(`Embed requested for ${effectiveSkin} with --ui-runtime=react → using vanilla ${effectiveSkin} fallback.`));
+          }
+          const htmlName = opts.html || 'template.html';
+          const skinRoots = [
+            path.join(uiSrcDir, 'skins', effectiveSkin),
+            path.join(pkgUiDir, 'skins', effectiveSkin)
+          ];
+          const embedRoot = skinRoots.find((dir) => existsFile(path.join(dir, htmlName)));
+          const skinLabelByKey = {
+            'vite-breeze': 'Vite Breeze',
+            'cards-tabs': 'Cards-Tabs',
+            'kiosk': 'Kiosk',
+            'docs-reader': 'Docs Reader'
+          };
+          const skinLabel = skinLabelByKey[effectiveSkin] || effectiveSkin;
+          if (embedRoot) {
+            const tplIn = path.join(embedRoot, htmlName);
+            const styleIn = path.join(embedRoot, 'style.css');
+            const mainIn = path.join(embedRoot, 'main.js');
+            const bodyHtml = extractBodyInnerHtml(fs.readFileSync(tplIn, 'utf8'));
+            const skinCss = existsFile(styleIn) ? fs.readFileSync(styleIn, 'utf8') : '';
+            const skinJs = existsFile(mainIn) ? fs.readFileSync(mainIn, 'utf8') : '';
+            const themeClass = (loadConfig().theme === 'light') ? 'prae-theme-light' : 'prae-theme-dark';
+            const prelude = `(function(){var b=document.body; if(!b) return; b.classList.remove('prae-theme-light','prae-theme-dark'); b.classList.add('${themeClass}');})();`;
+            const html = [
+              `<!-- Praetorius embed: ${skinLabel} (vanilla fallback for CMS) -->`,
+              '<style>', css, '</style>',
+              brandCssEmbed ? '<style>' : '',
+              brandCssEmbed || '',
+              brandCssEmbed ? '</style>' : '',
+              '<style>', skinCss, '</style>',
+              `<div id="prae-${effectiveSkin}-embed">`,
+              bodyHtml,
+              '</div>',
+              '<script>', prelude, '</script>',
+              '<script>', js, '</script>',
+              '<script>', skinJs, '</script>',
+              ''
+            ].join('\n');
+            const htmlPath = path.join(outDir, 'embed.html');
+            atomicWriteFile(htmlPath, html);
+            console.log(pc.green('write ') + pc.dim(cwdRel(htmlPath)));
+            console.log(pc.gray(`Using data: source=${runtimePayload.source}, count=${runtimePayload.count}`));
+            return true;
+          }
+          console.log(pc.yellow(`${skinLabel} embed fallback skin files not found; using generic embed renderer.`));
+        }
         const themeClass = (loadConfig().theme === 'light') ? 'prae-theme-light' : 'prae-theme-dark';
         const prelude = `(function(){var h=document.querySelector('#works-console')||document.body;h.classList.remove('prae-theme-light','prae-theme-dark');h.classList.add('${themeClass}');})();`;
         const html = [
           '<!-- Praetorius embed: paste into a Squarespace Code block -->',
           '<style>', css, '</style>',
+          brandCssEmbed ? '<style>' : '',
+          brandCssEmbed || '',
+          brandCssEmbed ? '</style>' : '',
           '<script>', prelude, '</script>',
           '<script>', js, '</script>',
           '<script>', EMBED_RENDER, '</script>',
@@ -4510,14 +5905,18 @@ program
       // -------- UI bundle (template.html + main.js + style.css) ----------
       let docsData = null;
       let docsWarnings = [];
-
       let chosenSkin = builtinSkin || (normalizedSkin || 'console');
-      if (!opts.noUi) {
+      let chosenSkinVariant = chosenSkin;
+      let appliedUiRuntime = 'vanilla';
+      const skipUiBuild = opts.noUi === true || opts.ui === false;
+      if (!skipUiBuild) {
         // Prefer project UI dir; fall back to packaged /ui
         const htmlName = opts.html || 'template.html';
         const candidateSkinKeys = [];
-        if (builtinSkin) candidateSkinKeys.push(builtinSkin);
-        else if (normalizedSkin) candidateSkinKeys.push(normalizedSkin);
+        const requestedSkin = builtinSkin || (normalizedSkin || 'console');
+        const requestedVariant = resolveSkinUiVariant(requestedSkin, uiRuntime);
+        if (requestedVariant) candidateSkinKeys.push(requestedVariant);
+        if (requestedVariant !== requestedSkin) candidateSkinKeys.push(requestedSkin);
         if (!candidateSkinKeys.includes('console')) candidateSkinKeys.push('console');
 
         let uiRoot = null;
@@ -4529,7 +5928,8 @@ program
           ];
           const found = skinRoots.find(d => existsFile(path.join(d, htmlName)));
           if (found) {
-            chosenSkin = skinName;
+            chosenSkinVariant = skinName;
+            chosenSkin = skinName.endsWith('-react') ? skinName.slice(0, -'-react'.length) : skinName;
             uiRoot = found;
             break;
           }
@@ -4541,9 +5941,11 @@ program
           if (!chosenSkin) {
             chosenSkin = candidateSkinKeys[0] || 'console';
           }
+          chosenSkinVariant = chosenSkin;
         }
 
         if (uiRoot) {
+          appliedUiRuntime = chosenSkinVariant.endsWith('-react') ? 'react' : 'vanilla';
           if (chosenSkin === 'docs-reader' && !fs.existsSync(DOCS_CONFIG_PATH)) {
             try {
               await runDocsWizard({}, { autoTriggered: true });
@@ -4565,10 +5967,10 @@ program
             });
           }
           const tplIn   = path.join(uiRoot, htmlName);
-          const mainIn  = path.join(uiRoot, 'main.js');
+          const mainIn  = resolveUiMainEntry(uiRoot);
           const styleIn = path.join(uiRoot, 'style.css');
           const haveTpl   = existsFile(tplIn);
-          const haveMain  = existsFile(mainIn);
+          const haveMain  = !!mainIn;
           const haveStyle = existsFile(styleIn);
 
           // haveTpl is guaranteed true here, but keep the guard for safety
@@ -4581,10 +5983,38 @@ program
             let appJsCode = '';
             let appCssCode = '';
             if (haveMain) {
-              appJsCode = fs.readFileSync(mainIn, 'utf8');
-              if (wantMin) {
-                const esb = await lazyEsbuild();
-                appJsCode = (await esb.transform(appJsCode, { loader:'js', minify:true, legalComments:'none' })).code;
+              const esb = await lazyEsbuild();
+              const isReactBundle = chosenSkinVariant.endsWith('-react');
+              if (isReactBundle) {
+                const bundleResult = await esb.build({
+                  entryPoints: [mainIn],
+                  bundle: true,
+                  format: 'esm',
+                  platform: 'browser',
+                  target: ['es2020'],
+                  minify: !!wantMin,
+                  legalComments: 'none',
+                  write: false,
+                  loader: {
+                    '.js': 'js',
+                    '.jsx': 'jsx',
+                    '.ts': 'ts',
+                    '.tsx': 'tsx'
+                  }
+                });
+                const bundledJs = (bundleResult.outputFiles || []).find((file) => file.path.endsWith('.js'))
+                  || (bundleResult.outputFiles || [])[0];
+                appJsCode = bundledJs ? bundledJs.text : '';
+                if (!appJsCode) {
+                  throw new Error(`Could not bundle UI runtime entry: ${cwdRel(mainIn)}`);
+                }
+              } else {
+                appJsCode = fs.readFileSync(mainIn, 'utf8');
+                if (wantMin) {
+                  const ext = path.extname(mainIn).toLowerCase();
+                  const loader = ext === '.jsx' ? 'jsx' : (ext === '.ts' ? 'ts' : (ext === '.tsx' ? 'tsx' : 'js'));
+                  appJsCode = (await esb.transform(appJsCode, { loader, minify: true, legalComments: 'none' })).code;
+                }
               }
               const appJsOut = path.join(outDir, appJsFileName);
               atomicWriteFile(appJsOut, appJsCode);
@@ -4612,10 +6042,18 @@ program
                 console.log(pc.green('copy ') + pc.dim(`${cwdRel(srcDir)} → ${cwdRel(destDir)}`));
               }
             }
+            if (brandRoot) {
+              const brandOut = path.join(outDir, 'brand');
+              copyDirSync(brandRoot, brandOut);
+              console.log(pc.green('copy ') + pc.dim(`${cwdRel(brandRoot)} → ${cwdRel(brandOut)}`));
+            }
 
           // Build dist/index.html by injecting links/scripts before </body>
           let html = fs.readFileSync(tplIn, 'utf8')
-            .replace('<html', `<html data-skin="${chosenSkin}"`);
+            .replace(
+              '<html',
+              `<html data-skin="${chosenSkin}" data-ui-runtime="${appliedUiRuntime}" data-theme="${cfg.theme === 'light' ? 'light' : 'dark'}" data-palette="${runtimeAppearance.theme.palette}" data-cursor="${runtimeAppearance.cursor.preset}" data-hover-effect="${runtimeAppearance.effects.hover}" data-button-effect="${runtimeAppearance.effects.button}" data-brand-system="${BRAND_SYSTEM_VERSION}" data-brand-attribution="${effectiveBranding.attribution.enabled ? 'on' : 'off'}"`
+            );
 
           if (docsData) {
             const titleText = docsData.site?.title || 'Praetorius Docs';
@@ -4644,6 +6082,7 @@ program
             }
           }
           const injParts = [
+            brandCss ? '<link rel="stylesheet" href="./brand/brand.css">' : '',
             `<link rel="stylesheet" href="./${cssFile}">`
           ];
           if (haveStyle) injParts.push(`<link rel="stylesheet" href="./${appCssFileName}">`);
@@ -4672,7 +6111,7 @@ program
         }
       }
         console.log(pc.gray(`Using data: source=${runtimePayload.source}, count=${runtimePayload.count}`));
-        console.log(pc.bold(`Generated ${chosenSkin} to ${cwdRel(outDir)} (works: ${worksCount}, seeded: ${seedWasApplied ? 'yes' : 'no'})`));
+        console.log(pc.bold(`Generated ${chosenSkin} (${appliedUiRuntime}) to ${cwdRel(outDir)} (works: ${worksCount}, seeded: ${seedWasApplied ? 'yes' : 'no'})`));
       return true; // end buildOnce success
     }; // <-- end buildOnce
 

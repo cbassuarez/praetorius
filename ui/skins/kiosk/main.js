@@ -1,5 +1,46 @@
 const PRAE_THEME_STORAGE_KEY = 'wc.theme';
 const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
+const OPERATOR_STORAGE_KEY = 'prae.kiosk.operator.v1';
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+const ATTRACT_DEFAULTS = Object.freeze({
+  attractMode: 'visual-only',
+  density: 'balanced',
+  motion: 'standard'
+});
+const ATTRACT_MODES = new Set(['off', 'visual-only', 'visual-muted', 'full-autoplay']);
+const DENSITY_PRESETS = new Set(['comfort', 'balanced', 'dense']);
+const MOTION_PRESETS = new Set(['low', 'standard', 'high']);
+
+const HEROICONS_BASE = './lib/heroicons/24/outline';
+const HEROICON_FILE_MAP = Object.freeze({
+  sun: 'sun',
+  moon: 'moon',
+  play: 'play',
+  pause: 'pause',
+  link: 'link',
+  document: 'document-text',
+  eye: 'eye',
+  arrowUpRight: 'arrow-up-right',
+  arrowsPointingOut: 'arrows-pointing-out',
+  arrowsPointingIn: 'arrows-pointing-in',
+  arrowPath: 'arrow-path',
+  sparkles: 'sparkles',
+  xMark: 'x-mark'
+});
+
+function icon(name, className = 'k-icon') {
+  const file = HEROICON_FILE_MAP[name] || HEROICON_FILE_MAP.sparkles;
+  return `<img class="${className}" src="${HEROICONS_BASE}/${file}.svg" alt="" aria-hidden="true" loading="lazy" decoding="async">`;
+}
+
+function prefersReducedMotion() {
+  try {
+    return window.matchMedia && window.matchMedia(REDUCED_MOTION_QUERY).matches;
+  } catch (_) {
+    return false;
+  }
+}
 
 function praeNormalizeTheme(value) {
   return value === 'light' ? 'light' : 'dark';
@@ -43,6 +84,11 @@ function praeSyncThemeOnDom(mode) {
 
 function praeApplyTheme(mode, opts) {
   const eff = praeSyncThemeOnDom(mode);
+  try {
+    if (window.PRAE && typeof window.PRAE.applyAppearanceMode === 'function') {
+      window.PRAE.applyAppearanceMode(eff, { persist: false });
+    }
+  } catch (_) {}
   if (!opts || opts.persist !== false) {
     try { localStorage.setItem(PRAE_THEME_STORAGE_KEY, eff); } catch (_) {}
   }
@@ -50,7 +96,7 @@ function praeApplyTheme(mode, opts) {
   if (btn) {
     btn.setAttribute('aria-checked', String(eff === 'dark'));
     btn.dataset.mode = eff;
-    btn.textContent = eff === 'dark' ? '🌙' : '☀️';
+    btn.innerHTML = eff === 'dark' ? icon('sun') : icon('moon');
     btn.title = eff === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   }
   return eff;
@@ -111,7 +157,17 @@ const state = {
   detail: { container: null, progress: null, play: null, pdf: null },
   live: null,
   attract: { timer: null, loop: null, index: 0, active: false },
-  controls: null
+  controls: null,
+  modeChip: null,
+  operator: {
+    menu: null,
+    body: null,
+    hotspot: null,
+    open: false,
+    touchTimer: null,
+    settings: { ...ATTRACT_DEFAULTS }
+  },
+  attractPreview: { id: null, audio: null, cleanupTimer: null }
 };
 
 function ready(fn) {
@@ -129,6 +185,159 @@ function esc(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function normalizeTagList(value) {
+  if (Array.isArray(value)) {
+    return value.map((tag) => String(tag || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((tag) => tag.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeCoverUrl(work) {
+  const raw = work && typeof work === 'object' ? (work.cover ?? work.coverUrl ?? null) : null;
+  if (raw == null) return '';
+  return String(raw).trim();
+}
+
+function coverMarkup(work, className = 'kiosk-cover') {
+  const cover = normalizeCoverUrl(work);
+  if (cover) {
+    return `<figure class="${className}"><img src="${esc(cover)}" alt="${esc((work?.title || 'Work') + ' cover')}" loading="lazy" decoding="async"></figure>`;
+  }
+  return '';
+}
+
+function buttonMarkup(iconName, label) {
+  return `${icon(iconName)}<span>${esc(label)}</span>`;
+}
+
+function normalizeOperatorSettings(value) {
+  const input = value && typeof value === 'object' ? value : {};
+  const attractMode = ATTRACT_MODES.has(input.attractMode) ? input.attractMode : ATTRACT_DEFAULTS.attractMode;
+  const density = DENSITY_PRESETS.has(input.density) ? input.density : ATTRACT_DEFAULTS.density;
+  const motion = MOTION_PRESETS.has(input.motion) ? input.motion : ATTRACT_DEFAULTS.motion;
+  return { attractMode, density, motion };
+}
+
+function readOperatorSettings() {
+  try {
+    const raw = localStorage.getItem(OPERATOR_STORAGE_KEY);
+    if (!raw) return { ...ATTRACT_DEFAULTS };
+    const parsed = JSON.parse(raw);
+    return normalizeOperatorSettings(parsed);
+  } catch (_) {
+    return { ...ATTRACT_DEFAULTS };
+  }
+}
+
+function saveOperatorSettings(settings) {
+  try {
+    localStorage.setItem(OPERATOR_STORAGE_KEY, JSON.stringify(settings));
+  } catch (_) {}
+}
+
+function stopAttractPreview() {
+  const preview = state.attractPreview;
+  if (!preview) return;
+  if (preview.id != null) {
+    markTileState(preview.id, { playing: false });
+  }
+  if (preview.audio) {
+    try {
+      preview.audio.pause();
+      preview.audio.currentTime = 0;
+      preview.audio.muted = false;
+      preview.audio.volume = 1;
+    } catch (_) {}
+  }
+  if (preview.cleanupTimer) {
+    clearTimeout(preview.cleanupTimer);
+    preview.cleanupTimer = null;
+  }
+  preview.id = null;
+  preview.audio = null;
+}
+
+function updateModeChip() {
+  const modeChip = state.modeChip || document.getElementById('kiosk-mode-chip');
+  if (!modeChip) return;
+  state.modeChip = modeChip;
+  const settings = state.operator.settings;
+  const modeLabel = {
+    off: 'Attract Off',
+    'visual-only': 'Attract Visual',
+    'visual-muted': 'Attract Muted',
+    'full-autoplay': 'Attract Autoplay'
+  }[settings.attractMode] || 'Attract Visual';
+  const densityLabel = {
+    comfort: 'Comfort',
+    balanced: 'Balanced',
+    dense: 'Dense'
+  }[settings.density] || 'Balanced';
+  const motionLabel = {
+    low: 'Low Motion',
+    standard: 'Standard Motion',
+    high: 'High Motion'
+  }[settings.motion] || 'Standard Motion';
+  modeChip.textContent = `${modeLabel} · ${densityLabel} · ${motionLabel}`;
+}
+
+function applyOperatorSettings(next, opts = {}) {
+  const normalized = normalizeOperatorSettings(next);
+  state.operator.settings = normalized;
+  const body = document.body;
+  if (body) {
+    body.dataset.attractMode = normalized.attractMode;
+    body.dataset.density = normalized.density;
+    body.dataset.motion = normalized.motion;
+  }
+  updateModeChip();
+  if (opts.persist !== false) {
+    saveOperatorSettings(normalized);
+  }
+  if (normalized.attractMode === 'off') {
+    stopAttract();
+    clearTimeout(state.attract.timer);
+  } else if (opts.resetAttract !== false) {
+    resetAttract();
+  }
+}
+
+function applyTilePointerMotion(tile) {
+  if (!tile || prefersReducedMotion()) return;
+  let raf = 0;
+  let sweepTimer = null;
+  const triggerSheen = () => {
+    tile.style.setProperty('--tile-sheen', '-40%');
+    requestAnimationFrame(() => {
+      tile.style.setProperty('--tile-sheen', '132%');
+    });
+  };
+  tile.addEventListener('mouseenter', () => {
+    clearTimeout(sweepTimer);
+    triggerSheen();
+    sweepTimer = setTimeout(triggerSheen, 380);
+  });
+  tile.addEventListener('focusin', triggerSheen);
+  tile.addEventListener('mouseleave', () => {
+    clearTimeout(sweepTimer);
+    tile.style.removeProperty('--tile-x');
+    tile.style.removeProperty('--tile-y');
+  });
+  tile.addEventListener('pointermove', (event) => {
+    if (raf) cancelAnimationFrame(raf);
+    const rect = tile.getBoundingClientRect();
+    raf = requestAnimationFrame(() => {
+      const x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 100;
+      const y = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * 100;
+      tile.style.setProperty('--tile-x', `${Math.max(0, Math.min(100, x))}%`);
+      tile.style.setProperty('--tile-y', `${Math.max(0, Math.min(100, y))}%`);
+    });
+  });
 }
 
 function formatTime(sec) {
@@ -189,15 +398,20 @@ function findWorkById(id) {
 }
 
 function ensureHudRoot() {
+  const slot = document.getElementById('kiosk-hud-slot');
   let root = document.getElementById('wc-hud');
   if (!root) {
     root = document.createElement('div');
     root.id = 'wc-hud';
     root.className = 'wc-hud';
-    document.body.prepend(root);
+    if (slot) slot.appendChild(root);
+    else document.body.prepend(root);
   } else {
     root.id = 'wc-hud';
     root.classList.add('wc-hud');
+    if (slot && root.parentNode !== slot) {
+      slot.appendChild(root);
+    }
   }
   root.setAttribute('data-component', 'prae-hud');
   return root;
@@ -213,7 +427,10 @@ function ensureHudDom() {
     </div>
     <div class="hud-meter" data-part="meter"><span></span></div>
     <div class="hud-actions">
-      <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" data-icon="play"></button>
+      <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" data-icon="play">
+        ${icon('play', 'k-icon icon-play')}
+        ${icon('pause', 'k-icon icon-pause')}
+      </button>
     </div>`;
   const refs = {
     root,
@@ -314,12 +531,18 @@ function pauseOthers(exceptId) {
 function playAt(id, t = 0) {
   const meta = findWorkById(id);
   if (!meta) return;
+  stopAttractPreview();
   const work = meta.data;
   if (state.selectedId !== work.id) {
     showDetail(work.id);
   }
   const audio = ensureAudioFor(work);
   if (!audio) return;
+  try {
+    if (window.PRAE && typeof window.PRAE.pauseAllAudio === 'function') {
+      window.PRAE.pauseAllAudio(work.id);
+    }
+  } catch (_) {}
   pauseOthers(work.id);
   hudSetTitle(`Now playing — ${work.title || work.slug || 'Work'}`);
   const raw = audio.getAttribute('data-audio') || work.audio || '';
@@ -406,6 +629,7 @@ function showDetail(id) {
   const detail = state.detail.container;
   if (!detail) return;
   const cues = Array.isArray(work.cues) ? work.cues : [];
+  const tags = normalizeTagList(work.tags).slice(0, 8);
   const cueHtml = cues.length
     ? `<div class="kiosk-cues">${cues
         .map((cue) => {
@@ -416,22 +640,29 @@ function showDetail(id) {
     : '';
   const pdfDisabled = !work.pdf;
   const pdfLabel = work.pdf ? 'Open Score' : 'Score unavailable';
+  const tagsHtml = tags.length
+    ? `<div class="kiosk-tags">${tags.map((tag) => `<span class="kiosk-tag">${esc(tag)}</span>`).join('')}</div>`
+    : '';
   detail.innerHTML = `
     <header class="kiosk-detail-head">
-      <span class="kiosk-detail-slug">${esc(work.slug || '')}</span>
-      <h1>${esc(work.title || 'Untitled work')}</h1>
-      <p class="kiosk-detail-one">${esc(work.descriptionEffective || work.onelinerEffective || '')}</p>
+      <div>
+        <span class="kiosk-detail-slug">${esc(work.slug || '')}</span>
+        <h1>${esc(work.title || 'Untitled work')}</h1>
+        <p class="kiosk-detail-one">${esc(work.descriptionEffective || work.onelinerEffective || '')}</p>
+      </div>
+      ${coverMarkup(work, 'kiosk-cover')}
     </header>
+    ${tagsHtml}
     ${cueHtml}
     <div class="kiosk-detail-progress" data-role="progress">Now playing 0:00 / 0:00</div>
     <div class="kiosk-detail-actions">
-      <button type="button" class="kiosk-btn" data-act="toggle-play" data-id="${work.id}">Play</button>
-      <button type="button" class="kiosk-btn" data-act="pdf" data-id="${work.id}" ${pdfDisabled ? 'disabled aria-disabled="true"' : ''}>${esc(pdfLabel)}</button>
-      <button type="button" class="kiosk-btn" data-act="copy" data-id="${work.id}">Copy URL</button>
-      <button type="button" class="kiosk-btn" data-act="open-window" data-id="${work.id}">Open in new tab</button>
+      <button type="button" class="kiosk-btn" data-act="toggle-play" data-id="${work.id}">${buttonMarkup('play', 'Play')}</button>
+      <button type="button" class="kiosk-btn" data-act="pdf" data-id="${work.id}" ${pdfDisabled ? 'disabled aria-disabled="true"' : ''}>${buttonMarkup('document', pdfLabel)}</button>
+      <button type="button" class="kiosk-btn" data-act="copy" data-id="${work.id}">${buttonMarkup('link', 'Copy URL')}</button>
+      <button type="button" class="kiosk-btn" data-act="open-window" data-id="${work.id}">${buttonMarkup('arrowUpRight', 'Open in New Tab')}</button>
     </div>
     <footer>
-      <button type="button" class="kiosk-btn" data-act="back">Back to works</button>
+      <button type="button" class="kiosk-btn" data-act="back">${buttonMarkup('eye', 'Back to Works')}</button>
     </footer>`;
   detail.removeAttribute('hidden');
   document.body.classList.add('kiosk-detail-open');
@@ -472,7 +703,7 @@ function updateDetailPlayback(id, audio) {
   const progress = state.detail.progress;
   if (btn) {
     const playing = audio ? (!audio.paused && !audio.ended) : false;
-    btn.textContent = playing ? 'Pause' : 'Play';
+    btn.innerHTML = buttonMarkup(playing ? 'pause' : 'play', playing ? 'Pause' : 'Play');
     btn.setAttribute('aria-pressed', playing ? 'true' : 'false');
   }
   if (progress) {
@@ -648,7 +879,9 @@ function updateFullscreenButton() {
   if (!btn) return;
   const active = !!document.fullscreenElement;
   btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  btn.textContent = active ? 'Exit fullscreen' : 'Enter fullscreen';
+  btn.innerHTML = active
+    ? buttonMarkup('arrowsPointingIn', 'Exit Fullscreen')
+    : buttonMarkup('arrowsPointingOut', 'Fullscreen');
 }
 
 function toggleFullscreen() {
@@ -664,10 +897,9 @@ function ensureControls() {
   const ctl = document.getElementById('kiosk-ctl');
   if (!ctl) return;
   ctl.innerHTML = `
-    <button type="button" data-act="theme">Theme</button>
-    <button type="button" data-act="fullscreen" aria-pressed="false">Enter fullscreen</button>
-    <button type="button" data-act="reset">Reset</button>
-    <button type="button" data-act="contrast" aria-pressed="${document.body.classList.contains('kiosk-contrast') ? 'true' : 'false'}">High contrast</button>`;
+    <button type="button" data-act="theme">${buttonMarkup('sparkles', 'Theme')}</button>
+    <button type="button" data-act="fullscreen" aria-pressed="false">${buttonMarkup('arrowsPointingOut', 'Fullscreen')}</button>
+    <button type="button" data-act="reset">${buttonMarkup('arrowPath', 'Reset')}</button>`;
   const buttons = ctl.querySelectorAll('button');
   buttons.forEach((btn) => {
     btn.addEventListener('keydown', (ev) => {
@@ -690,19 +922,13 @@ function ensureControls() {
       setTimeout(() => updateFullscreenButton(), 200);
     }
     if (act === 'reset') {
-      document.body.classList.remove('kiosk-contrast');
       hideDetail();
       hidePdfPane();
+      stopAttractPreview();
       if (document.fullscreenElement) document.exitFullscreen?.();
       const first = state.tiles[0];
       first?.focus();
-      const contrastBtn = state.controls?.root?.querySelector('[data-act="contrast"]');
-      contrastBtn?.setAttribute('aria-pressed', 'false');
-    }
-    if (act === 'contrast') {
-      const on = !document.body.classList.contains('kiosk-contrast');
-      document.body.classList.toggle('kiosk-contrast', on);
-      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      announce('Kiosk reset');
     }
   });
   state.controls = {
@@ -710,6 +936,167 @@ function ensureControls() {
     fullscreen: ctl.querySelector('[data-act="fullscreen"]')
   };
   updateFullscreenButton();
+}
+
+function optionSectionMarkup({ title, name, current, options }) {
+  const rows = options.map((option) => {
+    const id = `kiosk-operator-${name}-${option.value}`;
+    return `<div class="kiosk-operator-option">
+      <input id="${id}" type="radio" name="${name}" value="${option.value}" ${current === option.value ? 'checked' : ''}>
+      <div>
+        <label for="${id}">${esc(option.label)}</label>
+        <p class="kiosk-operator-note">${esc(option.note)}</p>
+      </div>
+    </div>`;
+  }).join('');
+  return `<section class="kiosk-operator-section">
+    <h3>${esc(title)}</h3>
+    <div class="kiosk-operator-options">${rows}</div>
+  </section>`;
+}
+
+function renderOperatorMenu() {
+  const menuBody = state.operator.body;
+  if (!menuBody) return;
+  const settings = state.operator.settings;
+  menuBody.innerHTML = [
+    optionSectionMarkup({
+      title: 'Attract Mode',
+      name: 'attractMode',
+      current: settings.attractMode,
+      options: [
+        { value: 'off', label: 'Off', note: 'Disables attract cycling and auto previews.' },
+        { value: 'visual-only', label: 'Visual-only', note: 'Highlights tiles with no audio playback.' },
+        { value: 'visual-muted', label: 'Visual + Muted Preview', note: 'Cycles highlights and short muted previews.' },
+        { value: 'full-autoplay', label: 'Full Autoplay', note: 'Cycles highlights and audible auto preview playback.' },
+      ],
+    }),
+    optionSectionMarkup({
+      title: 'Density Preset',
+      name: 'density',
+      current: settings.density,
+      options: [
+        { value: 'comfort', label: 'Comfort', note: 'Largest tiles and wider spacing for distance reading.' },
+        { value: 'balanced', label: 'Balanced', note: 'Default blend of readability and count.' },
+        { value: 'dense', label: 'Dense', note: 'Smaller tiles for more works per view.' },
+      ],
+    }),
+    optionSectionMarkup({
+      title: 'Motion Preset',
+      name: 'motion',
+      current: settings.motion,
+      options: [
+        { value: 'low', label: 'Low', note: 'Reduced movement and shorter transitions.' },
+        { value: 'standard', label: 'Standard', note: 'Default motion profile for kiosks.' },
+        { value: 'high', label: 'High', note: 'Extended transitions and more kinetic feel.' },
+      ],
+    }),
+  ].join('');
+}
+
+function openOperatorMenu() {
+  const menu = state.operator.menu;
+  if (!menu) return;
+  state.operator.open = true;
+  menu.hidden = false;
+  menu.setAttribute('aria-hidden', 'false');
+  renderOperatorMenu();
+  const firstInput = menu.querySelector('input');
+  if (firstInput && typeof firstInput.focus === 'function') {
+    requestAnimationFrame(() => firstInput.focus({ preventScroll: true }));
+  }
+}
+
+function closeOperatorMenu() {
+  const menu = state.operator.menu;
+  if (!menu) return;
+  state.operator.open = false;
+  menu.hidden = true;
+  menu.setAttribute('aria-hidden', 'true');
+}
+
+function toggleOperatorMenu() {
+  if (state.operator.open) closeOperatorMenu();
+  else openOperatorMenu();
+}
+
+function bindOperatorMenu() {
+  const menu = document.getElementById('kiosk-operator');
+  const body = document.getElementById('kiosk-operator-body');
+  const hotspot = document.getElementById('kiosk-operator-hotspot');
+  if (!menu || !body || !hotspot) return;
+  const closeButton = menu.querySelector('[data-operator-close]');
+  if (closeButton) {
+    closeButton.innerHTML = icon('xMark');
+  }
+  state.operator.menu = menu;
+  state.operator.body = body;
+  state.operator.hotspot = hotspot;
+  state.operator.settings = readOperatorSettings();
+  applyOperatorSettings(state.operator.settings, { persist: false, resetAttract: false });
+  renderOperatorMenu();
+
+  hotspot.addEventListener('click', () => {
+    toggleOperatorMenu();
+    resetAttract();
+  });
+  hotspot.addEventListener('touchstart', () => {
+    state.operator.touchTimer = setTimeout(() => {
+      openOperatorMenu();
+      resetAttract();
+    }, 480);
+  }, { passive: true });
+  ['touchend', 'touchcancel', 'pointerup', 'pointercancel'].forEach((type) => {
+    hotspot.addEventListener(type, () => {
+      if (state.operator.touchTimer) {
+        clearTimeout(state.operator.touchTimer);
+        state.operator.touchTimer = null;
+      }
+    }, { passive: true });
+  });
+
+  menu.addEventListener('click', (event) => {
+    const closeBtn = event.target.closest('[data-operator-close]');
+    if (closeBtn) {
+      event.preventDefault();
+      closeOperatorMenu();
+      return;
+    }
+  });
+
+  menu.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const name = target.name;
+    const value = target.value;
+    const next = { ...state.operator.settings };
+    if (name === 'attractMode') next.attractMode = value;
+    if (name === 'density') next.density = value;
+    if (name === 'motion') next.motion = value;
+    applyOperatorSettings(next, { persist: true, resetAttract: true });
+    resetAttract();
+  });
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!state.operator.open) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (menu.contains(target) || hotspot.contains(target)) return;
+    closeOperatorMenu();
+  }, { passive: true });
+
+  document.addEventListener('keydown', (event) => {
+    const openCombo = (event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === 'o' || event.key === 'O');
+    if (openCombo) {
+      event.preventDefault();
+      toggleOperatorMenu();
+      return;
+    }
+    if (event.key === 'Escape' && state.operator.open) {
+      event.preventDefault();
+      closeOperatorMenu();
+    }
+  });
 }
 
 function renderGrid() {
@@ -724,10 +1111,11 @@ function renderGrid() {
     grid.appendChild(empty);
     return;
   }
-  works.forEach((work) => {
+  works.forEach((work, index) => {
     const tile = document.createElement('article');
     tile.className = 'kiosk-tile';
     tile.tabIndex = 0;
+    tile.style.setProperty('--tile-index', String(index));
     tile.dataset.workId = work.id;
     tile.setAttribute('role', 'button');
     const ariaLabelBase = work.title || work.slug || 'work';
@@ -735,7 +1123,12 @@ function renderGrid() {
       ? `Open ${ariaLabelBase} — ${work.onelinerEffective}`
       : `Open ${ariaLabelBase} details`;
     tile.setAttribute('aria-label', ariaLabel);
+    applyTilePointerMotion(tile);
     const cues = Array.isArray(work.cues) ? work.cues : [];
+    const tags = normalizeTagList(work.tags).slice(0, 4);
+    const tagsHtml = tags.length
+      ? `<div class="kiosk-tags">${tags.map((tag) => `<span class="kiosk-tag">${esc(tag)}</span>`).join('')}</div>`
+      : '';
     const cueHtml = cues.length
       ? `<div class="kiosk-cues">${cues
           .map((cue) => {
@@ -749,13 +1142,15 @@ function renderGrid() {
         <span class="kiosk-slug">${esc(work.slug || '')}</span>
         <h2>${esc(work.title || 'Untitled work')}</h2>
       </div>
+      ${coverMarkup(work, 'kiosk-cover')}
       <p class="kiosk-one">${esc(work.onelinerEffective || '')}</p>
+      ${tagsHtml}
       ${cueHtml}
       <div class="kiosk-actions">
-        <button type="button" class="kiosk-btn" data-act="play" data-id="${work.id}">Play</button>
-        <button type="button" class="kiosk-btn" data-act="pdf" data-id="${work.id}" ${work.pdf ? '' : 'disabled aria-disabled="true"'}>Open Score</button>
-        <button type="button" class="kiosk-btn" data-act="copy" data-id="${work.id}">Copy URL</button>
-        <button type="button" class="kiosk-btn" data-act="detail" data-id="${work.id}">Open</button>
+        <button type="button" class="kiosk-btn" data-act="play" data-id="${work.id}">${buttonMarkup('play', 'Play')}</button>
+        <button type="button" class="kiosk-btn" data-act="pdf" data-id="${work.id}" ${work.pdf ? '' : 'disabled aria-disabled="true"'}>${buttonMarkup('document', 'Open Score')}</button>
+        <button type="button" class="kiosk-btn" data-act="copy" data-id="${work.id}">${buttonMarkup('link', 'Copy URL')}</button>
+        <button type="button" class="kiosk-btn" data-act="detail" data-id="${work.id}">${buttonMarkup('eye', 'Open')}</button>
       </div>`;
     grid.appendChild(tile);
     ensureAudioFor(work);
@@ -907,7 +1302,69 @@ function getActiveAudioInfo() {
   return { id: null, audio: null };
 }
 
+function attractIntervalMs() {
+  const motion = state.operator.settings.motion;
+  if (motion === 'low') return 8200;
+  if (motion === 'high') return 4200;
+  return ATTRACT_INTERVAL;
+}
+
+function attractDelayMs() {
+  const motion = state.operator.settings.motion;
+  if (motion === 'low') return ATTRACT_DELAY + 18000;
+  if (motion === 'high') return 36000;
+  return ATTRACT_DELAY;
+}
+
+function playAttractPreview(id, muted) {
+  const meta = findWorkById(id);
+  const work = meta?.data;
+  if (!work || !work.audio) {
+    stopAttractPreview();
+    return;
+  }
+  if (state.attractPreview.id === id && state.attractPreview.audio && !state.attractPreview.audio.paused) {
+    return;
+  }
+  stopAttractPreview();
+  const audio = ensureAudioFor(work);
+  if (!audio) return;
+  const raw = audio.getAttribute('data-audio') || work.audio || '';
+  const src = normalizeSrc(raw);
+  if (src && audio.src !== src) {
+    audio.src = src;
+  }
+  pauseOthers(work.id);
+  const start = () => {
+    try { audio.currentTime = 0; } catch (_) {}
+    audio.muted = !!muted;
+    if (!muted) audio.volume = 1;
+    const attempt = audio.play();
+    if (attempt && typeof attempt.catch === 'function') {
+      attempt.catch(() => {});
+    }
+    markTileState(work.id, { playing: true });
+    state.attractPreview.id = work.id;
+    state.attractPreview.audio = audio;
+    if (muted) {
+      state.attractPreview.cleanupTimer = setTimeout(() => {
+        if (state.attractPreview.id === work.id) {
+          stopAttractPreview();
+        }
+      }, 6800);
+    }
+  };
+  if (audio.readyState >= 1) start();
+  else {
+    audio.addEventListener('loadedmetadata', start, { once: true });
+    audio.load();
+  }
+}
+
 function startAttract() {
+  if (state.operator.settings.attractMode === 'off') return;
+  if (state.detail.container && !state.detail.container.hasAttribute('hidden')) return;
+  if (state.pdf.pane && state.pdf.pane.getAttribute('aria-hidden') === 'false') return;
   if (!state.tiles.length || state.attract.active) return;
   state.attract.active = true;
   document.body.classList.add('is-attract');
@@ -916,28 +1373,47 @@ function startAttract() {
   state.attract.loop = setInterval(() => {
     state.attract.index = (state.attract.index + 1) % state.tiles.length;
     highlightAttractTile();
-  }, ATTRACT_INTERVAL);
+  }, attractIntervalMs());
 }
 
 function highlightAttractTile() {
+  const mode = state.operator.settings.attractMode;
   state.tiles.forEach((tile, idx) => {
     tile.classList.toggle('is-highlight', idx === state.attract.index);
   });
+  const activeTile = state.tiles[state.attract.index];
+  const activeId = Number(activeTile?.dataset.workId || 0);
+  if (!activeId || mode === 'off' || mode === 'visual-only') {
+    stopAttractPreview();
+    return;
+  }
+  if (mode === 'visual-muted') {
+    playAttractPreview(activeId, true);
+    return;
+  }
+  if (mode === 'full-autoplay') {
+    playAttractPreview(activeId, false);
+  }
 }
 
 function stopAttract() {
-  if (!state.attract.active) return;
+  if (!state.attract.active) {
+    stopAttractPreview();
+    return;
+  }
   state.attract.active = false;
   document.body.classList.remove('is-attract');
   clearInterval(state.attract.loop);
   state.attract.loop = null;
   state.tiles.forEach((tile) => tile.classList.remove('is-highlight'));
+  stopAttractPreview();
 }
 
 function resetAttract() {
   stopAttract();
   clearTimeout(state.attract.timer);
-  state.attract.timer = setTimeout(startAttract, ATTRACT_DELAY);
+  if (state.operator.settings.attractMode === 'off') return;
+  state.attract.timer = setTimeout(startAttract, attractDelayMs());
 }
 
 function bindAttractListeners() {
@@ -958,7 +1434,7 @@ function initBrand() {
     title.textContent = full;
   }
   if (subtitle) {
-    subtitle.textContent = site.subtitle || site.description || 'Works presentation';
+    subtitle.textContent = site.subtitle || site.description || 'Touch Wall Mode';
   }
   if (nav) {
     const links = Array.isArray(site.links) ? site.links : [];
@@ -971,16 +1447,12 @@ function initBrand() {
 
 function initFooter() {
   const site = (PRAE.config && PRAE.config.site) || {};
+  const branding = (PRAE.config && PRAE.config.branding) || {};
   const footer = document.getElementById('prae-footer');
   if (!footer) return;
-  const name = site.copyrightName || site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ') || 'Praetorius';
-  const updated = site.updated?.mode === 'manual' ? site.updated.value : '';
-  const links = Array.isArray(site.links) ? site.links : [];
-  footer.innerHTML = `
-    <div>© ${esc(name)}${updated ? ` · Updated ${esc(String(updated))}` : ''}</div>
-    <div>${links
-      .map((link) => `<a href="${esc(link.href || '#')}" ${link.external ? 'target="_blank" rel="noopener"' : ''}>${esc(link.label || 'Link')}</a>`)
-      .join('')}</div>`;
+  if (PRAE.branding && typeof PRAE.branding.renderFooter === 'function') {
+    PRAE.branding.renderFooter(footer, { site, branding });
+  }
 }
 
 function bindThemeToggle() {
@@ -1001,6 +1473,9 @@ function bindGlobalEvents() {
   window.addEventListener('hashchange', hydrateFromHash);
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {
+      if (state.operator.open) {
+        closeOperatorMenu();
+      }
       if (!state.detail.container?.hasAttribute('hidden')) {
         hideDetail();
       }
@@ -1038,6 +1513,9 @@ function initPdfShell() {
   state.pdf = { ...state.pdf, pane, title, close, frame, backdrop, shell: document.querySelector('.kiosk-shell'), viewerReady: false };
   if (pane && !pane.hasAttribute('tabindex')) {
     pane.setAttribute('tabindex', '-1');
+  }
+  if (close) {
+    close.innerHTML = icon('xMark');
   }
   close?.addEventListener('click', () => {
     hidePdfPane();
@@ -1083,6 +1561,8 @@ ready(() => {
   bindHudToggle();
   initBrand();
   initFooter();
+  state.modeChip = document.getElementById('kiosk-mode-chip');
+  bindOperatorMenu();
   ensureControls();
   bindThemeToggle();
   const detail = document.getElementById('kiosk-detail');

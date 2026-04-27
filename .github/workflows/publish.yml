@@ -32,6 +32,9 @@ jobs:
       - name: Run tests
         run: npm test --if-present
 
+      - name: Run CLI matrix gate
+        run: npm run test:cli-matrix --if-present
+
       - name: Build package
         run: npm run build --if-present
 

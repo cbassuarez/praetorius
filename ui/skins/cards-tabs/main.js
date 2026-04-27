@@ -3,6 +3,36 @@ const HASH_WORK_KEY = 'work';
 const HASH_TAB_KEY = 'tab';
 const PRAE_THEME_STORAGE_KEY = 'wc.theme';
 const PRAE_THEME_CLASSNAMES = ['prae-theme-light', 'prae-theme-dark'];
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+const HEROICONS_BASE = './lib/heroicons/24/outline';
+const HUD_IDLE_TITLE = 'Now playing — Idle';
+const HUD_IDLE_SUBTITLE = 'No playback selected';
+
+const HEROICON_FILE_MAP = Object.freeze({
+  sun: 'sun',
+  moon: 'moon',
+  play: 'play',
+  pause: 'pause',
+  link: 'link',
+  eye: 'eye',
+  document: 'document-text',
+  arrowUpRight: 'arrow-up-right',
+  sparkles: 'sparkles',
+  xMark: 'x-mark'
+});
+
+function icon(name, className = 'ct-icon') {
+  const file = HEROICON_FILE_MAP[name] || HEROICON_FILE_MAP.sparkles;
+  return `<img class="${className}" src="${HEROICONS_BASE}/${file}.svg" alt="" aria-hidden="true" loading="lazy" decoding="async">`;
+}
+
+function prefersReducedMotion() {
+  try {
+    return window.matchMedia && window.matchMedia(REDUCED_MOTION_QUERY).matches;
+  } catch (_) {
+    return false;
+  }
+}
 
 function ready(fn) {
   if (document.readyState === 'loading') {
@@ -54,6 +84,11 @@ function praeSyncThemeOnDom(mode) {
 
 function praeApplyTheme(mode, opts) {
   const eff = praeSyncThemeOnDom(mode);
+  try {
+    if (window.PRAE && typeof window.PRAE.applyAppearanceMode === 'function') {
+      window.PRAE.applyAppearanceMode(eff, { persist: false });
+    }
+  } catch (_) {}
   if (!opts || opts.persist !== false) {
     try { localStorage.setItem(PRAE_THEME_STORAGE_KEY, eff); } catch (_) {}
   }
@@ -61,7 +96,7 @@ function praeApplyTheme(mode, opts) {
   if (btn) {
     btn.setAttribute('aria-checked', String(eff === 'dark'));
     btn.dataset.mode = eff;
-    btn.textContent = eff === 'dark' ? '🌙' : '☀️';
+    btn.innerHTML = eff === 'dark' ? icon('sun') : icon('moon');
     btn.title = eff === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   }
   return eff;
@@ -107,6 +142,7 @@ const state = {
   durationTotal: 0,
   tablist: null,
   tabIndicator: null,
+  actionRail: null,
   hud: null,
   pdf: {
     shell: null,
@@ -131,7 +167,9 @@ function ensureHudRoot() {
     root = document.createElement('div');
     root.id = HUD_ID;
     root.className = 'wc-hud';
-    document.body.prepend(root);
+    const anchor = document.querySelector(".ct-header");
+    if (anchor && anchor.parentNode) anchor.insertAdjacentElement("afterend", root);
+    else document.body.prepend(root);
   } else {
     root.id = HUD_ID;
     root.classList.add('wc-hud');
@@ -150,7 +188,10 @@ function ensureHudDom() {
     </div>
     <div class="hud-meter" data-part="meter"><span></span></div>
     <div class="hud-actions">
-      <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" data-icon="play"></button>
+      <button class="hud-btn" type="button" data-part="toggle" data-hud="toggle" aria-label="Play" data-icon="play">
+        ${icon('play', 'ct-icon icon-play')}
+        ${icon('pause', 'ct-icon icon-pause')}
+      </button>
     </div>`;
   const refs = {
     root,
@@ -189,21 +230,11 @@ function hudSetProgress(ratio) {
   refs.fill.style.width = `${pct * 100}%`;
 }
 
-function injectHudCssOnce() {
-  if (document.getElementById('prae-hud-css')) return;
-  const css = `
-    #wc-hud{display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;border:1px solid var(--line,#2a2a2a);border-radius:12px;background:var(--panel,rgba(255,255,255,.03));margin:0 0 12px}
-    #wc-hud .hud-left{display:flex;flex-direction:column;gap:.25rem;min-width:0}
-    #wc-hud .hud-title{font-weight:600;font-size:0.95rem}
-    #wc-hud .hud-sub{font-size:0.8rem;opacity:.8}
-    #wc-hud .hud-meter{flex:1;height:4px;background:var(--line,#2a2a2a);border-radius:999px;overflow:hidden}
-    #wc-hud .hud-meter>span{display:block;height:100%;background:var(--fg,#fff);transition:width .12s ease-out}
-    #wc-hud .hud-actions .hud-btn{min-width:44px;min-height:44px;border:0;border-radius:999px;background:rgba(255,255,255,0.08);color:inherit;cursor:pointer}
-  `;
-  const s = document.createElement('style');
-  s.id = 'prae-hud-css';
-  s.textContent = css;
-  document.head.appendChild(s);
+function hudSetIdle() {
+  hudSetTitle(HUD_IDLE_TITLE);
+  hudSetSubtitle(HUD_IDLE_SUBTITLE);
+  hudSetProgress(0);
+  hudSetPlaying(false);
 }
 
 function formatTime(sec) {
@@ -388,6 +419,11 @@ function playAt(id, t = 0) {
     }
   }
   const seekAndPlay = () => {
+    try {
+      if (window.PRAE && typeof window.PRAE.pauseAllAudio === 'function') {
+        window.PRAE.pauseAllAudio(work.id);
+      }
+    } catch (_) {}
     try { audio.currentTime = Math.max(0, Number(t) || 0); } catch (_) {}
     const playPromise = audio.play();
     if (playPromise && typeof playPromise.catch === 'function') {
@@ -471,6 +507,15 @@ function getActiveAudioInfo() {
   return { id: null, audio: null };
 }
 
+function syncHudWithActivePlayback() {
+  const now = getActiveAudioInfo();
+  if (now.audio && now.id != null) {
+    hudUpdate(now.id, now.audio);
+    return;
+  }
+  hudSetIdle();
+}
+
 function hudUpdate(id, audio) {
   const refs = ensureHudDom();
   if (!refs) return;
@@ -491,6 +536,7 @@ function bindAudio(id) {
   audio.addEventListener('timeupdate', () => hudUpdate(id, audio), { passive: true });
   audio.addEventListener('ratechange', () => hudUpdate(id, audio), { passive: true });
   audio.addEventListener('volumechange', () => hudUpdate(id, audio), { passive: true });
+  audio.addEventListener('play', () => hudUpdate(id, audio), { passive: true });
   audio.addEventListener('loadedmetadata', () => {
     hudUpdate(id, audio);
     if (Number.isFinite(audio.duration)) {
@@ -498,7 +544,8 @@ function bindAudio(id) {
       recomputeDurationTotal();
     }
   }, { once: true, passive: true });
-  audio.addEventListener('ended', () => hudUpdate(id, audio), { passive: true });
+  audio.addEventListener('pause', syncHudWithActivePlayback, { passive: true });
+  audio.addEventListener('ended', syncHudWithActivePlayback, { passive: true });
   audio.dataset.hudBound = '1';
 }
 
@@ -649,6 +696,7 @@ function selectWork(id, opts = {}) {
   });
   if (!opts.skipHash) syncHash();
   renderPanels();
+  renderActionRail();
 }
 
 function renderPanels() {
@@ -669,11 +717,26 @@ function renderPanels() {
       heading.dataset.panelHeading = 'true';
       heading.tabIndex = -1;
       heading.textContent = work.title || 'Untitled work';
-      header.appendChild(heading);
+      const hero = document.createElement('div');
+      hero.className = 'ct-details-hero';
+      const titleWrap = document.createElement('div');
+      titleWrap.appendChild(heading);
       const slugLine = document.createElement('p');
       slugLine.className = 'ct-muted';
       slugLine.textContent = work.slug ? `Slug · ${work.slug}` : 'Slug · —';
-      header.appendChild(slugLine);
+      titleWrap.appendChild(slugLine);
+      hero.innerHTML = '';
+      hero.appendChild(titleWrap);
+      const coverMarkup = createCoverMarkup(work, 'work-cover');
+      if (coverMarkup) {
+        const coverWrap = document.createElement('div');
+        coverWrap.innerHTML = coverMarkup;
+        const coverEl = coverWrap.firstElementChild;
+        if (coverEl) hero.appendChild(coverEl);
+      } else {
+        hero.classList.add('is-no-cover');
+      }
+      header.appendChild(hero);
       detailsPanel.appendChild(header);
       const detailText = work.descriptionEffective || work.onelinerEffective;
       if (detailText) {
@@ -681,6 +744,35 @@ function renderPanels() {
         summary.textContent = detailText;
         detailsPanel.appendChild(summary);
       }
+      const tags = normalizeTagList(work.tags).slice(0, 10);
+      if (tags.length) {
+        const tagWrap = document.createElement('div');
+        tagWrap.className = 'ct-details-tags';
+        tags.forEach((tag) => {
+          const chip = document.createElement('span');
+          chip.className = 'work-tag';
+          chip.textContent = tag;
+          tagWrap.appendChild(chip);
+        });
+        detailsPanel.appendChild(tagWrap);
+      }
+      const detailsList = document.createElement('dl');
+      detailsList.className = 'ct-details-list';
+      const rows = [
+        ['Playback', work.audio ? 'Available' : 'Unavailable'],
+        ['Score PDF', work.pdf ? 'Available' : 'Unavailable'],
+        ['Cue Points', String(Array.isArray(work.cues) ? work.cues.length : 0)]
+      ];
+      rows.forEach(([label, value]) => {
+        const row = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = label;
+        const dd = document.createElement('dd');
+        dd.textContent = value;
+        row.append(dt, dd);
+        detailsList.appendChild(row);
+      });
+      detailsPanel.appendChild(detailsList);
     }
   }
 
@@ -748,8 +840,8 @@ function renderPanels() {
       playBtn.className = 'ct-playback-button';
       playBtn.dataset.icon = 'play';
       playBtn.innerHTML = `
-        <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
-        <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5h3v14H8zm5 0h3v14h-3z" fill="currentColor"/></svg>
+        ${icon('play', 'ct-icon icon-play')}
+        ${icon('pause', 'ct-icon icon-pause')}
         <span class="sr-only">Play</span>
         <span class="ct-btn-text" aria-hidden="true">Play</span>
       `;
@@ -794,7 +886,7 @@ function renderPanels() {
       const openBtn = document.createElement('button');
       openBtn.type = 'button';
       openBtn.className = 'work-action';
-      openBtn.textContent = 'Open PDF';
+      setActionButton(openBtn, 'document', 'Open PDF');
       openBtn.addEventListener('click', () => {
         openPdfFor(work.id);
       });
@@ -820,6 +912,69 @@ function escapeHtml(input) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function normalizeTagList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeCoverUrl(work) {
+  const raw = work && typeof work === 'object' ? (work.cover ?? work.coverUrl ?? null) : null;
+  if (raw == null) return '';
+  const normalized = String(raw).trim();
+  return normalized || '';
+}
+
+function createCoverMarkup(work, className = 'work-cover') {
+  const cover = normalizeCoverUrl(work);
+  if (cover) {
+    return `<figure class="${className}"><img src="${escapeHtml(cover)}" alt="${escapeHtml((work?.title || 'Work') + ' cover')}" loading="lazy" decoding="async"></figure>`;
+  }
+  return '';
+}
+
+function setActionButton(button, iconName, label) {
+  if (!button) return;
+  button.innerHTML = `${icon(iconName)}<span>${escapeHtml(label)}</span>`;
+}
+
+function applyCardPointerMotion(card) {
+  if (!card || prefersReducedMotion()) return;
+  let raf = 0;
+  let sweepTimer = null;
+  const setSheenSweep = () => {
+    card.style.setProperty('--sheen-pos', '-40%');
+    requestAnimationFrame(() => {
+      card.style.setProperty('--sheen-pos', '128%');
+    });
+  };
+  card.addEventListener('mouseenter', () => {
+    clearTimeout(sweepTimer);
+    setSheenSweep();
+    sweepTimer = setTimeout(setSheenSweep, 360);
+  });
+  card.addEventListener('focusin', () => setSheenSweep());
+  card.addEventListener('mouseleave', () => {
+    clearTimeout(sweepTimer);
+    card.style.removeProperty('--pointer-x');
+    card.style.removeProperty('--pointer-y');
+  });
+  card.addEventListener('pointermove', (event) => {
+    if (raf) cancelAnimationFrame(raf);
+    const rect = card.getBoundingClientRect();
+    raf = requestAnimationFrame(() => {
+      const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 100;
+      const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 100;
+      card.style.setProperty('--pointer-x', `${Math.max(0, Math.min(100, x))}%`);
+      card.style.setProperty('--pointer-y', `${Math.max(0, Math.min(100, y))}%`);
+    });
+  });
 }
 
 function readDurationSeconds(work) {
@@ -899,18 +1054,28 @@ function renderWorksList() {
     container.appendChild(empty);
     return;
   }
-  works.forEach((work) => {
+  works.forEach((work, index) => {
     const card = document.createElement('article');
     card.className = 'work';
     card.dataset.workId = String(work.id);
     card.tabIndex = 0;
+    card.style.setProperty('--stagger', String(index));
+    const tags = normalizeTagList(work.tags).slice(0, 5);
+    const tagsMarkup = tags.length
+      ? `<div class="work-tags">${tags.map((tag) => `<span class="work-tag">${escapeHtml(tag)}</span>`).join('')}</div>`
+      : '';
     card.innerHTML = `
       <div class="work-header">
-        <div class="work-title">${escapeHtml(work.title ?? '')}</div>
-        <div class="work-slug">${escapeHtml(work.slug ?? '')}</div>
+        <div class="work-title-block">
+          <div class="work-title">${escapeHtml(work.title ?? '')}</div>
+          <div class="work-slug">${escapeHtml(work.slug ?? '')}</div>
+        </div>
+        ${createCoverMarkup(work, 'work-cover')}
       </div>
       <p class="work-one">${escapeHtml(work.onelinerEffective ?? '')}</p>
+      ${tagsMarkup}
     `;
+    applyCardPointerMotion(card);
     const cues = Array.isArray(work.cues) ? work.cues : [];
     if (cues.length) {
       const cueWrap = document.createElement('div');
@@ -937,27 +1102,27 @@ function renderWorksList() {
     const playBtn = document.createElement('button');
     playBtn.type = 'button';
     playBtn.className = 'work-action';
-    playBtn.textContent = 'Play';
+    setActionButton(playBtn, 'play', 'Play');
     playBtn.dataset.act = 'play';
     playBtn.dataset.id = String(work.id);
     if (!work.audio) playBtn.disabled = true;
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'work-action';
-    copyBtn.textContent = 'Copy URL';
+    setActionButton(copyBtn, 'link', 'Copy URL');
     copyBtn.dataset.act = 'copy';
     copyBtn.dataset.id = String(work.id);
     const pdfBtn = document.createElement('button');
     pdfBtn.type = 'button';
     pdfBtn.className = 'work-action';
-    pdfBtn.textContent = 'PDF';
+    setActionButton(pdfBtn, 'document', 'PDF');
     pdfBtn.dataset.act = 'pdf';
     pdfBtn.dataset.id = String(work.id);
     if (!work.pdf) pdfBtn.disabled = true;
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
     openBtn.className = 'work-action';
-    openBtn.textContent = 'Open';
+    setActionButton(openBtn, 'eye', 'Open');
     openBtn.dataset.act = 'open';
     openBtn.dataset.id = String(work.id);
     actions.append(playBtn, copyBtn, pdfBtn, openBtn);
@@ -979,6 +1144,41 @@ function renderWorksList() {
   selectWork(selectedId, { skipHash: true });
 }
 
+function runWorkAction(act, id, opts = {}) {
+  const t = Number(opts.t || 0);
+  const trigger = opts.trigger || null;
+  if (!id) return;
+  if (act === 'play') {
+    selectWork(id);
+    playAt(id, Number.isFinite(t) ? t : 0);
+    return;
+  }
+  if (act === 'copy') {
+    const url = deepUrl(id);
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(() => flash(trigger, 'Copied'));
+    } else {
+      flash(trigger, url);
+    }
+    return;
+  }
+  if (act === 'pdf') {
+    selectWork(id);
+    openPdfFor(id);
+    return;
+  }
+  if (act === 'open') {
+    selectWork(id);
+    setActiveTab('details');
+    document.getElementById('ct-tabs')?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    return;
+  }
+  if (act === 'open-window') {
+    const url = deepUrl(id);
+    window.open(url, '_blank', 'noopener');
+  }
+}
+
 function handleWorksActions() {
   const container = document.getElementById('works-console');
   if (!container) return;
@@ -988,79 +1188,90 @@ function handleWorksActions() {
     const act = button.dataset.act;
     const id = Number(button.dataset.id || selectedId || 0);
     if (!id) return;
-    if (act === 'play') {
-      event.preventDefault();
-      selectWork(id);
-      playAt(id, 0);
-    }
-    if (act === 'copy') {
-      event.preventDefault();
-      const url = deepUrl(id);
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(url).then(() => flash(button, 'Copied'));
-      } else {
-        flash(button, url);
-      }
-    }
-    if (act === 'pdf') {
-      event.preventDefault();
-      selectWork(id);
-      openPdfFor(id);
-    }
-    if (act === 'open') {
-      event.preventDefault();
-      selectWork(id);
-      setActiveTab('details');
-      document.getElementById('ct-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    event.preventDefault();
+    runWorkAction(act, id, { trigger: button, t: Number(button.dataset.t || 0) });
   });
+}
+
+function bindActionRailEvents() {
+  const rail = document.getElementById('ct-action-rail');
+  if (!rail) return;
+  state.actionRail = rail;
+  rail.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-act]');
+    if (!button) return;
+    const act = button.dataset.act;
+    const id = Number(button.dataset.id || selectedId || 0);
+    if (!id) return;
+    event.preventDefault();
+    runWorkAction(act, id, { trigger: button, t: Number(button.dataset.t || 0) });
+  });
+}
+
+function renderActionRail() {
+  if (!state.actionRail) {
+    state.actionRail = document.getElementById('ct-action-rail');
+  }
+  const rail = state.actionRail;
+  if (!rail) return;
+  const work = selectedId ? findWorkById(selectedId)?.data : null;
+  if (!work) {
+    rail.innerHTML = `<p class="ct-rail-empty">Select a work to access quick actions.</p>`;
+    return;
+  }
+  const cues = Array.isArray(work.cues) ? work.cues.slice(0, 6) : [];
+  const cuesMarkup = cues.length
+    ? `<div class="ct-rail-cues">${cues
+      .map((cue) => `<button type="button" class="work-cue" data-act="play" data-id="${work.id}" data-t="${cue.t || 0}">${escapeHtml(cue.label ? String(cue.label) : labelForCue(cue.t || 0, cue.label))}</button>`)
+      .join('')}</div>`
+    : '<p class="ct-rail-empty">No cue markers available for this work.</p>';
+  const railCoverMarkup = createCoverMarkup(work, 'work-cover work-cover--rail');
+  rail.innerHTML = `
+    <div class="ct-rail-head">
+      <div>
+        <h3 class="ct-rail-title">${escapeHtml(work.title || 'Untitled work')}</h3>
+        <p class="ct-rail-sub">${escapeHtml(work.slug || 'work')}</p>
+      </div>
+      ${railCoverMarkup}
+    </div>
+    <div class="ct-rail-actions">
+      <button type="button" class="ct-rail-btn" data-act="play" data-id="${work.id}" ${work.audio ? '' : 'disabled'}>${icon('play')}<span>Play</span></button>
+      <button type="button" class="ct-rail-btn" data-act="pdf" data-id="${work.id}" ${work.pdf ? '' : 'disabled'}>${icon('document')}<span>Score</span></button>
+      <button type="button" class="ct-rail-btn" data-act="copy" data-id="${work.id}">${icon('link')}<span>Copy Link</span></button>
+      <button type="button" class="ct-rail-btn" data-act="open-window" data-id="${work.id}">${icon('arrowUpRight')}<span>New Tab</span></button>
+    </div>
+    ${cuesMarkup}
+  `;
 }
 
 function renderFooter() {
   const footer = document.getElementById('prae-footer');
   if (!footer) return;
   const site = (PRAE.config && PRAE.config.site) || {};
-  const year = new Date().getFullYear();
-  const name = site.copyrightName || site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ') || '';
-  footer.innerHTML = '';
-  const info = document.createElement('div');
-  info.className = 'ct-footer-left';
-  const copyright = document.createElement('span');
-  copyright.textContent = name ? `${name} © ${year}` : `© ${year}`;
-  info.appendChild(copyright);
-  if (site.tagline) {
-    const tagline = document.createElement('span');
-    tagline.textContent = site.tagline;
-    info.appendChild(tagline);
+  const branding = (PRAE.config && PRAE.config.branding) || {};
+  if (PRAE.branding && typeof PRAE.branding.renderFooter === 'function') {
+    PRAE.branding.renderFooter(footer, { site, branding });
   }
-  const badge = document.createElement('a');
-  badge.className = 'prae-badge';
-  badge.href = 'https://www.npmjs.com/package/praetorius';
-  badge.target = '_blank';
-  badge.rel = 'noopener';
-  badge.innerHTML = `
-    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.65 5.36 5.91.86-4.28 4.17 1.01 5.89L12 15.98l-5.29 2.8 1.01-5.89-4.28-4.17 5.91-.86z"/></svg>
-    <span>Powered by Praetorius</span>
-  `;
-  const linksWrap = document.createElement('nav');
-  linksWrap.className = 'ct-footer-links';
-  linksWrap.setAttribute('aria-label', 'Site links');
-  const links = Array.isArray(site.links) ? site.links : [];
-  links.forEach((link) => {
-    if (!link || !link.href) return;
-    const anchor = document.createElement('a');
-    anchor.href = link.href;
-    anchor.textContent = link.title || link.label || link.href;
-    if (link.external) {
-      anchor.target = '_blank';
-      anchor.rel = 'noopener';
-    }
-    linksWrap.appendChild(anchor);
-  });
-  if (linksWrap.childElementCount > 0) {
-    footer.append(info, badge, linksWrap);
-  } else {
-    footer.append(info, badge);
+}
+
+function initBrand() {
+  const site = (PRAE.config && PRAE.config.site) || {};
+  const titleEl = document.querySelector('[data-site-title]');
+  const subtitleEl = document.querySelector('[data-site-subtitle]');
+  const nav = document.getElementById('prae-nav');
+  if (titleEl) {
+    const full = site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ').trim() || site.title || 'Praetorius';
+    titleEl.textContent = full;
+  }
+  if (subtitleEl) {
+    subtitleEl.textContent = site.subtitle || site.description || 'Neo-Brutal Gallery';
+  }
+  if (nav) {
+    const links = Array.isArray(site.links) ? site.links : [];
+    nav.innerHTML = links
+      .filter((link) => link && (link.label || link.title))
+      .map((link) => `<a href="${escapeHtml(link.href || '#')}" ${link.external ? 'target="_blank" rel="noopener"' : ''}>${escapeHtml(link.label || link.title || 'Link')}</a>`)
+      .join('');
   }
 }
 
@@ -1150,6 +1361,9 @@ function bindPdfEvents() {
   state.pdf.close = document.querySelector('.ct-pdf-close');
   state.pdf.frame = document.querySelector('.ct-pdf-frame');
   state.pdf.backdrop = document.querySelector('[data-pdf-backdrop]');
+  if (state.pdf.close) {
+    state.pdf.close.innerHTML = icon('xMark');
+  }
   state.pdf.close?.addEventListener('click', hidePdfPane);
   state.pdf.backdrop?.addEventListener('click', hidePdfPane);
   if (state.pdf.pane) {
@@ -1205,7 +1419,7 @@ function bindHudToggle() {
     if (now.audio && !now.audio.paused) {
       hudState.last = { id: now.id, at: now.audio.currentTime || 0 };
       now.audio.pause();
-      hudUpdate(now.id, now.audio);
+      syncHudWithActivePlayback();
       return;
     }
     const id = hudState.last.id || (works[0] && works[0].id);
@@ -1216,13 +1430,16 @@ function bindHudToggle() {
 
 ready(() => {
   document.documentElement.dataset.skin = 'cards-tabs';
-  injectHudCssOnce();
   ensureHudDom();
+  hudSetIdle();
   bindHudToggle();
   window.praeApplyTheme(window.praeCurrentTheme(), { persist: false });
   bindThemeToggle();
+  initBrand();
   renderSummary();
   renderWorksList();
+  bindActionRailEvents();
+  renderActionRail();
   renderFooter();
   handleWorksActions();
   initTabs();

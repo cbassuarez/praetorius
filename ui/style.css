@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&display=swap');
 html, body { background:#fff; }
 
   /* ===========================
@@ -876,13 +875,10 @@ flex:0 0 auto;
   gap:8px;                 /* space between aperture and badge */
   white-space:nowrap;      /* prevent wrapping */
 }
-.wc-crumbs .wb-badge{ line-height:0; }   /* remove inline-gap */
-.wc-crumbs .wb-badge img{
-  display:block;
-  height:18px;                 /* compact, matches icon scale */
-}
-@media (max-width: 600px){
-  .wc-crumbs .wb-badge img{ height:16px; }
+.wc-crumbs .wb-badge{
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 /* Works section must always be white, regardless of theme */
 #works-group,

@@ -565,9 +565,26 @@ function applySiteInfo() {
 
 function buildPraeBadge() {
   if (!state.footer.badge) return;
-  state.footer.badge.innerHTML = `
-    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.65 5.36 5.91.86-4.28 4.17 1.01 5.89L12 15.98l-5.29 2.8 1.01-5.89-4.28-4.17 5.91-.86z"/></svg>
-    <span>Powered by Praetorius</span>`;
+  const branding = PRAE.config?.branding || {};
+  const enabled = !(branding.attribution && branding.attribution.enabled === false);
+  state.footer.badge.innerHTML = '';
+  if (!enabled) {
+    state.footer.badge.setAttribute('hidden', '');
+    return;
+  }
+  state.footer.badge.removeAttribute('hidden');
+  state.footer.badge.href = 'https://www.npmjs.com/package/praetorius';
+  state.footer.badge.target = '_blank';
+  state.footer.badge.rel = 'noopener noreferrer';
+  state.footer.badge.classList.add('prae-brand-powered');
+  const prefix = document.createElement('span');
+  prefix.className = 'prae-brand-powered-prefix';
+  prefix.textContent = 'Powered by';
+  const lockup = document.createElement('span');
+  lockup.className = 'prae-brand-lockup';
+  const markSvg = PRAE.branding?.markSvg ? PRAE.branding.markSvg() : '';
+  lockup.innerHTML = `${markSvg}<span class="prae-brand-wordmark">Praetorius</span>`;
+  state.footer.badge.append(prefix, lockup);
 }
 
 function getStackModules(work) {

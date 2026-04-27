@@ -824,6 +824,7 @@ window.addEventListener('wc:pdf-goto', (event) => {
 
 function applySiteInfo() {
   const site = PRAE.config?.site || {};
+  const branding = PRAE.config?.branding || {};
   const nameParts = [site.fullName, [site.firstName, site.lastName].filter(Boolean).join(' ')].filter(Boolean);
   const fallbackName = nameParts[0] || nameParts[1] || site.title || site.copyrightName || 'Praetorius';
   const title = fallbackName.trim();
@@ -843,6 +844,27 @@ function applySiteInfo() {
       }
     }
     foot.textContent = text;
+  }
+  const brandSlot = document.getElementById('tf-foot-brand');
+  if (brandSlot) {
+    brandSlot.innerHTML = '';
+    const attributionEnabled = !(branding.attribution && branding.attribution.enabled === false);
+    if (attributionEnabled) {
+      const powered = document.createElement('a');
+      powered.className = 'prae-brand-powered';
+      powered.href = 'https://www.npmjs.com/package/praetorius';
+      powered.target = '_blank';
+      powered.rel = 'noopener noreferrer';
+      const prefix = document.createElement('span');
+      prefix.className = 'prae-brand-powered-prefix';
+      prefix.textContent = 'Powered by';
+      const lockup = document.createElement('span');
+      lockup.className = 'prae-brand-lockup';
+      const markSvg = PRAE.branding?.markSvg ? PRAE.branding.markSvg() : '';
+      lockup.innerHTML = `${markSvg}<span class="prae-brand-wordmark">Praetorius</span>`;
+      powered.append(prefix, lockup);
+      brandSlot.append(powered);
+    }
   }
 }
 

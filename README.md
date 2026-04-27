@@ -1,8 +1,6 @@
 # Praetorius — Interactive Works Console
 
-![npm](https://img.shields.io/npm/v/praetorius?label=praetorius\&logo=npm)
-![license](https://img.shields.io/badge/license-MIT-black)
-![install](https://img.shields.io/badge/install-npm%20i%20-g%20praetorius)
+[npm package](https://www.npmjs.com/package/praetorius) · [GitHub](https://github.com/cbassuarez/praetorius) · [License: MIT](./LICENSE) · `npm i -g praetorius`
 
 <!-- (Optional) add a Node badge if you want to declare a minimum runtime -->
 
@@ -70,14 +68,32 @@ prae generate --out dist
 # pick a specific skin
 prae generate --skin console       --out dist
 prae generate --skin vite-breeze   --out dist
+prae generate --skin vite-breeze --ui-runtime react --out dist
 prae generate --skin docs-reader   --out dist
 prae generate --skin cards-tabs    --out dist
+prae generate --skin cards-tabs --ui-runtime react --out dist
 prae generate --skin kiosk         --out dist
+prae generate --skin kiosk --ui-runtime react --out dist
 prae generate --skin typefolio     --out dist
 prae generate --skin typescatter   --out dist
 
 # single pasteable snippet (for a Code block)
 prae generate --embed > embed.html
+# vite-breeze/cards-tabs/kiosk embed always uses vanilla runtime fallback
+prae generate --skin vite-breeze --ui-runtime react --embed > embed.html
+prae generate --skin cards-tabs --ui-runtime react --embed > embed.html
+prae generate --skin kiosk --ui-runtime react --embed > embed.html
+
+# global appearance overrides (all skins; console uses palette+mode only)
+prae generate --skin kiosk \
+  --palette gem-diamond \
+  --cursor prism-diamond \
+  --hover-effect high-drama \
+  --button-effect balanced-neo \
+  --out dist
+
+# mono-one custom color (HEX or OKLCH input; normalized and stored as OKLCH)
+prae generate --skin cards-tabs --palette mono-one --mono-color "#3355cc" --out dist
 ```
 
 ### 5) Integrate in your site
@@ -122,6 +138,7 @@ Minimal, human-readable schema:
 
 * `id` (int), `slug`, `title`, `one` (short one-liner).
 * `audio` (URL or null), `pdf` (URL or null).
+* `cover` (optional image URL), `tags` (optional string array).
 * `cues[]` may be `{ label, t }` (seconds) or `@mm:ss`.
 * `score` holds printed→PDF mapping: see next section.
 
@@ -147,12 +164,91 @@ Praetorius renders the same data across different skins. Choose one at generate 
 | `console` (default) | Terminal-style console/takeover UX with commands.    |
 | `vite-breeze`       | Modern “liquid glass” portfolio UI.                  |
 | `docs-reader`       | Reader layout for long-form notes + preview.         |
-| `cards-tabs`        | Card grid with tabbed details.                       |
-| `kiosk`             | Fullscreen, minimal, for exhibitions or on-site use. |
+| `cards-tabs`        | Neo-brutal gallery board + tabbed inspector/action rail. |
+| `kiosk`             | Touch-wall presentation with hidden operator menu. |
 | `typefolio`         | Editorial spread with a live preview pane.           |
 | `typescatter`       | Free-form/scatter presentation with focus on titles. |
 
 > See the `ui/` directory in the repo for each skin’s source and templates. (Skins currently listed in the repo include at least `vite-breeze`, `docs-reader`, `cards-tabs`, `kiosk`; additional skins here reflect the current codebase you’re generating with.) 
+
+### UI runtime
+
+`vite-breeze`, `cards-tabs`, `kiosk`, and `docs-reader` support two runtimes:
+
+* `vanilla` (default): `prae generate --skin <skin>`
+* `react` (opt-in): `prae generate --skin <skin> --ui-runtime react`
+
+For CMS code blocks, `--embed` always falls back to vanilla runtime for `vite-breeze`, `cards-tabs`, `kiosk`, and `docs-reader`.
+
+Docs Reader authoring (2026):
+* Markdown-first content remains the default.
+* Optional frontmatter supports rich page modules:
+  * `hero: { kicker?, title?, lede? }`
+  * `modules[]`:
+    * `score: { title?, pdf, audio?, cues?, pageFollow? }`
+    * `media: { title?, layout?, items[] }`
+    * `process: { title?, steps[] }`
+    * `credits: { title?, roles[] }`
+* Docs search supports `search.engine: auto|light|fuse|none` in `.prae/docs.json`.
+
+Kiosk operator defaults:
+* Attract mode: `Visual-only`
+* Density: `Balanced`
+* Motion: `Standard`
+* Open operator menu with bottom-right hotspot or `Cmd/Ctrl + Shift + O`.
+
+### Global appearance (all output skins)
+
+Praetorius supports a global appearance layer that maps into each skin token system:
+
+* `theme` (`light|dark`) remains the mode toggle.
+* `palette` selects the color family.
+* `cursor`, `hover-effect`, and `button-effect` are global presets.
+
+```json
+{
+  "theme": "dark",
+  "ui": {
+    "appearance": {
+      "theme": {
+        "palette": "orange-blue-white-silver",
+        "monoBaseOklch": "oklch(0.62 0.09 250)"
+      },
+      "cursor": { "preset": "system" },
+      "effects": { "hover": "balanced-neo", "button": "balanced-neo" }
+    },
+    "branding": { "attribution": { "enabled": true } }
+  }
+}
+```
+
+Palette options:
+* `ryb-tricolor`
+* `mono-bw`
+* `mono-one` (uses `monoBaseOklch` or `--mono-color`)
+* `gem-diamond`
+* `orange-blue-white-silver` (default)
+
+Cursor options:
+* `system` (default)
+* `block-square`
+* `ring`
+* `prism-diamond`
+
+Effects (for both `--hover-effect` and `--button-effect`):
+* `minimal`
+* `balanced-neo` (default)
+* `high-drama`
+
+Console skin behavior:
+* Applies palette + mode to text tokens only.
+* Ignores cursor and hover/button effect presets (non-blocking console note is printed).
+
+Branding behavior:
+* `ui.branding.attribution.enabled` is default-on and controls the powered-by footer lockup.
+* Legacy `site.showBadge === false` is normalized to `ui.branding.attribution.enabled = false`.
+* Official npm/GitHub callouts are first-party components (no Shields dependency).
+* Press assets and lockup rules are available in docs `/press`.
 
 ---
 
@@ -168,7 +264,7 @@ All commands are available via `praetorius` or its short alias `prae`.
 * `prae list` — print current DB for inspection.
 * `prae import <file.(json|csv)>` — import works.
 * `prae export [--format json|csv]` — export works.
-* `prae generate [--skin <name>] [--out dist] [--embed]` — emit assets/snippet.
+* `prae generate [--skin <name>] [--ui-runtime vanilla|react] [--palette <name>] [--cursor <preset>] [--hover-effect <preset>] [--button-effect <preset>] [--mono-color <hex|oklch>] [--out dist] [--embed]` — emit assets/snippet.
 * `prae doctor` — validate schema, mapping, and links; print actionable guidance.
   *(Doctor++ checks are implemented; use this when something feels off.)*
 
@@ -178,7 +274,8 @@ All commands are available via `praetorius` or its short alias `prae`.
 
 ## Embedding & hosting
 
-* **Squarespace/WordPress/Webflow/etc.:** paste the embed or include your hosted `script.js`/`styles.css`. This avoids theme collisions and works anywhere a Code/HTML block is allowed. 
+* **Squarespace/WordPress/Webflow/etc.:** paste the embed or include your hosted `script.js`/`styles.css`. This avoids theme collisions and works anywhere a Code/HTML block is allowed.
+  For `vite-breeze`, `cards-tabs`, `kiosk`, and `docs-reader`, embed output always uses the vanilla runtime even if `--ui-runtime react` is requested.
 * **PDF hosting:** prefer your own origin (or a CDN you control). When using Google Drive, convert links as noted under PDF Page-Follow.
 
 ---

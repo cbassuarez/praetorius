@@ -16,6 +16,9 @@ hero:
     - theme: alt
       text: Playground
       link: /playground
+    - theme: alt
+      text: Press Kit
+      link: /press/
 features:
   - title: Page-follow PDFs
     details: Follow playback across the printed score with shareable deep links.

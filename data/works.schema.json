@@ -72,6 +72,12 @@
           },
           "audioUrl": { "type": ["string", "null"] },
           "pdfUrl": { "type": ["string", "null"] },
+          "cover": { "type": ["string", "null"] },
+          "coverUrl": { "type": ["string", "null"] },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
           "cues": {
             "type": "array",
             "items": {

@@ -45,6 +45,11 @@ function praeSyncThemeOnDom(mode){
 
 function praeApplyTheme(mode, opts){
   var eff = praeSyncThemeOnDom(mode);
+  try {
+    if (window.PRAE && typeof window.PRAE.applyAppearanceMode === 'function') {
+      window.PRAE.applyAppearanceMode(eff, { persist: false });
+    }
+  } catch (_) {}
   if (!opts || opts.persist !== false) {
     try { localStorage.setItem(PRAE_THEME_STORAGE_KEY, eff); } catch (_) {}
   }
@@ -155,6 +160,8 @@ ensureHudRoot();
     : (Array.isArray(PRAE.works) ? PRAE.works : []);
   const site  = (PRAE.config && PRAE.config.site) || {};
   const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
+  const prefersReducedMotion = typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // ---- Shared state (hoisted to avoid TDZ in mount / listeners) ----
   let currentPdfSlug = null;
   let pdfViewerReady = false;
@@ -253,14 +260,10 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
       .join('');
   }
   if (footer) {
-    const name    = site.copyrightName || site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ') || '—';
-    const updated = (site.updated && site.updated.mode === 'manual') ? (site.updated.value || '') : new Date().toLocaleDateString();
-    const links   = Array.isArray(site.links) ? site.links : [];
-    footer.innerHTML = `
-      <div class="left">© ${esc(String(name))}${updated ? ` · Updated ${esc(String(updated))}` : ''}</div>
-      <div class="links">
-        ${links.map(l => `<a href="${esc(l.href||'#')}" ${l.external?'target="_blank" rel="noopener"':''}>${esc(l.label||'Link')}</a>`).join('')}
-      </div>`;
+    const branding = (PRAE.config && PRAE.config.branding) || {};
+    if (PRAE.branding && typeof PRAE.branding.renderFooter === 'function') {
+      PRAE.branding.renderFooter(footer, { site, branding });
+    }
   }
 
 // Brand (header) from config: Your Name / subtitle
@@ -279,8 +282,52 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   // HUD already exists from early bootstrap; just ensure internals + styles
   PRAE.hud.ensure();
 
+  const icon = (name) => {
+    const start = '<svg class="vb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+    if (name === 'play') {
+      return `${start}<path d="M7.5 5.75A1.75 1.75 0 0 1 10.16 4.3l8.25 5.78a1.75 1.75 0 0 1 0 2.86l-8.25 5.78A1.75 1.75 0 0 1 7.5 17.25V5.75Z"/></svg>`;
+    }
+    if (name === 'eye') {
+      return `${start}<path d="M2.1 12s3.65-6.25 9.9-6.25 9.9 6.25 9.9 6.25-3.65 6.25-9.9 6.25S2.1 12 2.1 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>`;
+    }
+    if (name === 'link') {
+      return `${start}<path d="M13.8 8.2a4.5 4.5 0 0 1 0 6.36l-1.45 1.45a4.5 4.5 0 1 1-6.36-6.36l1.45-1.45"/><path d="M10.2 15.8a4.5 4.5 0 0 1 0-6.36l1.45-1.45a4.5 4.5 0 1 1 6.36 6.36l-1.45 1.45"/></svg>`;
+    }
+    if (name === 'document') {
+      return `${start}<path d="M14.25 3.75H7.5A2.25 2.25 0 0 0 5.25 6v12A2.25 2.25 0 0 0 7.5 20.25h9A2.25 2.25 0 0 0 18.75 18V8.25L14.25 3.75Z"/><path d="M14.25 3.75V8.25h4.5"/><path d="M9 12.75h6m-6 3h4.5"/></svg>`;
+    }
+    if (name === 'x') {
+      return `${start}<path d="m7 7 10 10M17 7 7 17"/></svg>`;
+    }
+    return `${start}</svg>`;
+  };
+
+  function bindCardSheen(card){
+    if (!card || prefersReducedMotion) return;
+    const update = (ev) => {
+      const rect = card.getBoundingClientRect();
+      const x = ((ev.clientX - rect.left) / Math.max(rect.width, 1)) * 100;
+      const y = ((ev.clientY - rect.top) / Math.max(rect.height, 1)) * 100;
+      const xClamped = Math.max(0, Math.min(100, x)).toFixed(2);
+      const yClamped = Math.max(0, Math.min(100, y)).toFixed(2);
+      card.style.setProperty('--shine-x', `${xClamped}%`);
+      card.style.setProperty('--shine-y', `${yClamped}%`);
+    };
+    const clear = () => {
+      card.style.removeProperty('--shine-x');
+      card.style.removeProperty('--shine-y');
+    };
+    card.addEventListener('pointerenter', update, { passive:true });
+    card.addEventListener('pointermove', update, { passive:true });
+    card.addEventListener('pointerleave', clear, { passive:true });
+    card.addEventListener('pointercancel', clear, { passive:true });
+  }
+
   works.forEach(w => {
     const cues = Array.isArray(w.cues) ? w.cues : [];
+    const tags = Array.isArray(w.tags)
+      ? w.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+      : [];
     const el = document.createElement('article');
     el.className = 'work';
     el.id = 'work-' + (w.slug || w.id);
@@ -290,22 +337,38 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
       ? `<ul class="cues">${cues.map(c => {
           const t = Number(c.t) || 0;
           return `<li><button class="chip" type="button" data-act="play" data-id="${w.id}" data-t="${t}" aria-label="Play at ${formatTime(t)}">
+                    ${icon('play')}
                     <span>Play ${esc(labelFor(t, c.label))}</span>
                   </button></li>`;
         }).join('')}</ul>`
       : '';
+    const coverUrl = String(w.cover || w.coverUrl || '').trim();
+    const coverHtml = coverUrl
+      ? `<figure class="work-cover"><img src="${esc(coverUrl)}" alt="" loading="lazy"></figure>`
+      : `<div class="work-cover work-cover-fallback" aria-hidden="true"></div>`;
+    const tagHtml = tags.length
+      ? `<ul class="work-tags">${tags.map((tag) => `<li class="work-tag">${esc(tag)}</li>`).join('')}</ul>`
+      : '';
 
     el.innerHTML = `
-      <h2><span class="work-title">${esc(w.title)}</span> <span class="muted">(${esc(w.slug)})</span></h2>
+      <header class="work-head">
+        <div class="work-head-copy">
+          <h2><span class="work-title">${esc(w.title)}</span></h2>
+          <p class="muted">${esc(w.slug)}</p>
+        </div>
+        ${coverHtml}
+      </header>
       <p class="one">${esc(w.onelinerEffective || '')}</p>
+      ${tagHtml}
       ${cueHtml}
       <div class="actions">
-        <button class="btn" type="button" data-act="open" data-id="${w.id}">Open</button>
-        <button class="btn" type="button" data-act="copy" data-id="${w.id}">Copy URL</button>
-        ${w.pdf ? `<button class="btn" type="button" data-act="pdf" data-id="${w.id}">PDF</button>` : ''}
+        <button class="btn" type="button" data-act="open" data-id="${w.id}">${icon('eye')}<span>Open</span></button>
+        <button class="btn" type="button" data-act="copy" data-id="${w.id}">${icon('link')}<span>Copy URL</span></button>
+        ${w.pdf ? `<button class="btn" type="button" data-act="pdf" data-id="${w.id}">${icon('document')}<span>PDF</span></button>` : ''}
       </div>
       <div class="note" hidden></div>`;
     host.appendChild(el);
+    bindCardSheen(el);
 
     // Ensure a matching <audio> exists (id = wc-a<ID>)
     ensureAudioFor(w);
@@ -341,6 +404,10 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
       if (note.hasChildNodes()) {
         const isHidden = note.hasAttribute('hidden');
         note.toggleAttribute('hidden', !isHidden);
+        const nextOpen = isHidden;
+        btn.classList.toggle('is-open', nextOpen);
+        const label = btn.querySelector('span:last-child');
+        if (label) label.textContent = nextOpen ? 'Close' : 'Open';
       } else {
         const paras = [];
         if (w.descriptionEffective) paras.push(w.descriptionEffective);
@@ -353,6 +420,9 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
           note.appendChild(d);
         });
         note.removeAttribute('hidden');
+        btn.classList.add('is-open');
+        const label = btn.querySelector('span:last-child');
+        if (label) label.textContent = 'Close';
       }
     }
 
@@ -379,6 +449,10 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   
   // PDF close + Esc
   pdfClose?.addEventListener('click', hidePdfPane);
+  if (pdfClose && !pdfClose.dataset.iconized) {
+    pdfClose.innerHTML = `${icon('x')}<span>Close</span>`;
+    pdfClose.dataset.iconized = '1';
+  }
   document.addEventListener('keydown', (e)=>{
     if (e.key === 'Escape' && shell?.classList.contains('has-pdf')) hidePdfPane();
   }, { passive:true });
@@ -409,6 +483,11 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
       if (src) { a.src = src; a.load(); }
     }
     const seekAndPlay = ()=>{
+      try {
+        if (window.PRAE && typeof window.PRAE.pauseAllAudio === 'function') {
+          window.PRAE.pauseAllAudio(id);
+        }
+      } catch (_) {}
       try { a.currentTime = Math.max(0, t|0); } catch(_){}
       const p = a.play();
       if (p && typeof p.catch === 'function'){
@@ -785,4 +864,3 @@ pdfViewerReady = false;
     boot();
   }
 })();
-

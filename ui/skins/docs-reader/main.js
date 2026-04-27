@@ -1,23 +1,28 @@
-const DEFAULT_NAV_DATA = [
-  {
-    id: 'start',
-    label: 'Getting started',
-    items: [
-      { id: 'overview', label: 'Overview', href: '#overview', snippet: 'Meet the Docs Reader shell and run your first build.' },
-      { id: 'layout', label: 'Layout anatomy', href: '#layout', snippet: 'Tour the three-pane responsive layout.' },
-      { id: 'search', label: 'Search & shortcuts', href: '#search', snippet: 'Keyboard-driven instant search and link sharing.' }
-    ]
-  },
-  {
-    id: 'integrations',
-    label: 'Integrations',
-    items: [
-      { id: 'integration', label: 'Works Console', href: '#integration', snippet: 'Keep HUD and PDF hooks without extra wiring.' }
-    ]
-  }
-];
+const NAV_STATE_KEY = 'docs-reader.nav.state.v2';
+const HEROICONS_BASE = './lib/heroicons/24/outline';
+const ICON_FILES = Object.freeze({
+  nav: 'arrows-pointing-out',
+  tools: 'arrows-pointing-in',
+  search: 'sparkles',
+  close: 'x-mark',
+  themeLight: 'sun',
+  themeDark: 'moon',
+  link: 'link',
+  external: 'arrow-up-right',
+  copy: 'document-text',
+  play: 'play',
+  pause: 'pause',
+  eye: 'eye',
+  refresh: 'arrow-path'
+});
 
-const NAV_STATE_KEY = 'docs-reader.nav.state';
+function iconMarkup(name, className = 'dr-icon', label = '') {
+  const file = ICON_FILES[name];
+  if (!file) return '';
+  const safeLabel = label ? ` alt="${label.replace(/"/g, '&quot;')}"` : ' alt="" aria-hidden="true"';
+  return `<img class="${className}" src="${HEROICONS_BASE}/${file}.svg"${safeLabel} loading="lazy" decoding="async">`;
+}
+
 function readDocsData() {
   const script = document.getElementById('prae-docs-data');
   if (!script) return {};
@@ -29,22 +34,54 @@ function readDocsData() {
   }
 }
 
+function ready(fn) {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fn, { once: true });
+  } else {
+    fn();
+  }
+}
+
 const DOCS_DATA = readDocsData();
 const DOCS_LIST = Array.isArray(DOCS_DATA.docs) ? DOCS_DATA.docs : [];
-const NAV_DATA = Array.isArray(DOCS_DATA.nav) && DOCS_DATA.nav.length ? DOCS_DATA.nav : DEFAULT_NAV_DATA;
-const SEARCH_INDEX = Array.isArray(DOCS_DATA.search) && DOCS_DATA.search.length
-  ? DOCS_DATA.search
-  : DEFAULT_NAV_DATA.flatMap(group => group.items.map(item => ({
-      title: item.label,
-      url: item.href,
-      snippet: item.snippet,
-      group: group.label
-    })));
+const NAV_DATA = Array.isArray(DOCS_DATA.nav) ? DOCS_DATA.nav : [];
+const SEARCH_ENTRIES = Array.isArray(DOCS_DATA.search) ? DOCS_DATA.search : [];
+const SEARCH_CONFIG = DOCS_DATA.searchConfig && typeof DOCS_DATA.searchConfig === 'object'
+  ? DOCS_DATA.searchConfig
+  : { enabled: true, requestedEngine: 'auto', engine: 'light', fields: ['title', 'headings', 'body', 'summary'], stats: { docCount: DOCS_LIST.length, bytes: 0 } };
+const SITE_DATA = DOCS_DATA.site && typeof DOCS_DATA.site === 'object' ? DOCS_DATA.site : {};
+const WORKS_SETTINGS = DOCS_DATA.works && typeof DOCS_DATA.works === 'object' ? DOCS_DATA.works : {};
+const HERO_DATA = DOCS_DATA.hero && typeof DOCS_DATA.hero === 'object' ? DOCS_DATA.hero : {};
+const HOME_SECTIONS = Array.isArray(DOCS_DATA.sections) ? DOCS_DATA.sections : [];
+const HOMEPAGE_ID = typeof DOCS_DATA.homepage === 'string' ? DOCS_DATA.homepage : '';
+const HOMEPAGE_MISSING = !!DOCS_DATA.homepageMissing;
+
+const DOC_BY_ID = new Map();
+DOCS_LIST.forEach((doc) => {
+  if (!doc || typeof doc !== 'object' || typeof doc.id !== 'string') return;
+  DOC_BY_ID.set(doc.id, doc);
+});
+
+const PLACEHOLDER_DOC = HOMEPAGE_MISSING
+  ? {
+      id: 'docs-placeholder',
+      title: 'Documentation coming soon',
+      subtitle: '',
+      summary: 'Auto-generated homepage placeholder.',
+      html: '<p>Auto-generated homepage placeholder.</p>',
+      modules: [],
+      headings: [],
+      breadcrumbs: [],
+      meta: { status: '', updated: '' }
+    }
+  : null;
+
+const moduleAudioMap = new Map();
 const stringWarnings = new Set();
 
 function ensureString(value, key, fallback = '') {
   if (typeof value === 'string') return value;
-  if (value != null && !stringWarnings.has(key)) {
+  if (value != null && key && !stringWarnings.has(key)) {
     console.warn(`[docs-reader] Ignoring non-string ${key}.`);
     stringWarnings.add(key);
   }
@@ -53,40 +90,60 @@ function ensureString(value, key, fallback = '') {
 
 function ensureHtml(value, key) {
   if (typeof value === 'string') return value;
-  if (value != null && !stringWarnings.has(key)) {
+  if (value != null && key && !stringWarnings.has(key)) {
     console.warn(`[docs-reader] Ignoring non-string ${key}.`);
     stringWarnings.add(key);
   }
   return '';
 }
 
-const DOC_BY_ID = new Map();
-const DOC_BY_URL = new Map();
-DOCS_LIST.forEach((doc) => {
-  if (!doc || typeof doc !== 'object') return;
-  if (typeof doc.id === 'string' && doc.id) DOC_BY_ID.set(doc.id, doc);
-  if (typeof doc.url === 'string' && doc.url) DOC_BY_URL.set(doc.url, doc);
-});
-const HOMEPAGE_ID = typeof DOCS_DATA.homepage === 'string' ? DOCS_DATA.homepage : '';
-const HOMEPAGE_MISSING = !!DOCS_DATA.homepageMissing;
-const WORKS_SETTINGS = (DOCS_DATA.works && typeof DOCS_DATA.works === 'object') ? DOCS_DATA.works : {};
-const HERO_DATA = (DOCS_DATA.hero && typeof DOCS_DATA.hero === 'object') ? DOCS_DATA.hero : {};
-const HOME_SECTIONS = Array.isArray(DOCS_DATA.sections) ? DOCS_DATA.sections : [];
-const PLACEHOLDER_DOC = HOMEPAGE_MISSING ? {
-  id: 'docs-placeholder',
-  title: 'Documentation coming soon',
-  summary: 'Auto-generated homepage placeholder.',
-  subtitle: '',
-  html: '<p>Auto-generated homepage placeholder.</p>',
-  headings: []
-} : null;
-
-function ready(fn) {
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', fn, { once: true });
-  } else {
-    fn();
+function copyText(value) {
+  if (!value) return Promise.resolve(false);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(value).then(() => true).catch(() => false);
   }
+  return Promise.resolve(false);
+}
+
+function readNavState() {
+  try {
+    const raw = localStorage.getItem(NAV_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeNavState(value) {
+  try {
+    localStorage.setItem(NAV_STATE_KEY, JSON.stringify(value || {}));
+  } catch (_) {}
+}
+
+function parseRouteHash(hash) {
+  let raw = String(hash || '').trim();
+  if (raw.startsWith('#')) raw = raw.slice(1);
+  if (!raw) return { docId: '', heading: '' };
+  if (raw.startsWith('/')) raw = raw.slice(1);
+  const qIdx = raw.indexOf('?');
+  const docPart = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
+  const query = qIdx >= 0 ? raw.slice(qIdx + 1) : '';
+  const params = new URLSearchParams(query);
+  return {
+    docId: decodeURIComponent(docPart || '').replace(/^\/+/, ''),
+    heading: params.get('h') || ''
+  };
+}
+
+function buildRouteHash(docId, headingId) {
+  const safeDoc = String(docId || '').replace(/^\/+/, '');
+  if (!safeDoc) return '';
+  if (!headingId) return `#/${safeDoc}`;
+  const params = new URLSearchParams();
+  params.set('h', String(headingId));
+  return `#/${safeDoc}?${params.toString()}`;
 }
 
 function ensureThemeHelpers() {
@@ -104,944 +161,1309 @@ function ensureThemeHelpers() {
   }
 
   const STORAGE_KEY = 'wc.theme';
-  const THEME_CLASSES = ['prae-theme-light', 'prae-theme-dark'];
 
-  function normalize(value) {
-    return value === 'dark' ? 'dark' : 'light';
+  function normalize(mode) {
+    return mode === 'light' ? 'light' : 'dark';
   }
 
-  function readStoredTheme() {
+  function current() {
+    const attr = document.body ? document.body.getAttribute('data-theme') : '';
+    if (attr === 'light' || attr === 'dark') return attr;
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (!saved) return 'dark';
-      if (saved.trim().startsWith('{')) {
-        const parsed = JSON.parse(saved);
-        return normalize(parsed?.mode);
-      }
-      return normalize(saved);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return normalize(raw || 'dark');
     } catch (_) {
       return 'dark';
     }
   }
 
-  function syncTheme(mode) {
-    const eff = normalize(mode);
-    const body = document.body;
-    const doc = document.documentElement;
-    const consoleHost = document.getElementById('works-console');
-    if (doc) {
-      doc.setAttribute('data-theme', eff);
-      doc.style.colorScheme = eff === 'dark' ? 'dark' : 'light';
+  function apply(mode, opts = {}) {
+    const next = normalize(mode);
+    [document.documentElement, document.body, document.getElementById('works-console')].forEach((node) => {
+      if (!node) return;
+      node.setAttribute('data-theme', next);
+      node.classList.remove('prae-theme-light', 'prae-theme-dark');
+      node.classList.add(next === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
+    });
+    if (document.documentElement) {
+      document.documentElement.style.colorScheme = next;
     }
-    if (body) {
-      body.setAttribute('data-theme', eff);
-      body.classList.remove(...THEME_CLASSES);
-      body.classList.add(eff === 'dark' ? THEME_CLASSES[1] : THEME_CLASSES[0]);
+    if (opts.persist !== false) {
+      try { localStorage.setItem(STORAGE_KEY, next); } catch (_) {}
     }
-    if (consoleHost) {
-      consoleHost.classList.remove(...THEME_CLASSES);
-      consoleHost.classList.add(eff === 'dark' ? THEME_CLASSES[1] : THEME_CLASSES[0]);
-      consoleHost.setAttribute('data-theme', eff);
-    }
-    return eff;
+    return next;
   }
 
-  function applyTheme(mode, opts) {
-    const eff = syncTheme(mode);
-    if (!opts || opts.persist !== false) {
-      try { localStorage.setItem(STORAGE_KEY, eff); } catch (_) {}
-    }
-    const btn = document.getElementById('wc-theme-toggle');
-    if (btn) {
-      btn.setAttribute('aria-checked', String(eff === 'dark'));
-      btn.dataset.mode = eff;
-      btn.title = `Toggle theme (current: ${eff})`;
-    }
-    return eff;
+  function cycle() {
+    apply(current() === 'dark' ? 'light' : 'dark');
   }
 
-  function currentTheme() {
-    const body = document.body;
-    const attr = body?.getAttribute('data-theme');
-    if (attr === 'light' || attr === 'dark') return attr;
-    return readStoredTheme();
-  }
-
-  function cycleTheme() {
-    const next = currentTheme() === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-  }
-
-  window.praeApplyTheme = applyTheme;
-  window.praeCurrentTheme = currentTheme;
-  window.praeCycleTheme = cycleTheme;
-
-  return { apply: applyTheme, current: currentTheme, cycle: cycleTheme };
-}
-
-function slugify(value) {
-  return String(value || '')
-    .toLowerCase()
-    .trim()
-    .replace(/["'’`]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-');
-}
-
-function readNavState() {
-  try {
-    const raw = localStorage.getItem(NAV_STATE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed ? parsed : {};
-  } catch (_) {
-    return {};
-  }
-}
-
-function writeNavState(state) {
-  try {
-    localStorage.setItem(NAV_STATE_KEY, JSON.stringify(state));
-  } catch (_) {}
-}
-
-function copyToClipboard(text) {
-  if (!text) return Promise.resolve(false);
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text).then(() => true).catch(() => fallback());
-  }
-  return fallback();
-
-  function fallback() {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    let ok = false;
-    try {
-      ok = document.execCommand('copy');
-    } catch (_) {
-      ok = false;
-    }
-    document.body.removeChild(textarea);
-    return Promise.resolve(ok);
-  }
+  window.praeApplyTheme = apply;
+  window.praeCurrentTheme = current;
+  window.praeCycleTheme = cycle;
+  return { apply, current, cycle };
 }
 
 function applySiteChrome(site) {
-  const title = site?.title || 'Praetorius Docs';
-  const subtitle = site?.subtitle || '';
-  document.title = subtitle ? `${title} — ${subtitle}` : title;
-  document.querySelectorAll('[data-site-title]').forEach((el) => { el.textContent = title; });
-  document.querySelectorAll('[data-site-subtitle]').forEach((el) => { el.textContent = subtitle; });
-  if (site?.accent) {
-    document.documentElement.style.setProperty('--prae-color-accent', site.accent);
+  const title = ensureString(site.title, 'site.title', 'Praetorius Docs') || 'Praetorius Docs';
+  const subtitle = ensureString(site.subtitle, 'site.subtitle', '');
+  document.querySelectorAll('[data-site-title]').forEach((node) => {
+    node.textContent = title;
+  });
+  document.querySelectorAll('[data-site-subtitle]').forEach((node) => {
+    node.textContent = subtitle;
+  });
+  document.title = subtitle ? `${title} - ${subtitle}` : title;
+}
+
+function renderBrandFooter() {
+  const root = document.getElementById('prae-footer');
+  if (!root) return;
+  const site = (window.PRAE && window.PRAE.config && window.PRAE.config.site) || {};
+  const branding = (window.PRAE && window.PRAE.config && window.PRAE.config.branding) || {};
+  if (window.PRAE && window.PRAE.branding && typeof window.PRAE.branding.renderFooter === 'function') {
+    window.PRAE.branding.renderFooter(root, { site, branding });
   }
 }
 
-function buildHeroElement(hero) {
-  if (!hero || (!hero.title && !hero.lede && !hero.kicker)) return null;
-  const header = document.createElement('header');
-  header.className = 'docs-hero';
-
-  const kickerText = ensureString(hero.kicker, 'hero.kicker');
-  if (kickerText) {
-    const kicker = document.createElement('p');
-    kicker.className = 'docs-kicker';
-    kicker.textContent = kickerText;
-    header.appendChild(kicker);
-  }
-
-  const title = document.createElement('h1');
-  title.textContent = ensureString(hero.title, 'hero.title', 'Documentation') || 'Documentation';
-  header.appendChild(title);
-
-  const ledeText = ensureString(hero.lede, 'hero.lede');
-  if (ledeText) {
-    const lede = document.createElement('p');
-    lede.className = 'docs-lede';
-    lede.textContent = ledeText;
-    header.appendChild(lede);
-  }
-
-  if (Array.isArray(hero.works) && hero.works.length) {
-    const highlights = document.createElement('div');
-    highlights.className = 'docs-hero-highlights';
-    const heading = document.createElement('h2');
-    heading.textContent = 'Featured works';
-    highlights.appendChild(heading);
-    const list = document.createElement('ul');
-    hero.works.forEach((work) => {
-      const li = document.createElement('li');
-      li.id = `works-${slugify(work.id || work.title || '')}`;
-      const label = document.createElement('strong');
-      label.textContent = ensureString(work.title, 'hero.works.title', 'Untitled') || 'Untitled';
-      li.appendChild(label);
-      const summaryCandidate = work.summary
-        ?? work.snippet
-        ?? work.onelinerEffective
-        ?? work.descriptionEffective;
-      const summaryText = ensureString(summaryCandidate, 'hero.works.summary');
-      if (summaryText) {
-        const p = document.createElement('p');
-        p.textContent = summaryText;
-        li.appendChild(p);
-      }
-      list.appendChild(li);
-    });
-    highlights.appendChild(list);
-    header.appendChild(highlights);
-  }
-
-  return header;
+function getHomepageDoc() {
+  if (HOMEPAGE_ID && DOC_BY_ID.has(HOMEPAGE_ID)) return DOC_BY_ID.get(HOMEPAGE_ID);
+  const first = DOCS_LIST.find((doc) => doc && typeof doc.id === 'string');
+  return first || null;
 }
 
-function renderHomeSections(article, sections) {
-  if (!article || !Array.isArray(sections) || !sections.length) return;
-  sections.forEach((section) => {
-    if (!section || typeof section !== 'object') return;
-    const block = document.createElement('section');
-    block.className = 'docs-section docs-home-section';
-    const id = ensureString(section.id, 'section.id');
-    if (id) block.id = id;
-    const kickerText = ensureString(section.kicker, 'section.kicker');
-    if (kickerText) {
-      const kicker = document.createElement('p');
-      kicker.className = 'docs-kicker';
-      kicker.textContent = kickerText;
-      block.appendChild(kicker);
-    }
-    const titleText = ensureString(section.title, 'section.title');
-    if (titleText) {
-      const heading = document.createElement('h2');
-      heading.textContent = titleText;
-      block.appendChild(heading);
-    }
-    const ledeText = ensureString(section.lede, 'section.lede');
-    if (ledeText) {
-      const lede = document.createElement('p');
-      lede.className = 'docs-lede';
-      lede.textContent = ledeText;
-      block.appendChild(lede);
-    }
-    const html = ensureHtml(section.html, 'section.html');
-    if (html) {
-      const body = document.createElement('div');
-      body.className = 'docs-home-section-body';
-      body.innerHTML = html;
-      block.appendChild(body);
-    }
-    const items = Array.isArray(section.items) ? section.items : [];
-    if (items.length) {
-      const list = document.createElement('ul');
-      list.className = 'docs-home-section-list';
-      items.forEach((item) => {
-        if (!item || (typeof item !== 'object' && typeof item !== 'string')) return;
-        const entry = document.createElement('li');
-        entry.className = 'docs-home-section-item';
-        let label = '';
-        let href = '';
-        let snippet = '';
-        let docId = '';
-        if (typeof item === 'string') {
-          label = ensureString(item, 'section.item.title');
-        } else {
-          label = ensureString(item.title ?? item.label, 'section.item.title');
-          href = ensureString(item.href ?? item.url, 'section.item.href');
-          snippet = ensureString(item.snippet ?? item.summary, 'section.item.snippet');
-          docId = ensureString(item.docId ?? item.id, 'section.item.docId');
-        }
-        if (!label && !href && !snippet) return;
-        if (href) {
-          const link = document.createElement('a');
-          link.href = href;
-          link.textContent = label || href;
-          if (docId) link.dataset.docId = docId;
-          entry.appendChild(link);
-        } else if (label) {
-          const strong = document.createElement('strong');
-          strong.textContent = label;
-          entry.appendChild(strong);
-        }
-        if (snippet) {
-          const p = document.createElement('p');
-          p.textContent = snippet;
-          entry.appendChild(p);
-        }
-        list.appendChild(entry);
-      });
-      block.appendChild(list);
-    }
-    article.appendChild(block);
+function getDocByRoute(routeDocId) {
+  const key = String(routeDocId || '').trim();
+  if (!key) return null;
+  if (DOC_BY_ID.has(key)) return DOC_BY_ID.get(key);
+  const lower = key.toLowerCase();
+  for (const [docId, doc] of DOC_BY_ID.entries()) {
+    if (docId.toLowerCase() === lower) return doc;
+  }
+  return null;
+}
+
+function humanizePathSegment(value) {
+  const raw = String(value || '').replace(/\.md$/i, '').trim();
+  if (!raw) return '';
+  return raw
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+    .join(' ');
+}
+
+function renderBreadcrumbs(doc) {
+  const node = document.querySelector('[data-doc-breadcrumbs]');
+  if (!node) return;
+  node.innerHTML = '';
+  const crumbs = Array.isArray(doc && doc.breadcrumbs) ? doc.breadcrumbs : [];
+  const home = document.createElement('span');
+  home.className = 'dr-breadcrumb-item';
+  home.textContent = 'Docs';
+  node.appendChild(home);
+  crumbs.forEach((crumb) => {
+    const sep = document.createElement('span');
+    sep.className = 'dr-breadcrumb-sep';
+    sep.textContent = '/';
+    node.appendChild(sep);
+    const part = document.createElement('span');
+    part.className = 'dr-breadcrumb-item';
+    part.textContent = ensureString(crumb && crumb.label, 'doc.breadcrumb.label', humanizePathSegment(crumb && crumb.id));
+    node.appendChild(part);
+  });
+  if (!crumbs.length && doc && doc.title) {
+    const sep = document.createElement('span');
+    sep.className = 'dr-breadcrumb-sep';
+    sep.textContent = '/';
+    node.appendChild(sep);
+    const leaf = document.createElement('span');
+    leaf.className = 'dr-breadcrumb-item';
+    leaf.textContent = doc.title;
+    node.appendChild(leaf);
+  }
+}
+
+function renderMeta(doc) {
+  const node = document.querySelector('[data-doc-meta]');
+  if (!node) return;
+  node.innerHTML = '';
+  const meta = (doc && typeof doc.meta === 'object') ? doc.meta : {};
+  const tags = Array.isArray(doc && doc.tags) ? doc.tags.slice(0, 4) : [];
+  if (meta.status === 'new' || meta.status === 'updated') {
+    const chip = document.createElement('span');
+    chip.className = 'dr-meta-chip';
+    chip.dataset.state = meta.status;
+    chip.textContent = meta.status;
+    node.appendChild(chip);
+  }
+  if (meta.updated) {
+    const updated = document.createElement('span');
+    updated.textContent = `Updated ${meta.updated}`;
+    node.appendChild(updated);
+  }
+  tags.forEach((tag) => {
+    const chip = document.createElement('span');
+    chip.className = 'dr-meta-chip';
+    chip.textContent = tag;
+    node.appendChild(chip);
   });
 }
 
-function renderDocsContent(article, doc, opts = {}) {
-  if (!article) return { body: null };
-  const effectiveDoc = doc || PLACEHOLDER_DOC;
-  article.innerHTML = '';
-  if (!effectiveDoc) return { body: null };
-
-  const baseHero = {
-    kicker: ensureString(effectiveDoc.subtitle, 'doc.subtitle'),
-    title: ensureString(effectiveDoc.title, 'doc.title', 'Documentation') || 'Documentation',
-    lede: ensureString(effectiveDoc.summary, 'doc.summary')
-  };
-  let heroInput = baseHero;
-  if (opts.heroOverride && typeof opts.heroOverride === 'object') {
-    heroInput = {
-      kicker: ensureString(opts.heroOverride.kicker, 'hero.kicker', baseHero.kicker),
-      title: ensureString(opts.heroOverride.title, 'hero.title', baseHero.title) || baseHero.title || 'Documentation',
-      lede: ensureString(opts.heroOverride.lede, 'hero.lede', baseHero.lede)
-    };
-    if (Array.isArray(opts.heroOverride.works) && opts.heroOverride.works.length) {
-      heroInput.works = opts.heroOverride.works
-        .map((item) => {
-          if (!item || typeof item !== 'object') return null;
-          const title = ensureString(item.title, 'hero.works.title', 'Untitled') || 'Untitled';
-          const summary = ensureString(item.summary, 'hero.works.summary');
-          const id = ensureString(item.id, 'hero.works.id', slugify(title || 'work'));
-          return { id, title, summary };
-        })
-        .filter(Boolean);
-    }
+function renderHero(container, doc, isHomepage) {
+  const hero = document.createElement('header');
+  hero.className = 'dr-hero';
+  const heroConfig = (doc && doc.hero && typeof doc.hero === 'object')
+    ? doc.hero
+    : ((isHomepage && HERO_DATA && typeof HERO_DATA === 'object') ? HERO_DATA : {});
+  const kickerText = ensureString(heroConfig.kicker, 'hero.kicker', ensureString(doc && doc.subtitle, 'doc.subtitle', ''));
+  if (kickerText) {
+    const kicker = document.createElement('p');
+    kicker.className = 'dr-kicker';
+    kicker.textContent = kickerText;
+    hero.appendChild(kicker);
   }
-
-  const hero = buildHeroElement(heroInput);
-  if (hero) article.appendChild(hero);
-
-  if (Array.isArray(opts.sections) && opts.sections.length) {
-    renderHomeSections(article, opts.sections);
+  const title = document.createElement('h1');
+  title.textContent = ensureString(heroConfig.title, 'hero.title', ensureString(doc && doc.title, 'doc.title', 'Documentation'));
+  hero.appendChild(title);
+  const ledeText = ensureString(heroConfig.lede, 'hero.lede', ensureString(doc && doc.summary, 'doc.summary', ''));
+  if (ledeText) {
+    const lede = document.createElement('p');
+    lede.className = 'dr-lede';
+    lede.textContent = ledeText;
+    hero.appendChild(lede);
   }
-
-  const body = document.createElement('section');
-  body.className = 'docs-section docs-body';
-  body.innerHTML = ensureHtml(effectiveDoc.html, 'doc.html');
-  article.appendChild(body);
-
-  if (opts.showWorks && Array.isArray(opts.highlights) && opts.highlights.length) {
-    const aside = document.createElement('aside');
-    aside.className = 'docs-works-home';
-    const heading = document.createElement('h2');
-    heading.textContent = 'Featured works';
-    aside.appendChild(heading);
-    const list = document.createElement('ul');
-    list.className = 'docs-works-home-list';
-    opts.highlights.forEach((item) => {
-      if (!item) return;
-      const li = document.createElement('li');
-      const title = document.createElement('strong');
-      title.textContent = ensureString(item.title, 'works.highlight.title', 'Untitled') || 'Untitled';
-      li.appendChild(title);
-      const summaryText = ensureString(item.summary, 'works.highlight.summary');
-      if (summaryText) {
-        const p = document.createElement('p');
-        p.textContent = summaryText;
-        li.appendChild(p);
-      }
-      list.appendChild(li);
-    });
-    aside.appendChild(list);
-    article.appendChild(aside);
-  }
-
-  return { body };
+  container.appendChild(hero);
 }
 
-function buildNav(nav, state, onActivate) {
-  if (!nav) return new Map();
-  nav.innerHTML = '';
-  const scroll = document.createElement('div');
-  scroll.className = 'docs-nav-scroll';
-  nav.appendChild(scroll);
+function closeAllModuleAudio(exceptKey = '') {
+  moduleAudioMap.forEach((entry, key) => {
+    if (!entry || !entry.audio) return;
+    if (exceptKey && key === exceptKey) return;
+    entry.audio.pause();
+  });
+}
 
-  const linkMap = new Map();
-  const groupsState = { ...state };
+function closeGlobalWorksAudio() {
+  if (window.PRAE && typeof window.PRAE.pauseAllAudio === 'function') {
+    try {
+      window.PRAE.pauseAllAudio('');
+    } catch (_) {}
+  }
+}
 
-  NAV_DATA.forEach(group => {
-    const groupEl = document.createElement('section');
-    groupEl.className = 'docs-nav-group';
+function getModuleAudio(moduleKey, src) {
+  if (moduleAudioMap.has(moduleKey)) return moduleAudioMap.get(moduleKey).audio;
+  const audio = new Audio(src);
+  audio.preload = 'metadata';
+  moduleAudioMap.set(moduleKey, { audio, activeCue: -1, activePage: 0 });
+  return audio;
+}
+
+function formatClock(seconds) {
+  const sec = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
+  const whole = Math.floor(sec);
+  const min = Math.floor(whole / 60);
+  const rem = whole % 60;
+  return `${min}:${String(rem).padStart(2, '0')}`;
+}
+
+function enhanceCodeBlocks(root) {
+  if (!root) return;
+  root.querySelectorAll('pre').forEach((pre) => {
+    pre.setAttribute('tabindex', '0');
+    if (pre.querySelector('.dr-copy-btn')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dr-copy-btn';
+    btn.innerHTML = `${iconMarkup('copy', 'dr-icon-xs')}<span>Copy</span>`;
+    btn.addEventListener('click', async () => {
+      const ok = await copyText(pre.textContent || '');
+      btn.innerHTML = ok ? `${iconMarkup('copy', 'dr-icon-xs')}<span>Copied</span>` : `${iconMarkup('copy', 'dr-icon-xs')}<span>Copy</span>`;
+      setTimeout(() => {
+        btn.innerHTML = `${iconMarkup('copy', 'dr-icon-xs')}<span>Copy</span>`;
+      }, 1500);
+    });
+    pre.appendChild(btn);
+  });
+
+  root.querySelectorAll('p code, li code').forEach((code) => {
+    if (code.closest('pre') || code.parentElement?.classList.contains('dr-inline-copy')) return;
+    const wrap = document.createElement('span');
+    wrap.className = 'dr-inline-copy';
+    const text = code.textContent || '';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dr-inline-copy-btn';
+    btn.innerHTML = iconMarkup('copy', 'dr-icon-xs');
+    btn.setAttribute('aria-label', 'Copy snippet');
+    btn.addEventListener('click', async () => {
+      const ok = await copyText(text);
+      btn.innerHTML = ok ? 'OK' : iconMarkup('copy', 'dr-icon-xs');
+      setTimeout(() => { btn.innerHTML = iconMarkup('copy', 'dr-icon-xs'); }, 1100);
+    });
+    code.replaceWith(wrap);
+    wrap.appendChild(code);
+    wrap.appendChild(btn);
+  });
+}
+
+function buildHeadings(container) {
+  if (!container) return [];
+  const nodes = Array.from(container.querySelectorAll('h2, h3, h4'));
+  return nodes.map((node) => {
+    let id = node.id;
+    if (!id) {
+      id = String(node.textContent || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      if (!id) id = `heading-${Math.random().toString(16).slice(2, 8)}`;
+      node.id = id;
+    }
+    return {
+      id,
+      node,
+      depth: node.tagName === 'H3' ? 3 : (node.tagName === 'H4' ? 4 : 2)
+    };
+  });
+}
+
+function enhanceHeadingAnchors(headings, getDocAndHeadingHash) {
+  headings.forEach((entry) => {
+    const heading = entry && entry.node;
+    if (!heading || heading.querySelector('.dr-heading-anchor')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dr-heading-anchor';
+    btn.innerHTML = iconMarkup('link', 'dr-icon-xs');
+    btn.setAttribute('aria-label', 'Copy heading link');
+    btn.addEventListener('click', async () => {
+      const hash = getDocAndHeadingHash(entry.id);
+      const url = `${location.origin}${location.pathname}${hash}`;
+      const ok = await copyText(url);
+      if (ok) {
+        btn.textContent = 'OK';
+        setTimeout(() => {
+          btn.innerHTML = iconMarkup('link', 'dr-icon-xs');
+        }, 1300);
+      }
+    });
+    heading.appendChild(btn);
+  });
+}
+
+function observeHeadingActivity(headings, onActive) {
+  if (!('IntersectionObserver' in window)) return null;
+  const observer = new IntersectionObserver((entries) => {
+    const shown = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+    if (shown[0] && shown[0].target && shown[0].target.id) {
+      onActive(shown[0].target.id);
+    }
+  }, { threshold: [0.2, 0.45, 0.7], rootMargin: '-18% 0px -65% 0px' });
+  headings.forEach((entry) => {
+    if (entry && entry.node) observer.observe(entry.node);
+  });
+  return observer;
+}
+
+function renderOutline(headings, onPick) {
+  const host = document.getElementById('dr-outline');
+  if (!host) return { links: new Map(), observer: null };
+  host.innerHTML = '';
+  const list = document.createElement('ul');
+  list.className = 'dr-outline-list';
+  host.appendChild(list);
+  const links = new Map();
+  headings.forEach((entry) => {
+    const li = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'dr-outline-link';
+    button.dataset.depth = String(entry.depth || 2);
+    button.textContent = entry.node.textContent || entry.id;
+    button.addEventListener('click', () => {
+      if (typeof onPick === 'function') onPick(entry.id);
+    });
+    li.appendChild(button);
+    list.appendChild(li);
+    links.set(entry.id, button);
+  });
+  return { links, observer: null };
+}
+
+function renderNav(onNavigate) {
+  const navRoot = document.getElementById('dr-nav');
+  if (!navRoot) return new Map();
+  navRoot.innerHTML = '';
+  const state = readNavState();
+  const map = new Map();
+
+  NAV_DATA.forEach((group) => {
+    if (!group || typeof group !== 'object') return;
+    const section = document.createElement('section');
+    section.className = 'dr-nav-group';
+    const groupId = ensureString(group.id, '', `group-${Math.random().toString(16).slice(2, 6)}`);
+    const open = state[groupId] !== false;
 
     const toggle = document.createElement('button');
     toggle.type = 'button';
-    toggle.className = 'docs-nav-group-toggle';
-    const open = groupsState[group.id] !== false;
+    toggle.className = 'dr-nav-group-toggle';
     toggle.setAttribute('aria-expanded', String(open));
-    toggle.innerHTML = `<span>${group.label}</span><span aria-hidden="true">${open ? '▾' : '▸'}</span>`;
+    const title = ensureString(group.label, 'nav.group.label', 'Section');
+    toggle.innerHTML = `<span>${title}</span><span>${open ? '[-]' : '[+]'}</span>`;
 
     const list = document.createElement('ul');
-    list.className = 'docs-nav-items';
+    list.className = 'dr-nav-items';
     list.hidden = !open;
 
     toggle.addEventListener('click', () => {
-      const next = list.hidden;
-      list.hidden = !next;
-      groupsState[group.id] = next;
-      toggle.setAttribute('aria-expanded', String(next));
-      toggle.lastElementChild.textContent = next ? '▾' : '▸';
-      writeNavState(groupsState);
+      const nextOpen = list.hidden;
+      list.hidden = !nextOpen;
+      toggle.setAttribute('aria-expanded', String(nextOpen));
+      toggle.lastElementChild.textContent = nextOpen ? '[-]' : '[+]';
+      state[groupId] = nextOpen;
+      writeNavState(state);
     });
 
-    group.items.forEach(item => {
+    const items = Array.isArray(group.items) ? group.items : [];
+    items.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
       const li = document.createElement('li');
-      li.className = 'docs-nav-item';
-      const link = document.createElement('a');
-      link.href = item.href;
-      link.textContent = ensureString(item.label, 'nav.item.label', 'Untitled') || 'Untitled';
-      if (item.docId) link.dataset.docId = item.docId;
-      link.addEventListener('click', (ev) => {
-        if (typeof onActivate === 'function') onActivate(item.href);
-        // allow default navigation (hash)
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'dr-nav-link';
+      const label = ensureString(item.label, 'nav.item.label', 'Untitled');
+      const snippet = ensureString(item.snippet, 'nav.item.snippet', '');
+      const href = ensureString(item.href, 'nav.item.href', '');
+      const docId = ensureString(item.docId || item.id, 'nav.item.docId', '');
+      link.innerHTML = `<span class="dr-nav-link-title">${label}</span>${snippet ? `<span class="dr-nav-link-snippet">${snippet}</span>` : ''}`;
+      const status = item.meta && typeof item.meta === 'object' ? ensureString(item.meta.status, 'nav.item.meta.status', '') : '';
+      if (status) {
+        const statusNode = document.createElement('span');
+        statusNode.className = 'dr-nav-link-meta';
+        statusNode.textContent = status;
+        link.appendChild(statusNode);
+      }
+      link.addEventListener('click', () => {
+        if (typeof onNavigate === 'function') onNavigate({ href, docId });
       });
       li.appendChild(link);
       list.appendChild(li);
-      const key = item.docId || item.href.replace('#', '');
-      if (key) linkMap.set(key, link);
+      if (docId) map.set(docId, link);
     });
 
-    groupEl.appendChild(toggle);
-    groupEl.appendChild(list);
-    scroll.appendChild(groupEl);
-  });
-
-  return linkMap;
-}
-
-function buildOutline(container, headings) {
-  if (!container) return new Map();
-  container.innerHTML = '';
-  const title = document.createElement('h2');
-  title.textContent = 'On this page';
-  container.appendChild(title);
-  const list = document.createElement('ul');
-  list.className = 'docs-outline-list';
-  container.appendChild(list);
-  const map = new Map();
-
-  headings.forEach(({ element, depth }) => {
-    const id = element.id || slugify(element.textContent || 'section');
-    element.id = id;
-    const li = document.createElement('li');
-    li.className = 'docs-outline-item';
-    li.dataset.depth = String(depth);
-    const link = document.createElement('a');
-    link.href = `#${id}`;
-    link.textContent = element.textContent || id;
-    li.appendChild(link);
-    list.appendChild(li);
-    map.set(id, li);
+    section.appendChild(toggle);
+    section.appendChild(list);
+    navRoot.appendChild(section);
   });
 
   return map;
 }
 
-function enhanceHeadings(headings) {
-  headings.forEach(({ element }) => {
-    if (!element) return;
-    const id = element.id || slugify(element.textContent || 'section');
-    element.id = id;
-    element.setAttribute('tabindex', '-1');
-    if (element.querySelector('.docs-heading-anchor')) return;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'docs-heading-anchor';
-    btn.setAttribute('aria-label', `Copy link to ${element.textContent || id}`);
-    btn.textContent = '#';
-    btn.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      const url = `${location.origin}${location.pathname}#${id}`;
-      const ok = await copyToClipboard(url);
-      if (ok) {
-        btn.dataset.copied = '1';
-        btn.textContent = '✓';
-        setTimeout(() => {
-          btn.dataset.copied = '0';
-          btn.textContent = '#';
-        }, 1600);
+function renderMediaModule(module) {
+  const wrapper = document.createElement('section');
+  wrapper.className = 'dr-module';
+  const title = document.createElement('h3');
+  title.className = 'dr-module-title';
+  title.textContent = ensureString(module.title, 'module.media.title', 'Media');
+  wrapper.appendChild(title);
+
+  const grid = document.createElement('div');
+  grid.className = module.layout === 'masonry' ? 'dr-module-media-masonry' : 'dr-module-media-grid';
+  const items = Array.isArray(module.items) ? module.items : [];
+  items.forEach((item) => {
+    if (!item || typeof item !== 'object') return;
+    const src = ensureString(item.src, 'module.media.item.src', '');
+    if (!src) return;
+    const figure = document.createElement('figure');
+    figure.className = 'dr-media-item';
+    if (item.type === 'video') {
+      const video = document.createElement('video');
+      video.src = src;
+      video.controls = true;
+      video.preload = 'metadata';
+      if (item.alt) video.setAttribute('aria-label', item.alt);
+      figure.appendChild(video);
+    } else {
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = ensureString(item.alt, 'module.media.item.alt', '');
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      figure.appendChild(img);
+    }
+    const captionText = ensureString(item.caption, 'module.media.item.caption', '');
+    if (captionText) {
+      const caption = document.createElement('figcaption');
+      caption.textContent = captionText;
+      figure.appendChild(caption);
+    }
+    grid.appendChild(figure);
+  });
+  wrapper.appendChild(grid);
+  return wrapper;
+}
+
+function renderProcessModule(module) {
+  const wrapper = document.createElement('section');
+  wrapper.className = 'dr-module';
+  const title = document.createElement('h3');
+  title.className = 'dr-module-title';
+  title.textContent = ensureString(module.title, 'module.process.title', 'Process');
+  wrapper.appendChild(title);
+
+  const list = document.createElement('ol');
+  list.className = 'dr-process-list';
+  const steps = Array.isArray(module.steps) ? module.steps : [];
+  steps.forEach((step) => {
+    if (!step || typeof step !== 'object') return;
+    const li = document.createElement('li');
+    li.className = 'dr-process-step';
+    const heading = document.createElement('h4');
+    heading.textContent = ensureString(step.title, 'module.process.step.title', 'Step');
+    li.appendChild(heading);
+    const bodyHtml = ensureHtml(step.body, 'module.process.step.body');
+    if (bodyHtml) {
+      const body = document.createElement('div');
+      body.className = 'dr-process-step-body';
+      body.innerHTML = bodyHtml;
+      li.appendChild(body);
+    }
+    const media = Array.isArray(step.media) ? step.media : [];
+    if (media.length) {
+      const mediaModule = renderMediaModule({ title: '', layout: 'grid', items: media });
+      li.appendChild(mediaModule.querySelector('.dr-module-media-grid') || mediaModule.querySelector('.dr-module-media-masonry'));
+    }
+    list.appendChild(li);
+  });
+
+  wrapper.appendChild(list);
+  return wrapper;
+}
+
+function renderCreditsModule(module) {
+  const wrapper = document.createElement('section');
+  wrapper.className = 'dr-module';
+  const title = document.createElement('h3');
+  title.className = 'dr-module-title';
+  title.textContent = ensureString(module.title, 'module.credits.title', 'Credits');
+  wrapper.appendChild(title);
+
+  const list = document.createElement('ul');
+  list.className = 'dr-credits-list';
+  const roles = Array.isArray(module.roles) ? module.roles : [];
+  roles.forEach((role) => {
+    if (!role || typeof role !== 'object') return;
+    const li = document.createElement('li');
+    const roleLabel = document.createElement('span');
+    roleLabel.className = 'dr-credits-role';
+    roleLabel.textContent = ensureString(role.role, 'module.credits.role', 'Role');
+    li.appendChild(roleLabel);
+    const people = Array.isArray(role.people) ? role.people.map((value) => String(value || '').trim()).filter(Boolean) : [];
+    const names = document.createElement('div');
+    names.textContent = people.join(', ');
+    li.appendChild(names);
+    list.appendChild(li);
+  });
+
+  wrapper.appendChild(list);
+  return wrapper;
+}
+
+function syncScoreToolsPane(activeScore) {
+  const emptyNode = document.querySelector('[data-score-empty]');
+  const pane = document.querySelector('[data-score-pane]');
+  const frame = document.querySelector('[data-score-frame]');
+  const title = document.querySelector('[data-score-title]');
+  const open = document.querySelector('[data-score-open]');
+  const closeBtn = document.querySelector('[data-action="close-score"]');
+  if (!pane || !frame || !title || !open || !emptyNode || !closeBtn) return;
+
+  if (!activeScore || !activeScore.pdf) {
+    pane.hidden = true;
+    emptyNode.hidden = false;
+    closeBtn.hidden = true;
+    frame.removeAttribute('src');
+    open.removeAttribute('href');
+    title.textContent = 'Score';
+    return;
+  }
+
+  pane.hidden = false;
+  emptyNode.hidden = true;
+  closeBtn.hidden = false;
+  const safePage = Number.isFinite(Number(activeScore.page)) && Number(activeScore.page) >= 1 ? Math.floor(Number(activeScore.page)) : 0;
+  const hash = safePage ? `#page=${safePage}` : '';
+  frame.src = `${activeScore.pdf}${hash}`;
+  open.href = `${activeScore.pdf}${hash}`;
+  title.textContent = activeScore.title || 'Score';
+}
+
+function renderScoreModule(module, doc, moduleIndex, state) {
+  const wrapper = document.createElement('section');
+  wrapper.className = 'dr-module';
+  const title = document.createElement('h3');
+  title.className = 'dr-module-title';
+  title.textContent = ensureString(module.title, 'module.score.title', 'Score');
+  wrapper.appendChild(title);
+
+  const moduleKey = `${doc.id}::score::${moduleIndex}`;
+  const controls = document.createElement('div');
+  controls.className = 'dr-module-score-controls';
+
+  const openBtn = document.createElement('button');
+  openBtn.type = 'button';
+  openBtn.className = 'dr-module-btn';
+  openBtn.innerHTML = `${iconMarkup('eye', 'dr-icon-sm')}<span>Open score</span>`;
+
+  openBtn.addEventListener('click', () => {
+    state.activeScore = {
+      pdf: ensureString(module.pdf, 'module.score.pdf', ''),
+      title: ensureString(module.title, 'module.score.title', 'Score'),
+      page: 0,
+      key: moduleKey
+    };
+    syncScoreToolsPane(state.activeScore);
+  });
+
+  controls.appendChild(openBtn);
+
+  const audioSrc = ensureString(module.audio, 'module.score.audio', '');
+  let playBtn = null;
+  let audio = null;
+  if (audioSrc) {
+    audio = getModuleAudio(moduleKey, audioSrc);
+    playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'dr-module-btn';
+    playBtn.innerHTML = `${iconMarkup('play', 'dr-icon-sm')}<span>Play</span>`;
+    playBtn.addEventListener('click', () => {
+      if (audio.paused) {
+        closeGlobalWorksAudio();
+        closeAllModuleAudio(moduleKey);
+        audio.play().catch(() => {});
+      } else {
+        audio.pause();
       }
     });
-    element.appendChild(btn);
-  });
-}
+    audio.addEventListener('play', () => {
+      playBtn.dataset.state = 'playing';
+      playBtn.innerHTML = `${iconMarkup('pause', 'dr-icon-sm')}<span>Pause</span>`;
+    });
+    audio.addEventListener('pause', () => {
+      delete playBtn.dataset.state;
+      playBtn.innerHTML = `${iconMarkup('play', 'dr-icon-sm')}<span>Play</span>`;
+    });
+    controls.appendChild(playBtn);
+  }
 
-function enhanceCodeBlocks(root) {
-  if (!root) return;
-  const blocks = root.querySelectorAll('pre');
-  blocks.forEach((pre, index) => {
-    pre.setAttribute('tabindex', '0');
-    if (!pre.querySelector('.docs-copy-btn')) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'docs-copy-btn';
-      btn.textContent = 'Copy';
-      btn.addEventListener('click', async (ev) => {
-        ev.preventDefault();
-        const ok = await copyToClipboard(pre.textContent || '');
-        btn.textContent = ok ? 'Copied' : 'Copy';
-        btn.dataset.state = ok ? 'copied' : 'error';
-        setTimeout(() => {
-          btn.textContent = 'Copy';
-          delete btn.dataset.state;
-        }, 1800);
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'dr-module-btn';
+  copyBtn.innerHTML = `${iconMarkup('link', 'dr-icon-sm')}<span>Copy module link</span>`;
+  copyBtn.addEventListener('click', async () => {
+    const hash = buildRouteHash(doc.id, `module-${moduleIndex + 1}`);
+    const ok = await copyText(`${location.origin}${location.pathname}${hash}`);
+    copyBtn.innerHTML = ok
+      ? `${iconMarkup('link', 'dr-icon-sm')}<span>Copied</span>`
+      : `${iconMarkup('link', 'dr-icon-sm')}<span>Copy module link</span>`;
+    setTimeout(() => {
+      copyBtn.innerHTML = `${iconMarkup('link', 'dr-icon-sm')}<span>Copy module link</span>`;
+    }, 1300);
+  });
+  controls.appendChild(copyBtn);
+
+  wrapper.appendChild(controls);
+
+  const cues = Array.isArray(module.cues) ? module.cues : [];
+  if (cues.length) {
+    const cueWrap = document.createElement('div');
+    cueWrap.className = 'dr-module-cues';
+    cues.forEach((cue, cueIdx) => {
+      const cueBtn = document.createElement('button');
+      cueBtn.type = 'button';
+      cueBtn.className = 'dr-module-cue';
+      const label = ensureString(cue && cue.label, 'module.score.cue.label', `Cue ${cueIdx + 1}`);
+      const time = Number.isFinite(Number(cue && cue.t)) ? Number(cue.t) : 0;
+      cueBtn.textContent = `${label} @${formatClock(time)}`;
+      cueBtn.addEventListener('click', () => {
+        if (audio) {
+          closeGlobalWorksAudio();
+          closeAllModuleAudio(moduleKey);
+          audio.currentTime = Math.max(0, time);
+          audio.play().catch(() => {});
+        }
+        if (module.pageFollow !== false && cue && Number.isFinite(Number(cue.page)) && Number(cue.page) >= 1) {
+          state.activeScore = {
+            pdf: ensureString(module.pdf, 'module.score.pdf', ''),
+            title: ensureString(module.title, 'module.score.title', 'Score'),
+            page: Number(cue.page),
+            key: moduleKey
+          };
+          syncScoreToolsPane(state.activeScore);
+        }
       });
-      pre.appendChild(btn);
-    }
-  });
-
-  const inlineCodes = root.querySelectorAll('p code, li code');
-  inlineCodes.forEach(code => {
-    if (code.closest('pre') || code.parentElement?.classList.contains('inline-copy')) return;
-    const wrapper = document.createElement('span');
-    wrapper.className = 'inline-copy';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.setAttribute('aria-label', 'Copy code snippet');
-    btn.textContent = '⧉';
-    btn.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      const ok = await copyToClipboard(code.textContent || '');
-      btn.textContent = ok ? '✓' : '⧉';
-      setTimeout(() => { btn.textContent = '⧉'; }, 1400);
+      cueWrap.appendChild(cueBtn);
     });
-    code.replaceWith(wrapper);
-    wrapper.append(code, btn);
+    wrapper.appendChild(cueWrap);
+  }
+
+  if (audio && cues.length && module.pageFollow !== false) {
+    let lastCue = -1;
+    audio.addEventListener('timeupdate', () => {
+      const now = Number(audio.currentTime) || 0;
+      let nextCue = -1;
+      for (let i = 0; i < cues.length; i += 1) {
+        const cueTime = Number.isFinite(Number(cues[i] && cues[i].t)) ? Number(cues[i].t) : 0;
+        if (now >= cueTime) nextCue = i;
+        else break;
+      }
+      if (nextCue === lastCue || nextCue < 0) return;
+      lastCue = nextCue;
+      const cue = cues[nextCue];
+      if (cue && Number.isFinite(Number(cue.page)) && Number(cue.page) >= 1) {
+        state.activeScore = {
+          pdf: ensureString(module.pdf, 'module.score.pdf', ''),
+          title: ensureString(module.title, 'module.score.title', 'Score'),
+          page: Number(cue.page),
+          key: moduleKey
+        };
+        syncScoreToolsPane(state.activeScore);
+      }
+    });
+  }
+
+  return wrapper;
+}
+
+function renderModules(container, modules, doc, state) {
+  if (!Array.isArray(modules) || !modules.length) return;
+  const zone = document.createElement('section');
+  zone.className = 'dr-module-zone';
+  modules.forEach((module, index) => {
+    if (!module || typeof module !== 'object') return;
+    let el = null;
+    if (module.type === 'score') {
+      el = renderScoreModule(module, doc, index, state);
+    } else if (module.type === 'media') {
+      el = renderMediaModule(module);
+    } else if (module.type === 'process') {
+      el = renderProcessModule(module);
+    } else if (module.type === 'credits') {
+      el = renderCreditsModule(module);
+    }
+    if (el) {
+      el.id = `module-${index + 1}`;
+      zone.appendChild(el);
+    }
+  });
+  if (zone.childElementCount) container.appendChild(zone);
+}
+
+function renderHomeSections(container) {
+  if (!Array.isArray(HOME_SECTIONS) || !HOME_SECTIONS.length) return;
+  HOME_SECTIONS.forEach((section) => {
+    if (!section || typeof section !== 'object') return;
+    const block = document.createElement('section');
+    block.className = 'dr-module';
+    if (section.id) block.id = section.id;
+
+    const kicker = ensureString(section.kicker, 'home.section.kicker', '');
+    if (kicker) {
+      const kickerNode = document.createElement('p');
+      kickerNode.className = 'dr-kicker';
+      kickerNode.textContent = kicker;
+      block.appendChild(kickerNode);
+    }
+
+    const heading = ensureString(section.title, 'home.section.title', '');
+    if (heading) {
+      const title = document.createElement('h3');
+      title.className = 'dr-module-title';
+      title.textContent = heading;
+      block.appendChild(title);
+    }
+
+    const lede = ensureString(section.lede, 'home.section.lede', '');
+    if (lede) {
+      const p = document.createElement('p');
+      p.className = 'dr-lede';
+      p.textContent = lede;
+      block.appendChild(p);
+    }
+
+    const html = ensureHtml(section.html, 'home.section.html');
+    if (html) {
+      const body = document.createElement('div');
+      body.className = 'dr-prose';
+      body.innerHTML = html;
+      block.appendChild(body);
+    }
+
+    const items = Array.isArray(section.items) ? section.items : [];
+    if (items.length) {
+      const list = document.createElement('div');
+      list.className = 'dr-module-actions';
+      items.forEach((item) => {
+        if (!item || typeof item !== 'object') return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'dr-module-btn';
+        const titleText = ensureString(item.title, 'home.section.item.title', 'Open');
+        const href = ensureString(item.href, 'home.section.item.href', '');
+        const docId = ensureString(item.docId, 'home.section.item.docId', '');
+        btn.textContent = titleText;
+        btn.addEventListener('click', () => {
+          if (docId) {
+            location.hash = buildRouteHash(docId, '');
+            return;
+          }
+          if (href && href.startsWith('#/')) {
+            location.hash = href;
+            return;
+          }
+          if (href) {
+            window.open(href, '_blank', 'noopener');
+          }
+        });
+        list.appendChild(btn);
+      });
+      block.appendChild(list);
+    }
+
+    container.appendChild(block);
   });
 }
 
-function buildHeadings(root) {
-  if (!root) return [];
-  const selector = 'h2, h3';
-  const nodes = Array.from(root.querySelectorAll(selector));
-  return nodes.map(el => ({ element: el, depth: el.tagName === 'H3' ? 3 : 2 }));
-}
-
-function observeHeadings(headings, onActive) {
-  if (!('IntersectionObserver' in window)) return null;
-  const observer = new IntersectionObserver(entries => {
-    const visible = entries
-      .filter(entry => entry.isIntersecting)
-      .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-    if (visible.length) {
-      const id = visible[0].target.id;
-      if (id) onActive(id);
-      return;
-    }
-    const top = entries
-      .map(entry => ({ id: entry.target.id, top: entry.boundingClientRect.top }))
-      .sort((a, b) => a.top - b.top)
-      .find(entry => entry.top >= 0);
-    if (top?.id) onActive(top.id);
-  }, { rootMargin: '-40% 0px -50% 0px', threshold: [0, 0.25, 0.5, 0.75, 1] });
-
-  headings.forEach(({ element }) => { if (element) observer.observe(element); });
-  return observer;
-}
-
-function buildSearchAdapter() {
-  return function runSearch(query) {
-    const q = String(query || '').trim().toLowerCase();
-    if (!q) return [];
-    return SEARCH_INDEX
-      .map(item => ({
-        ...item,
-        score: matchScore(item, q)
+function createSearchEngine(entries, config) {
+  const safeEntries = Array.isArray(entries)
+    ? entries.map((entry) => ({
+        ...entry,
+        title: ensureString(entry.title, 'search.entry.title', ''),
+        snippet: ensureString(entry.snippet, 'search.entry.snippet', ''),
+        group: ensureString(entry.group, 'search.entry.group', 'Docs'),
+        docId: ensureString(entry.docId, 'search.entry.docId', ''),
+        headingId: ensureString(entry.headingId, 'search.entry.headingId', ''),
+        url: ensureString(entry.url, 'search.entry.url', ''),
+        kind: ensureString(entry.kind, 'search.entry.kind', 'doc'),
+        tokens: ensureString(entry.tokens, 'search.entry.tokens', '')
       }))
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 6);
-  };
+    : [];
 
-  function matchScore(item, q) {
-    const haystack = `${item.title} ${item.group ?? ''} ${item.snippet ?? ''}`.toLowerCase();
-    if (haystack.includes(q)) return q.length;
-    const words = q.split(/\s+/);
+  const engine = config && config.engine ? config.engine : 'light';
+  const enabled = config && config.enabled !== false;
+  if (!enabled || engine === 'none') {
+    return {
+      search: () => []
+    };
+  }
+
+  const defaultResults = safeEntries
+    .filter((entry) => entry.kind === 'doc' && entry.docId)
+    .slice(0, 10);
+
+  function lightScore(entry, queryLower, queryWords) {
+    const hay = `${entry.title} ${entry.snippet} ${entry.tokens}`.toLowerCase();
+    if (!hay) return 0;
+    if (hay === queryLower) return 180;
+    if (hay.startsWith(queryLower)) return 150;
+    if (hay.includes(queryLower)) return 120;
     let score = 0;
-    words.forEach(word => {
-      if (word && haystack.includes(word)) score += word.length;
+    queryWords.forEach((word) => {
+      if (!word) return;
+      if (hay.includes(word)) score += Math.min(30, 4 + word.length * 2);
     });
+    if (entry.kind === 'heading') score *= 0.92;
     return score;
   }
-}
 
-function setupSearch(root, onNavigate) {
-  if (!root) return;
-  const input = root.querySelector('#docs-search-input');
-  const resultsHost = root.querySelector('#docs-search-results');
-  if (!input || !resultsHost) return;
-  const search = buildSearchAdapter();
-  let activeIndex = -1;
-  let lastResults = [];
+  function fuzzyScore(entry, queryLower) {
+    const hay = `${entry.title} ${entry.tokens} ${entry.snippet}`.toLowerCase();
+    if (!hay || !queryLower) return 0;
+    if (hay.includes(queryLower)) return 140 + queryLower.length;
 
-  input.addEventListener('input', () => {
-    const q = input.value;
-    const hits = search(q);
-    renderResults(hits);
-  });
-
-  input.addEventListener('keydown', (ev) => {
-    if (ev.key === 'ArrowDown') {
-      if (!lastResults.length) return;
-      ev.preventDefault();
-      activeIndex = (activeIndex + 1) % lastResults.length;
-      updateActive();
-    } else if (ev.key === 'ArrowUp') {
-      if (!lastResults.length) return;
-      ev.preventDefault();
-      activeIndex = (activeIndex - 1 + lastResults.length) % lastResults.length;
-      updateActive();
-    } else if (ev.key === 'Enter') {
-      if (activeIndex >= 0 && lastResults[activeIndex]) {
-        ev.preventDefault();
-        go(lastResults[activeIndex].url);
-      }
-    } else if (ev.key === 'Escape') {
-      clearResults();
-      input.blur();
-    }
-  });
-
-  resultsHost.addEventListener('mousedown', (ev) => {
-    // prevent input blur before click handler
-    ev.preventDefault();
-  });
-
-  resultsHost.addEventListener('click', (ev) => {
-    const item = ev.target.closest('.docs-search-item');
-    if (!item) return;
-    const url = item.getAttribute('data-url');
-    go(url);
-  });
-
-  function renderResults(items) {
-    lastResults = items;
-    activeIndex = items.length ? 0 : -1;
-    if (!items.length) {
-      clearResults();
-      return;
-    }
-    resultsHost.innerHTML = '';
-    items.forEach((item, i) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'docs-search-item';
-      btn.setAttribute('role', 'option');
-      btn.dataset.url = item.url;
-      btn.dataset.index = String(i);
-      btn.id = `docs-search-item-${i}`;
-      btn.innerHTML = `<strong>${item.title}</strong><span class="docs-search-snippet">${item.snippet || ''}</span>`;
-      resultsHost.appendChild(btn);
-    });
-    resultsHost.hidden = false;
-    updateActive();
-  }
-
-  function updateActive() {
-    const buttons = resultsHost.querySelectorAll('.docs-search-item');
-    buttons.forEach((btn, idx) => {
-      if (idx === activeIndex) {
-        btn.setAttribute('aria-selected', 'true');
-        btn.scrollIntoView({ block: 'nearest' });
-        input.setAttribute('aria-activedescendant', btn.id);
+    let cursor = 0;
+    let streak = 0;
+    let score = 0;
+    for (let i = 0; i < queryLower.length; i += 1) {
+      const ch = queryLower[i];
+      const found = hay.indexOf(ch, cursor);
+      if (found < 0) return 0;
+      const gap = found - cursor;
+      if (gap === 0) {
+        streak += 1;
+        score += 6 + streak;
       } else {
-        btn.removeAttribute('aria-selected');
+        streak = 0;
+        score += Math.max(1, 4 - Math.min(3, gap));
       }
-    });
-    if (activeIndex < 0) {
-      input.removeAttribute('aria-activedescendant');
+      cursor = found + 1;
     }
+    const denom = Math.max(1, hay.length / 90);
+    if (entry.kind === 'heading') score *= 0.95;
+    return score / denom;
   }
-
-  function clearResults() {
-    resultsHost.hidden = true;
-    resultsHost.innerHTML = '';
-    activeIndex = -1;
-    lastResults = [];
-    input.removeAttribute('aria-activedescendant');
-  }
-
-  function go(url) {
-    clearResults();
-    if (!url) return;
-    if (typeof onNavigate === 'function') onNavigate(url);
-    location.hash = url;
-  }
-
-  document.addEventListener('keydown', (ev) => {
-    const target = ev.target;
-    const isEditable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable;
-    if (ev.key === '/' && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && !isEditable) {
-      ev.preventDefault();
-      input.focus();
-      input.select();
-    }
-  });
-
-  document.addEventListener('click', (ev) => {
-    if (!resultsHost.contains(ev.target) && ev.target !== input) {
-      clearResults();
-    }
-  });
-}
-
-function setupDrawers() {
-  const navBtn = document.querySelector('[data-action="toggle-nav"]');
-  const outlineBtn = document.querySelector('[data-action="toggle-outline"]');
-  const overlay = document.querySelector('.docs-drawer-overlay');
-  const mq = window.matchMedia('(max-width: 960px)');
-
-  function closeMobile() {
-    document.body.classList.remove('docs-nav-open', 'docs-outline-open');
-  }
-
-  function syncState() {
-    const isMobile = mq.matches;
-    if (navBtn) {
-      const expanded = isMobile
-        ? document.body.classList.contains('docs-nav-open')
-        : !document.body.classList.contains('docs-nav-collapsed');
-      navBtn.setAttribute('aria-expanded', String(expanded));
-    }
-    if (outlineBtn) {
-      const expanded = isMobile
-        ? document.body.classList.contains('docs-outline-open')
-        : !document.body.classList.contains('docs-outline-collapsed');
-      outlineBtn.setAttribute('aria-expanded', String(expanded));
-    }
-  }
-
-  navBtn?.addEventListener('click', () => {
-    if (mq.matches) {
-      const open = !document.body.classList.contains('docs-nav-open');
-      document.body.classList.toggle('docs-nav-open', open);
-      if (open) document.body.classList.remove('docs-outline-open');
-    } else {
-      const collapsed = document.body.classList.toggle('docs-nav-collapsed');
-      if (!collapsed) document.body.classList.remove('docs-outline-collapsed');
-    }
-    syncState();
-  });
-
-  outlineBtn?.addEventListener('click', () => {
-    if (mq.matches) {
-      const open = !document.body.classList.contains('docs-outline-open');
-      document.body.classList.toggle('docs-outline-open', open);
-      if (open) document.body.classList.remove('docs-nav-open');
-    } else {
-      const collapsed = document.body.classList.toggle('docs-outline-collapsed');
-      if (!collapsed) document.body.classList.remove('docs-nav-collapsed');
-    }
-    syncState();
-  });
-
-  overlay?.addEventListener('click', () => {
-    closeMobile();
-    syncState();
-  });
-
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') {
-      closeMobile();
-      syncState();
-    }
-  });
-
-  const handleChange = () => {
-    closeMobile();
-    if (mq.matches) {
-      document.body.classList.remove('docs-nav-collapsed', 'docs-outline-collapsed');
-    }
-    syncState();
-  };
-
-  if (typeof mq.addEventListener === 'function') {
-    mq.addEventListener('change', handleChange);
-  } else if (typeof mq.addListener === 'function') {
-    mq.addListener(handleChange);
-  }
-
-  syncState();
 
   return {
-    close: () => {
-      closeMobile();
-      syncState();
+    search(query) {
+      const raw = String(query || '').trim();
+      if (!raw) return defaultResults;
+      const q = raw.toLowerCase();
+      const words = q.split(/\s+/).filter(Boolean);
+      const scored = safeEntries.map((entry) => {
+        const score = engine === 'fuse'
+          ? fuzzyScore(entry, q)
+          : lightScore(entry, q, words);
+        return { entry, score };
+      }).filter((item) => item.score > 0);
+
+      scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        const ad = a.entry.kind === 'doc' ? 0 : 1;
+        const bd = b.entry.kind === 'doc' ? 0 : 1;
+        if (ad !== bd) return ad - bd;
+        return a.entry.title.localeCompare(b.entry.title);
+      });
+
+      return scored.slice(0, 32).map((item) => item.entry);
     }
   };
-}
-
-function attachCopyShortcut(root) {
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key !== 'c' && ev.key !== 'C') return;
-    if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
-    const active = document.activeElement;
-    if (!active) return;
-    if (active.classList.contains('docs-copy-btn')) {
-      active.click();
-      ev.preventDefault();
-      return;
-    }
-    const pre = active.closest ? active.closest('pre') : null;
-    if (pre) {
-      const btn = pre.querySelector('.docs-copy-btn');
-      if (btn) {
-        btn.click();
-        ev.preventDefault();
-      }
-    }
-  });
 }
 
 ready(() => {
-  const { apply, current, cycle } = ensureThemeHelpers();
-  apply(current(), { persist: false });
-
-  applySiteChrome(DOCS_DATA.site || {});
-  const article = document.querySelector('.docs-article');
-
-  const themeBtn = document.getElementById('wc-theme-toggle');
-  if (themeBtn && themeBtn.childElementCount === 0) {
-    themeBtn.innerHTML = '<span class="sr-only">Toggle theme</span><span class="docs-theme-icon" data-mode="light">🌞</span><span class="docs-theme-icon" data-mode="dark">🌜</span>';
-  }
-  if (themeBtn) {
-    const syncThemeBtn = () => {
-      const mode = current();
-      themeBtn.setAttribute('aria-checked', String(mode === 'dark'));
-      themeBtn.dataset.mode = mode;
-    };
-    syncThemeBtn();
-    themeBtn.addEventListener('click', () => {
-      cycle();
-      syncThemeBtn();
-    });
-    themeBtn.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') {
-        ev.preventDefault();
-        cycle();
-        syncThemeBtn();
-      }
-    });
-  }
-
-  const closeDrawers = setupDrawers().close;
-  const main = document.getElementById('docs-main');
-  attachCopyShortcut(main);
-
-  const navState = readNavState();
-  const navLinkMap = buildNav(document.getElementById('docs-nav'), navState, () => closeDrawers());
-  let outlineMap = new Map();
-  let headingObserver = null;
-
-  function setActiveDoc(docId) {
-    navLinkMap.forEach((link, key) => {
-      if (!link) return;
-      link.classList.toggle('is-active', key === docId);
-    });
-  }
-
-  function updateOutline(headings) {
-    if (headingObserver) headingObserver.disconnect();
-    outlineMap = buildOutline(document.getElementById('docs-outline'), headings);
-    headingObserver = observeHeadings(headings, (headingId) => {
-      outlineMap.forEach((item, key) => {
-        if (!item) return;
-        item.classList.toggle('is-active', key === headingId);
-      });
-    });
-  }
-
-  const worksHighlights = Array.isArray(WORKS_SETTINGS.highlights) ? WORKS_SETTINGS.highlights : [];
-  const showWorksOnHome = !!WORKS_SETTINGS.includeOnHome && worksHighlights.length > 0;
-
-  const getFirstDoc = () => {
-    const preferred = DOCS_LIST.find(doc => typeof doc?.path === 'string' && doc.path.toLowerCase().endsWith('.md'));
-    return preferred || DOCS_LIST[0] || null;
+  const state = {
+    activeDoc: null,
+    activeHeading: '',
+    headingObserver: null,
+    outlineLinks: new Map(),
+    navLinks: new Map(),
+    activeScore: null,
+    commandOpen: false,
+    commandResults: [],
+    commandIndex: -1,
+    pendingHeadingAfterRender: ''
   };
 
-  let homepageDoc = HOMEPAGE_ID && DOC_BY_ID.get(HOMEPAGE_ID) ? DOC_BY_ID.get(HOMEPAGE_ID) : null;
-  if (!homepageDoc) homepageDoc = getFirstDoc();
-  const fallbackDoc = homepageDoc || getFirstDoc() || PLACEHOLDER_DOC;
+  const article = document.querySelector('.dr-article');
+  if (!article) return;
 
-  function resolveDocFromHash(hash) {
-    if (!hash) return null;
-    const normalized = hash.startsWith('#') ? hash : `#${hash}`;
-    if (DOC_BY_URL.has(normalized)) return DOC_BY_URL.get(normalized);
-    const trimmed = normalized.replace(/^#\/?/, '');
-    if (DOC_BY_ID.has(trimmed)) return DOC_BY_ID.get(trimmed);
-    return null;
+  applySiteChrome(SITE_DATA);
+  renderBrandFooter();
+
+  const themeHelpers = ensureThemeHelpers();
+  themeHelpers.apply(themeHelpers.current(), { persist: false });
+
+  const themeBtn = document.getElementById('wc-theme-toggle');
+  if (themeBtn) {
+    themeBtn.innerHTML = `<span class="sr-only">Toggle theme</span>${iconMarkup('themeLight', 'dr-icon-sm')} ${iconMarkup('themeDark', 'dr-icon-sm')}`;
+    const sync = () => {
+      const mode = themeHelpers.current();
+      themeBtn.dataset.mode = mode;
+      themeBtn.setAttribute('aria-checked', String(mode === 'dark'));
+      themeBtn.title = `Toggle theme (current: ${mode})`;
+    };
+    sync();
+    themeBtn.addEventListener('click', () => {
+      themeHelpers.cycle();
+      sync();
+    });
   }
 
-  function renderDoc(doc) {
-    const isHomepageDoc = Boolean(homepageDoc && doc && doc.id === homepageDoc.id);
-    const heroOverride = isHomepageDoc ? HERO_DATA : null;
-    const heroHasWorks = Array.isArray(heroOverride?.works) && heroOverride.works.length > 0;
-    const showWorks = showWorksOnHome && isHomepageDoc && !heroHasWorks;
-    const sections = isHomepageDoc ? HOME_SECTIONS : [];
-    renderDocsContent(article, doc, { showWorks, highlights: worksHighlights, heroOverride, sections });
-    const headings = buildHeadings(article);
-    enhanceHeadings(headings);
-    if (article) enhanceCodeBlocks(article);
-    updateOutline(headings);
-    setActiveDoc(doc?.id || (doc === PLACEHOLDER_DOC ? doc.id : ''));
+  const navToggle = document.querySelector('[data-action="toggle-nav"]');
+  const toolsToggle = document.querySelector('[data-action="toggle-right"]');
+  const commandTrigger = document.querySelector('[data-action="open-command"]');
+  const closeScoreBtn = document.querySelector('[data-action="close-score"]');
+
+  if (navToggle) navToggle.innerHTML = iconMarkup('nav', 'dr-icon-sm');
+  if (toolsToggle) toolsToggle.innerHTML = iconMarkup('tools', 'dr-icon-sm');
+  if (commandTrigger) {
+    commandTrigger.innerHTML = `${iconMarkup('search', 'dr-icon-sm')}<span>Search docs</span><kbd>⌘K</kbd>`;
   }
 
-  function ensureHash(doc) {
-    if (!doc || doc === PLACEHOLDER_DOC || !doc.url) {
-      if (location.hash) {
-        history.replaceState(null, '', `${location.pathname}${location.search}`);
-      }
+  const commandRoot = document.getElementById('dr-command-palette');
+  const commandInput = document.getElementById('dr-command-input');
+  const commandResults = document.getElementById('dr-command-results');
+  const commandClose = document.querySelectorAll('[data-action="close-command"]');
+  commandClose.forEach((node) => {
+    if (node.classList.contains('dr-command-close')) {
+      node.innerHTML = iconMarkup('close', 'dr-icon-sm');
+    }
+    node.addEventListener('click', () => {
+      closeCommand();
+    });
+  });
+
+  const mobileQuery = window.matchMedia('(max-width: 1040px)');
+
+  function syncDrawerControls() {
+    const isMobile = mobileQuery.matches;
+    if (navToggle) {
+      const expanded = isMobile ? document.body.classList.contains('dr-nav-open') : !document.body.classList.contains('dr-nav-collapsed');
+      navToggle.setAttribute('aria-expanded', String(expanded));
+    }
+    if (toolsToggle) {
+      const expanded = isMobile ? document.body.classList.contains('dr-right-open') : !document.body.classList.contains('dr-right-collapsed');
+      toolsToggle.setAttribute('aria-expanded', String(expanded));
+    }
+  }
+
+  function closeDrawers() {
+    document.body.classList.remove('dr-nav-open', 'dr-right-open');
+    syncDrawerControls();
+  }
+
+  navToggle?.addEventListener('click', () => {
+    if (mobileQuery.matches) {
+      const next = !document.body.classList.contains('dr-nav-open');
+      document.body.classList.toggle('dr-nav-open', next);
+      if (next) document.body.classList.remove('dr-right-open');
+    } else {
+      document.body.classList.toggle('dr-nav-collapsed');
+    }
+    syncDrawerControls();
+  });
+
+  toolsToggle?.addEventListener('click', () => {
+    if (mobileQuery.matches) {
+      const next = !document.body.classList.contains('dr-right-open');
+      document.body.classList.toggle('dr-right-open', next);
+      if (next) document.body.classList.remove('dr-nav-open');
+    } else {
+      document.body.classList.toggle('dr-right-collapsed');
+    }
+    syncDrawerControls();
+  });
+
+  document.querySelector('[data-action="close-drawers"]')?.addEventListener('click', closeDrawers);
+
+  function getDocHashForHeading(headingId) {
+    if (!state.activeDoc) return '';
+    return buildRouteHash(state.activeDoc.id, headingId || '');
+  }
+
+  function navigate(docId, headingId = '') {
+    const hash = buildRouteHash(docId, headingId);
+    if (!hash) return;
+    if (location.hash === hash) {
+      state.pendingHeadingAfterRender = headingId || '';
+      renderFromRoute();
       return;
     }
-    const targetHash = doc.url.startsWith('#') ? doc.url : `#${doc.url}`;
-    if (location.hash !== targetHash) {
+    location.hash = hash;
+  }
+
+  function openScoreExternal() {
+    if (!state.activeScore || !state.activeScore.pdf) return;
+    const page = Number.isFinite(Number(state.activeScore.page)) && Number(state.activeScore.page) >= 1
+      ? `#page=${Math.floor(Number(state.activeScore.page))}`
+      : '';
+    window.open(`${state.activeScore.pdf}${page}`, '_blank', 'noopener');
+  }
+
+  closeScoreBtn?.addEventListener('click', () => {
+    state.activeScore = null;
+    syncScoreToolsPane(state.activeScore);
+  });
+
+  document.querySelector('[data-action="copy-page-link"]')?.addEventListener('click', async () => {
+    if (!state.activeDoc) return;
+    const url = `${location.origin}${location.pathname}${buildRouteHash(state.activeDoc.id, state.activeHeading || '')}`;
+    const node = document.querySelector('[data-action="copy-page-link"]');
+    const ok = await copyText(url);
+    if (node) {
+      node.textContent = ok ? 'Copied' : 'Copy page link';
+      setTimeout(() => { node.textContent = 'Copy page link'; }, 1200);
+    }
+  });
+
+  document.querySelector('[data-action="open-page-tab"]')?.addEventListener('click', () => {
+    if (!state.activeDoc) return;
+    const hash = buildRouteHash(state.activeDoc.id, state.activeHeading || '');
+    window.open(`${location.pathname}${hash}`, '_blank', 'noopener');
+  });
+
+  document.querySelector('[data-action="scroll-top"]')?.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  document.querySelector('[data-score-open]')?.addEventListener('click', (ev) => {
+    if (!state.activeScore || !state.activeScore.pdf) {
+      ev.preventDefault();
+      return;
+    }
+    openScoreExternal();
+    ev.preventDefault();
+  });
+
+  const searchEngine = createSearchEngine(SEARCH_ENTRIES, SEARCH_CONFIG);
+
+  function renderCommandResults(results) {
+    if (!commandResults) return;
+    commandResults.innerHTML = '';
+    if (!results.length) {
+      const empty = document.createElement('div');
+      empty.className = 'dr-command-empty';
+      empty.textContent = 'No results yet. Try title, heading, tags, or cue terms.';
+      commandResults.appendChild(empty);
+      state.commandIndex = -1;
+      state.commandResults = [];
+      return;
+    }
+
+    state.commandResults = results;
+    state.commandIndex = 0;
+
+    const grouped = new Map();
+    results.forEach((result) => {
+      const group = result.group || 'Docs';
+      if (!grouped.has(group)) grouped.set(group, []);
+      grouped.get(group).push(result);
+    });
+
+    let idx = 0;
+    grouped.forEach((items, groupName) => {
+      const block = document.createElement('section');
+      const heading = document.createElement('h3');
+      heading.className = 'dr-command-group-title';
+      heading.textContent = groupName;
+      block.appendChild(heading);
+
+      items.forEach((result) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'dr-command-item';
+        button.dataset.index = String(idx);
+        button.innerHTML = `<span class="dr-command-item-title">${result.title || 'Untitled'}</span><span class="dr-command-item-snippet">${result.snippet || ''}</span><span class="dr-command-item-meta">${result.kind === 'heading' ? 'Heading' : 'Page'} · ${result.docId || ''}</span>`;
+        button.addEventListener('click', () => {
+          const entry = state.commandResults[Number(button.dataset.index)];
+          if (!entry) return;
+          closeCommand();
+          navigate(entry.docId || parseRouteHash(entry.url).docId, entry.headingId || parseRouteHash(entry.url).heading);
+        });
+        if (idx === 0) button.classList.add('is-active');
+        block.appendChild(button);
+        idx += 1;
+      });
+
+      commandResults.appendChild(block);
+    });
+  }
+
+  function updateCommandActiveIndex(nextIndex) {
+    if (!commandResults) return;
+    const total = state.commandResults.length;
+    if (!total) {
+      state.commandIndex = -1;
+      return;
+    }
+    state.commandIndex = ((nextIndex % total) + total) % total;
+    const buttons = commandResults.querySelectorAll('.dr-command-item');
+    buttons.forEach((button) => {
+      const isActive = Number(button.dataset.index) === state.commandIndex;
+      button.classList.toggle('is-active', isActive);
+      if (isActive) button.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function openCommand(prefill = '') {
+    if (!commandRoot || !commandInput) return;
+    commandRoot.hidden = false;
+    state.commandOpen = true;
+    commandInput.value = prefill;
+    renderCommandResults(searchEngine.search(prefill));
+    setTimeout(() => {
+      commandInput.focus();
+      commandInput.select();
+    }, 0);
+  }
+
+  function closeCommand() {
+    if (!commandRoot) return;
+    commandRoot.hidden = true;
+    state.commandOpen = false;
+    if (commandInput) commandInput.value = '';
+  }
+
+  commandTrigger?.addEventListener('click', () => openCommand(''));
+  commandInput?.addEventListener('input', () => {
+    renderCommandResults(searchEngine.search(commandInput.value || ''));
+  });
+  commandInput?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'ArrowDown') {
+      ev.preventDefault();
+      updateCommandActiveIndex(state.commandIndex + 1);
+    } else if (ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      updateCommandActiveIndex(state.commandIndex - 1);
+    } else if (ev.key === 'Enter') {
+      const current = state.commandResults[state.commandIndex];
+      if (!current) return;
+      ev.preventDefault();
+      closeCommand();
+      navigate(current.docId || parseRouteHash(current.url).docId, current.headingId || parseRouteHash(current.url).heading);
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      closeCommand();
+    }
+  });
+
+  function resolveDocFromRoute() {
+    const route = parseRouteHash(location.hash || '');
+    let doc = getDocByRoute(route.docId);
+    if (!doc) {
+      if (PLACEHOLDER_DOC) {
+        doc = PLACEHOLDER_DOC;
+      } else {
+        doc = getHomepageDoc();
+      }
+    }
+    return {
+      doc,
+      heading: route.heading || ''
+    };
+  }
+
+  function renderDocument(doc, headingId) {
+    article.innerHTML = '';
+    const homepage = getHomepageDoc();
+    const isHomepage = !!(homepage && doc && homepage.id === doc.id);
+
+    renderHero(article, doc, isHomepage);
+
+    if (isHomepage) {
+      renderHomeSections(article);
+    }
+
+    renderModules(article, Array.isArray(doc.modules) ? doc.modules : [], doc, state);
+
+    const prose = document.createElement('section');
+    prose.className = 'dr-prose';
+    prose.innerHTML = ensureHtml(doc.html, 'doc.html');
+    article.appendChild(prose);
+
+    enhanceCodeBlocks(prose);
+    const headings = buildHeadings(prose);
+    enhanceHeadingAnchors(headings, getDocHashForHeading);
+
+    if (state.headingObserver) state.headingObserver.disconnect();
+    const outline = renderOutline(headings, (id) => {
+      state.activeHeading = id;
+      const hash = buildRouteHash(doc.id, id);
+      if (hash && location.hash !== hash) {
+        history.replaceState(null, '', `${location.pathname}${location.search}${hash}`);
+      }
+      const target = document.getElementById(id);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    state.outlineLinks = outline.links;
+    state.headingObserver = observeHeadingActivity(headings, (id) => {
+      state.activeHeading = id;
+      state.outlineLinks.forEach((button, key) => {
+        if (!button) return;
+        button.classList.toggle('is-active', key === id);
+      });
+    });
+
+    const targetHeading = state.pendingHeadingAfterRender || headingId;
+    if (targetHeading) {
+      const target = document.getElementById(targetHeading);
+      if (target) {
+        setTimeout(() => {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 35);
+      }
+    }
+    state.pendingHeadingAfterRender = '';
+
+    renderBreadcrumbs(doc);
+    renderMeta(doc);
+  }
+
+  function setActiveNav(docId) {
+    state.navLinks.forEach((link, id) => {
+      if (!link) return;
+      link.classList.toggle('is-active', id === docId);
+    });
+  }
+
+  function renderFromRoute() {
+    const resolved = resolveDocFromRoute();
+    const doc = resolved.doc;
+    if (!doc) return;
+
+    if (doc.id !== state.activeDoc?.id) {
+      state.activeScore = null;
+      syncScoreToolsPane(state.activeScore);
+    }
+
+    state.activeDoc = doc;
+    state.activeHeading = resolved.heading || '';
+
+    renderDocument(doc, resolved.heading);
+    setActiveNav(doc.id);
+
+    const targetHash = buildRouteHash(doc.id, resolved.heading || '');
+    if (targetHash && location.hash !== targetHash) {
       history.replaceState(null, '', `${location.pathname}${location.search}${targetHash}`);
     }
   }
 
-  function handleRouteChange({ initial = false } = {}) {
-    const currentHash = location.hash || '';
-    let doc = resolveDocFromHash(currentHash);
-    if (!doc) {
-      if (HOMEPAGE_MISSING && PLACEHOLDER_DOC) {
-        doc = PLACEHOLDER_DOC;
-        if (initial && currentHash) {
-          history.replaceState(null, '', `${location.pathname}${location.search}`);
-        }
-      } else {
-        doc = fallbackDoc;
-        if (doc && doc !== PLACEHOLDER_DOC && initial) {
-          ensureHash(doc);
-        }
+  state.navLinks = renderNav(({ href, docId }) => {
+    closeDrawers();
+    if (docId) {
+      navigate(docId, '');
+      return;
+    }
+    const parsed = parseRouteHash(href);
+    if (parsed.docId) {
+      navigate(parsed.docId, parsed.heading);
+    }
+  });
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') {
+      if (state.commandOpen) {
+        closeCommand();
+        return;
+      }
+      closeDrawers();
+      return;
+    }
+
+    const target = ev.target;
+    const isEditable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable;
+
+    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') {
+      ev.preventDefault();
+      openCommand('');
+      return;
+    }
+
+    if (!isEditable && ev.key === '/' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+      ev.preventDefault();
+      openCommand('');
+      return;
+    }
+
+    if (!isEditable && ev.key.toLowerCase() === 'c' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+      const active = document.activeElement;
+      if (active && active.classList && active.classList.contains('dr-copy-btn')) {
+        active.click();
       }
     }
-    if (!doc) return;
-    renderDoc(doc);
+  });
+
+  if (typeof mobileQuery.addEventListener === 'function') {
+    mobileQuery.addEventListener('change', () => {
+      closeDrawers();
+      if (mobileQuery.matches) {
+        document.body.classList.remove('dr-nav-collapsed', 'dr-right-collapsed');
+      }
+      syncDrawerControls();
+    });
   }
 
-  handleRouteChange({ initial: true });
-  window.addEventListener('hashchange', () => handleRouteChange());
-
-  setupSearch(document, (url) => {
-    closeDrawers();
-    const doc = DOC_BY_URL.get(url) || DOC_BY_ID.get(String(url || '').replace(/^#\/?/, ''));
-    if (doc && doc.url) {
-      if (location.hash !== doc.url) {
-        location.hash = doc.url;
-      } else {
-        handleRouteChange();
-      }
-    }
-    setTimeout(() => {
-      const focusTarget = document.querySelector('.docs-article h1, .docs-article h2');
-      if (focusTarget) focusTarget.focus({ preventScroll: false });
-    }, 50);
-  });
-
-  document.addEventListener('click', (ev) => {
-    if (ev.target.closest?.('#docs-nav a')) closeDrawers();
-    if (ev.target.closest?.('#docs-outline a')) closeDrawers();
-  });
+  syncDrawerControls();
+  renderFromRoute();
+  window.addEventListener('hashchange', renderFromRoute);
 });

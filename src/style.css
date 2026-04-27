@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&display=swap');
-
   /* ===========================
      AeroShell — translucent black, amber accent
      =========================== */
@@ -874,12 +872,8 @@ flex:0 0 auto;
   gap:8px;                 /* space between aperture and badge */
   white-space:nowrap;      /* prevent wrapping */
 }
-.wc-crumbs .wb-badge{ line-height:0; }   /* remove inline-gap */
-.wc-crumbs .wb-badge img{
-  display:block;
-  height:18px;                 /* compact, matches icon scale */
+.wc-crumbs .wb-badge{
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
-@media (max-width: 600px){
-  .wc-crumbs .wb-badge img{ height:16px; }
-}
-

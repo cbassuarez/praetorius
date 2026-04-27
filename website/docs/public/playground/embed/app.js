@@ -657,7 +657,11 @@ pdfPane.addEventListener('transitionend', (e)=>{
     const copyEl  = SCOPE.querySelector('[data-copyright-name]');
     const linksEl = SCOPE.querySelector('[data-links]');
     const badgeEl = SCOPE.querySelector('.wb-badge');
-if (badgeEl) badgeEl.style.display = (site.showBadge === false) ? 'none' : '';
+    const brandingCfg = (window.PRAE && window.PRAE.config && window.PRAE.config.branding) || {};
+    const attributionEnabled = (brandingCfg.attribution && brandingCfg.attribution.enabled === false)
+      ? false
+      : (site.showBadge !== false);
+if (badgeEl) badgeEl.style.display = attributionEnabled ? '' : 'none';
 
 
     const fullName = site.fullName || [site.firstName, site.lastName].filter(Boolean).join(' ').trim();
