@@ -1,0 +1,15 @@
+{
+  "name": "@praetorius/cli-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HTTP bridge that exposes the Praetorius CLI generate command for the docs site preview iframes.",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs",
+    "dev": "node --watch index.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
+}

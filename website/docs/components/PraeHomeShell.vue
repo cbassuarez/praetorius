@@ -6,6 +6,11 @@ import { createDefaultProjectState, hydrateProjectState, runFolioCommand } from 
 const { isDark } = useData()
 const themeMode = computed(() => (isDark.value ? 'dark' : 'light'))
 
+const PRAE_API_ORIGIN = String(import.meta.env?.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '')
+function builderApi(path: string): string {
+  return PRAE_API_ORIGIN ? `${PRAE_API_ORIGIN}${path}` : withBase(path)
+}
+
 const previewSrc = ref('')
 const previewSrcdoc = ref('')
 const loading = ref(true)
@@ -188,7 +193,7 @@ async function closeActiveSession() {
   if (!token) return
   activeSession.value = ''
   try {
-    await fetch(withBase(`/__prae_builder/close/${encodeURIComponent(token)}`), {
+    await fetch(builderApi(`/__prae_builder/close/${encodeURIComponent(token)}`), {
       method: 'POST',
       keepalive: true,
     })
@@ -199,7 +204,7 @@ async function closeActiveSession() {
 
 async function buildPreviewBridge() {
   const state = buildProjectState()
-  const response = await fetch(withBase('/__prae_builder/generate'), {
+  const response = await fetch(builderApi('/__prae_builder/generate'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -225,7 +230,7 @@ async function buildPreviewBridge() {
   }
   await closeActiveSession()
   activeSession.value = String(payload.token || '').trim()
-  previewSrc.value = withBase(String(payload.previewUrl))
+  previewSrc.value = builderApi(String(payload.previewUrl))
   previewSrcdoc.value = ''
 }
 

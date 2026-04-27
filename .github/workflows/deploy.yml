@@ -70,9 +70,10 @@ jobs:
       - name: Build VitePress
         run: npm run build
         env:
-          DOCSEARCH_APP_ID:     ${{ secrets.DOCSEARCH_APP_ID }}
-          DOCSEARCH_API_KEY:    ${{ secrets.DOCSEARCH_API_KEY }}
-          DOCSEARCH_INDEX_NAME: ${{ secrets.DOCSEARCH_INDEX_NAME }}
+          DOCSEARCH_APP_ID:        ${{ secrets.DOCSEARCH_APP_ID }}
+          DOCSEARCH_API_KEY:       ${{ secrets.DOCSEARCH_API_KEY }}
+          DOCSEARCH_INDEX_NAME:    ${{ secrets.DOCSEARCH_INDEX_NAME }}
+          VITE_PRAE_BUILDER_API:   ${{ vars.PRAE_BUILDER_API_URL }}
 
       - name: Assert dist outputs exist
         run: |

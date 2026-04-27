@@ -6,6 +6,11 @@ import { createDefaultProjectState, hydrateProjectState, runFolioCommand } from 
 const { isDark } = useData()
 const themeMode = computed(() => (isDark.value ? 'dark' : 'light'))
 
+const PRAE_API_ORIGIN = String(import.meta.env?.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '')
+function builderApi(path: string): string {
+  return PRAE_API_ORIGIN ? `${PRAE_API_ORIGIN}${path}` : withBase(path)
+}
+
 type SkinKey =
   | 'console'
   | 'vite-breeze'
@@ -118,7 +123,7 @@ async function closeActiveSession() {
   const token = activeSession.value
   activeSession.value = ''
   try {
-    await fetch(withBase(`/__prae_builder/close/${token}`), {
+    await fetch(builderApi(`/__prae_builder/close/${token}`), {
       method: 'POST',
       keepalive: true,
     })
@@ -129,7 +134,7 @@ async function closeActiveSession() {
 
 async function generateViaCliBridge(state: any) {
   const uiRuntime = REACT_SUPPORTED_SKINS.has(skin.value) ? 'react' : 'vanilla'
-  const response = await fetch(withBase('/__prae_builder/generate'), {
+  const response = await fetch(builderApi('/__prae_builder/generate'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -157,7 +162,7 @@ async function generateViaCliBridge(state: any) {
   }
   await closeActiveSession()
   activeSession.value = String(payload.token || '')
-  previewSrc.value = withBase(String(payload.previewUrl))
+  previewSrc.value = builderApi(String(payload.previewUrl))
   previewSrcdoc.value = ''
 }
 
