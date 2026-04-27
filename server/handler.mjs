@@ -346,6 +346,55 @@ function guessMime(filePath) {
   return 'application/octet-stream';
 }
 
+const HEIGHT_POSTER_SCRIPT = `<script>(function(){
+  if (window.__praeHeightPoster) return;
+  window.__praeHeightPoster = true;
+  function measure() {
+    var doc = document.documentElement;
+    var body = document.body;
+    return Math.max(
+      doc ? doc.scrollHeight : 0,
+      doc ? doc.offsetHeight : 0,
+      body ? body.scrollHeight : 0,
+      body ? body.offsetHeight : 0
+    );
+  }
+  function send() {
+    try {
+      window.parent.postMessage({ type: 'prae:height', value: measure() }, '*');
+    } catch (_) { /* ignore */ }
+  }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(send, 0);
+  } else {
+    window.addEventListener('DOMContentLoaded', send);
+  }
+  window.addEventListener('load', send);
+  setTimeout(send, 200);
+  setTimeout(send, 800);
+  setTimeout(send, 2000);
+  try {
+    if (typeof ResizeObserver === 'function') {
+      var ro = new ResizeObserver(function(){ send(); });
+      if (document.documentElement) ro.observe(document.documentElement);
+      if (document.body) ro.observe(document.body);
+    }
+  } catch (_) { /* ignore */ }
+  try {
+    if (typeof MutationObserver === 'function' && document.documentElement) {
+      var mo = new MutationObserver(function(){ send(); });
+      mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    }
+  } catch (_) { /* ignore */ }
+})();</script>`;
+
+async function readHtmlWithHeightPoster(target) {
+  const text = await fsp.readFile(target, 'utf8');
+  if (text.includes('window.__praeHeightPoster')) return text;
+  if (text.includes('</body>')) return text.replace('</body>', `${HEIGHT_POSTER_SCRIPT}</body>`);
+  return `${text}\n${HEIGHT_POSTER_SCRIPT}`;
+}
+
 export function createBuilderHandler(options) {
   const repoRoot = options.repoRoot;
   const basePath = options.basePath || '/';
@@ -441,9 +490,15 @@ export function createBuilderHandler(options) {
       const target = path.resolve(entry.outDir, relative);
       if (!target.startsWith(entry.outDir)) { res.statusCode = 403; res.end('Forbidden'); return true; }
       if (!fs.existsSync(target) || !fs.statSync(target).isFile()) { res.statusCode = 404; res.end('Not found'); return true; }
+      const mime = guessMime(target);
       res.statusCode = 200;
-      res.setHeader('Content-Type', guessMime(target));
-      fs.createReadStream(target).pipe(res);
+      res.setHeader('Content-Type', mime);
+      if (mime.startsWith('text/html')) {
+        const html = await readHtmlWithHeightPoster(target);
+        res.end(html);
+      } else {
+        fs.createReadStream(target).pipe(res);
+      }
       return true;
     }
 

@@ -6,7 +6,9 @@ import { createDefaultProjectState, hydrateProjectState, runFolioCommand } from 
 const { isDark } = useData()
 const themeMode = computed(() => (isDark.value ? 'dark' : 'light'))
 
-const PRAE_API_ORIGIN = String(import.meta.env.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '')
+const PRAE_API_DEFAULT = 'https://praetorius.onrender.com'
+const PRAE_API_ENV = String(import.meta.env.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '')
+const PRAE_API_ORIGIN = PRAE_API_ENV || (import.meta.env.PROD ? PRAE_API_DEFAULT : '')
 function builderApi(path: string): string {
   return PRAE_API_ORIGIN ? `${PRAE_API_ORIGIN}${path}` : withBase(path)
 }

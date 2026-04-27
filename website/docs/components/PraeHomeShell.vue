@@ -108,6 +108,17 @@ function onIframeLoad() {
   bindObservers()
 }
 
+function onMessage(event: MessageEvent) {
+  const frame = iframeRef.value
+  if (!frame || event.source !== frame.contentWindow) return
+  const data = event.data
+  if (!data || typeof data !== 'object') return
+  if (data.type !== 'prae:height') return
+  const next = Number(data.value)
+  if (!Number.isFinite(next) || next <= 0) return
+  iframeHeight.value = Math.min(2400, Math.max(360, Math.ceil(next)))
+}
+
 const stockWorks = [
   {
     id: 1,
@@ -253,6 +264,7 @@ async function rebuildPreview() {
 }
 
 onMounted(() => {
+  if (typeof window !== 'undefined') window.addEventListener('message', onMessage)
   void rebuildPreview()
 })
 
@@ -261,6 +273,7 @@ watch(themeMode, () => {
 })
 
 onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') window.removeEventListener('message', onMessage)
   disconnectObservers()
   void closeActiveSession()
 })

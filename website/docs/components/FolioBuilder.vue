@@ -60,10 +60,19 @@ const generatedFilesOpen = ref(false);
 const deployGuidanceOpen = ref(false);
 const monoColorHex = ref('#5e77bd');
 const SPLIT_PANE_STORAGE_KEY = 'prae.builder.split.leftPct';
+
+const PRAE_API_DEFAULT = 'https://praetorius.onrender.com';
+const PRAE_API_ENV = String(import.meta.env.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '');
+const PRAE_API_ORIGIN = PRAE_API_ENV || (import.meta.env.PROD ? PRAE_API_DEFAULT : '');
+const builderApiBase = PRAE_API_ORIGIN
+  ? `${PRAE_API_ORIGIN}/__prae_builder`
+  : withBase('/__prae_builder');
+
 const previewSrc = computed(() => {
   const raw = String(cliGenerated.value?.previewUrl || '').trim();
   if (!raw) return '';
-  if (raw.startsWith('/')) return withBase(raw);
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/')) return PRAE_API_ORIGIN ? `${PRAE_API_ORIGIN}${raw}` : withBase(raw);
   return raw;
 });
 const previewSrcdoc = computed(() => {
@@ -82,10 +91,6 @@ const showPreviewSkeleton = computed(() => {
 const isMonoOnePalette = computed(() => themeForm.palette === 'mono-one');
 const previewCanvasHeightPx = computed(() => Math.max(560, Math.min(4200, Number(previewContentHeight.value) || 560)));
 const previewCanvasHeight = computed(() => `${previewCanvasHeightPx.value}px`);
-const PRAE_API_ORIGIN = String(import.meta.env.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '');
-const builderApiBase = PRAE_API_ORIGIN
-  ? `${PRAE_API_ORIGIN}/__prae_builder`
-  : withBase('/__prae_builder');
 const builderApiReady = ref(false);
 const cliGenerated = ref(null);
 
@@ -945,6 +950,17 @@ function onPreviewFrameLoad() {
   bindPreviewObservers();
 }
 
+function onPreviewMessage(event) {
+  const frame = previewIframeRef.value;
+  if (!frame || event.source !== frame.contentWindow) return;
+  const data = event.data;
+  if (!data || typeof data !== 'object') return;
+  if (data.type !== 'prae:height') return;
+  const next = Number(data.value);
+  if (!Number.isFinite(next) || next <= 0) return;
+  previewContentHeight.value = Math.max(560, Math.min(4200, Math.ceil(next)));
+}
+
 function clampPanePct(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 52;
@@ -1424,6 +1440,7 @@ onMounted(async () => {
   } catch {
     // ignore storage restrictions
   }
+  if (typeof window !== 'undefined') window.addEventListener('message', onPreviewMessage);
   await bootWorker();
 });
 
@@ -1434,6 +1451,7 @@ function closeCliPreviewSession() {
 }
 
 onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') window.removeEventListener('message', onPreviewMessage);
   stopPaneResize();
   disconnectPreviewObservers();
   closeCliPreviewSession();
