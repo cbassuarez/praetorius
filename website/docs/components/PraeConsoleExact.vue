@@ -6,7 +6,7 @@ import { createDefaultProjectState, hydrateProjectState, runFolioCommand } from 
 const { isDark } = useData()
 const themeMode = computed(() => (isDark.value ? 'dark' : 'light'))
 
-const PRAE_API_ORIGIN = String(import.meta.env?.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '')
+const PRAE_API_ORIGIN = String(import.meta.env.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '')
 function builderApi(path: string): string {
   return PRAE_API_ORIGIN ? `${PRAE_API_ORIGIN}${path}` : withBase(path)
 }

@@ -82,7 +82,7 @@ const showPreviewSkeleton = computed(() => {
 const isMonoOnePalette = computed(() => themeForm.palette === 'mono-one');
 const previewCanvasHeightPx = computed(() => Math.max(560, Math.min(4200, Number(previewContentHeight.value) || 560)));
 const previewCanvasHeight = computed(() => `${previewCanvasHeightPx.value}px`);
-const PRAE_API_ORIGIN = String(import.meta.env?.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '');
+const PRAE_API_ORIGIN = String(import.meta.env.VITE_PRAE_BUILDER_API || '').trim().replace(/\/+$/, '');
 const builderApiBase = PRAE_API_ORIGIN
   ? `${PRAE_API_ORIGIN}/__prae_builder`
   : withBase('/__prae_builder');
