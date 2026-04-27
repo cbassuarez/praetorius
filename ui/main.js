@@ -27,11 +27,17 @@ import { normalizeWork } from './lib/work-normalize.js';
     try{
       var grp = document.getElementById('works-group');
 var con = document.getElementById('works-console');
+      var seeded = (grp && grp.getAttribute('data-theme'))
+        || (con && con.getAttribute('data-theme'))
+        || (document.documentElement && document.documentElement.getAttribute('data-theme'))
+        || '';
       var saved = localStorage.getItem('wc.theme');
       if (saved && saved.trim().charAt(0)==='{'){
         try { saved = (JSON.parse(saved)||{}).mode || 'dark'; } catch(_){ saved = 'dark'; }
       }
-      var eff = (saved === 'light') ? 'light' : 'dark';
+      var eff = (seeded === 'light' || seeded === 'dark')
+        ? seeded
+        : ((saved === 'light') ? 'light' : 'dark');
       if (grp){
   grp.removeAttribute('data-theme-mode');
   grp.setAttribute('data-theme', eff);
@@ -129,6 +135,47 @@ let bootDone = false; // prevent auto-scroll during initial render
     vol: 1.0,
     rate: 1.0
   };
+  const RYB_HOVER_COLORS = [
+    'oklch(0.6463 0.2409 32.62)',
+    'oklch(0.9035 0.1796 104.9)',
+    'oklch(0.5797 0.2296 263.44)'
+  ];
+  let rybHoverPool = [];
+
+  function isRybPaletteActive(){
+    const palette = (consoleRoot && consoleRoot.getAttribute('data-palette'))
+      || (themeRoot && themeRoot.getAttribute('data-palette'))
+      || (document.documentElement && document.documentElement.getAttribute('data-palette'))
+      || (document.body && document.body.getAttribute('data-palette'))
+      || '';
+    return palette === 'ryb-tricolor';
+  }
+
+  function nextRybHoverColor(){
+    if (!rybHoverPool.length){
+      const bag = RYB_HOVER_COLORS.slice();
+      for (let i = bag.length - 1; i > 0; i -= 1){
+        const j = Math.floor(Math.random() * (i + 1));
+        const swap = bag[i];
+        bag[i] = bag[j];
+        bag[j] = swap;
+      }
+      rybHoverPool = bag;
+    }
+    return rybHoverPool.pop();
+  }
+
+  function setRybHoverColorForTarget(target){
+    if (!consoleRoot) return;
+    if (!isRybPaletteActive()){
+      consoleRoot.style.removeProperty('--wc-hover-color');
+      return;
+    }
+    const button = target && target.closest ? target.closest('button.btn') : null;
+    if (!button || !consoleRoot.contains(button)) return;
+    const color = nextRybHoverColor();
+    if (color) consoleRoot.style.setProperty('--wc-hover-color', color);
+  }
 
   /* Boot: banner + auto List (present/invoked) */
   banner();
@@ -170,6 +217,16 @@ window.addEventListener('load', ()=>{ out.scrollTop = 0; }, { once:true });
 
   /* Click-to-run actions */
   if (consoleRoot) {
+    if (isRybPaletteActive()){
+      const initialHoverColor = nextRybHoverColor();
+      if (initialHoverColor) consoleRoot.style.setProperty('--wc-hover-color', initialHoverColor);
+    }
+    consoleRoot.addEventListener('pointerenter', (event) => {
+      setRybHoverColorForTarget(event.target);
+    }, true);
+    consoleRoot.addEventListener('focusin', (event) => {
+      setRybHoverColorForTarget(event.target);
+    });
     consoleRoot.addEventListener('click', (event) => {
       const button = event.target.closest('button');
       if (!button || !consoleRoot.contains(button)) return;
@@ -1281,6 +1338,11 @@ function clearHud(){
   /* ===== Theme management (UI + CLI) — Light/Dark only (no Auto) ===== */
   
   function readTheme(){
+    try{
+      const seeded = (themeRoot && themeRoot.getAttribute('data-theme'))
+        || (document.documentElement && document.documentElement.getAttribute('data-theme'));
+      if (seeded === 'light' || seeded === 'dark') return seeded;
+    }catch(_){}
     try{
       const v = localStorage.getItem('wc.theme') || 'dark';
       return (v.trim().charAt(0)==='{') ? ((JSON.parse(v)||{}).mode || 'dark') : v; // migrate JSON → string

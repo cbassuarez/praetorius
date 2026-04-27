@@ -1,0 +1,91 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Your Name" [level=1] [ref=e6]
+      - paragraph [ref=e7]: Selected works
+    - navigation "Site links" [ref=e8]:
+      - link "Home" [ref=e9] [cursor=pointer]:
+        - /url: "#"
+      - link "Projects" [ref=e10] [cursor=pointer]:
+        - /url: "#"
+      - link "Contact" [ref=e11] [cursor=pointer]:
+        - /url: "#"
+    - switch "Toggle theme" [ref=e12] [cursor=pointer]:
+      - generic [ref=e13]: ☀︎
+  - main [ref=e14]:
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - strong [ref=e18]: Now playing — —
+          - generic [ref=e19]: 0:00 / --:--
+        - button "Play" [ref=e21] [cursor=pointer]
+      - region "Works list" [ref=e22]:
+        - article [ref=e23]:
+          - generic [ref=e24]:
+            - generic [ref=e25]:
+              - heading "Aurora Study" [level=2] [ref=e26]
+              - paragraph [ref=e27]: aurora-study
+            - figure "Aurora Study cover" [ref=e28]
+          - paragraph [ref=e29]: A spectral mini-suite bending from stillness into radiant overtone bloom.
+          - list "Tags" [ref=e30]:
+            - listitem [ref=e31]: chamber
+            - listitem [ref=e32]: new-music
+            - listitem [ref=e33]: "2026"
+          - list "Cue points for Aurora Study" [ref=e34]:
+            - listitem [ref=e35]:
+              - button "Play @0:00" [ref=e36] [cursor=pointer]
+            - listitem [ref=e37]:
+              - button "Play @0:00" [ref=e38] [cursor=pointer]
+          - generic [ref=e39]:
+            - button "Open" [ref=e40] [cursor=pointer]
+            - button "Copy URL" [ref=e41] [cursor=pointer]
+            - button "PDF" [ref=e42] [cursor=pointer]
+        - article [ref=e43]:
+          - generic [ref=e44]:
+            - generic [ref=e45]:
+              - heading "Drift Etude" [level=2] [ref=e46]
+              - paragraph [ref=e47]: drift-etude
+            - figure "Drift Etude cover" [ref=e48]
+          - paragraph [ref=e49]: Slow spiral lines over unstable pedal points and bright release attacks.
+          - list "Tags" [ref=e50]:
+            - listitem [ref=e51]: solo-piano
+            - listitem [ref=e52]: etude
+            - listitem [ref=e53]: studio
+          - list "Cue points for Drift Etude" [ref=e54]:
+            - listitem [ref=e55]:
+              - button "Play @0:00" [ref=e56] [cursor=pointer]
+            - listitem [ref=e57]:
+              - button "Play @0:00" [ref=e58] [cursor=pointer]
+          - generic [ref=e59]:
+            - button "Open" [ref=e60] [cursor=pointer]
+            - button "Copy URL" [ref=e61] [cursor=pointer]
+            - button "PDF" [ref=e62] [cursor=pointer]
+        - article [ref=e63]:
+          - generic [ref=e64]:
+            - generic [ref=e65]:
+              - heading "Nocturne Grid" [level=2] [ref=e66]
+              - paragraph [ref=e67]: nocturne-grid
+            - figure "Nocturne Grid cover" [ref=e68]
+          - paragraph [ref=e69]: Modular phrase cells arranged for improvisation-driven page flow.
+          - list "Tags" [ref=e70]:
+            - listitem [ref=e71]: modular
+            - listitem [ref=e72]: performance-notes
+            - listitem [ref=e73]: draft
+          - list "Cue points for Nocturne Grid" [ref=e74]:
+            - listitem [ref=e75]:
+              - button "Play @0:00" [ref=e76] [cursor=pointer]
+            - listitem [ref=e77]:
+              - button "Play @0:00" [ref=e78] [cursor=pointer]
+          - generic [ref=e79]:
+            - button "Open" [ref=e80] [cursor=pointer]
+            - button "Copy URL" [ref=e81] [cursor=pointer]
+            - button "PDF" [ref=e82] [cursor=pointer]
+  - contentinfo [ref=e83]:
+    - generic [ref=e84]: © — · Updated 4/26/2026
+    - generic [ref=e85]:
+      - link "Home" [ref=e86] [cursor=pointer]:
+        - /url: "#"
+      - link "Projects" [ref=e87] [cursor=pointer]:
+        - /url: "#"
+      - link "Contact" [ref=e88] [cursor=pointer]:
+        - /url: "#"

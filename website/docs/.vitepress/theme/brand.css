@@ -34,13 +34,13 @@
   --prae-font-display: 'Instrument Serif', 'Times New Roman', serif;
   --prae-font-sans: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
   --prae-font-mono: 'IBM Plex Mono', 'SFMono-Regular', Menlo, monospace;
-  --prae-brand-ink: #0b1e3c;
-  --prae-brand-ink-soft: #4a5e7d;
-  --prae-brand-paper: #f4f8ff;
-  --prae-brand-paper-dark: #0d1a31;
-  --prae-brand-border: #9db2cf;
-  --prae-brand-accent: #2f7df0;
-  --prae-brand-accent-warm: #ff8f2f;
+  --prae-brand-ink: #000000;
+  --prae-brand-ink-soft: #303030;
+  --prae-brand-paper: #ffffff;
+  --prae-brand-paper-dark: #ffffff;
+  --prae-brand-border: #000000;
+  --prae-brand-accent: oklch(0.6463 0.2409 32.62);
+  --prae-brand-accent-warm: oklch(0.9035 0.1796 104.9);
   --prae-brand-radius: 2px;
 }
 
@@ -107,39 +107,56 @@ select {
 .prae-brand-callouts {
   display: inline-flex;
   align-items: center;
-  gap: 0.38rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .prae-brand-callout {
-  border: 1px solid color-mix(in srgb, var(--prae-brand-border) 86%, transparent);
-  background: color-mix(in srgb, var(--prae-brand-paper) 88%, transparent);
+  border: 2px solid var(--prae-brand-border);
+  background: var(--prae-brand-paper);
   border-radius: var(--prae-brand-radius);
-  padding: 0.24rem 0.46rem;
-  min-height: 32px;
+  padding: 0.42rem 0.7rem;
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
-  gap: 0.34rem;
-  text-decoration: none;
+  gap: 0.55rem;
+  text-decoration: none !important;
   font-family: var(--prae-font-mono);
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  color: var(--prae-brand-ink);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--prae-blue, var(--prae-brand-accent)) 24%, transparent);
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
 }
 
-.prae-brand-callout:hover,
+.prae-brand-callout:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 color-mix(in srgb, var(--prae-blue, var(--prae-brand-accent)) 42%, transparent);
+}
+
 .prae-brand-callout:focus-visible {
-  border-color: color-mix(in srgb, var(--prae-brand-accent) 45%, var(--prae-brand-border));
+  outline: 2px solid var(--prae-blue, var(--prae-brand-accent));
+  outline-offset: 2px;
+}
+
+.prae-brand-callout-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: inline-block;
 }
 
 .prae-brand-callout-label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.5rem;
-  padding: 0.14rem 0.35rem;
+  min-width: 3rem;
+  padding: 0.2rem 0.42rem;
   border-radius: 1px;
   font-weight: 700;
   letter-spacing: 0.08em;
+  line-height: 1;
 }
 
 .prae-brand-callout--npm .prae-brand-callout-label {
@@ -147,13 +164,22 @@ select {
   color: #fff;
 }
 
+.prae-brand-callout--npm .prae-brand-callout-icon {
+  color: #cb3837;
+}
+
 .prae-brand-callout--github .prae-brand-callout-label {
   background: var(--prae-brand-ink);
-  color: #fff;
+  color: var(--prae-brand-paper);
+}
+
+.prae-brand-callout--github .prae-brand-callout-icon {
+  color: var(--prae-brand-ink);
 }
 
 .prae-brand-callout-hint {
   color: var(--prae-brand-ink-soft);
+  text-decoration: none !important;
 }
 
 .prae-brand-footer {
@@ -221,16 +247,16 @@ select {
 
 [data-theme='dark'] .prae-brand-powered,
 [data-theme='dark'] .prae-brand-callout {
-  background: color-mix(in srgb, var(--prae-brand-paper-dark) 84%, #0a1222 16%);
-  border-color: color-mix(in srgb, var(--prae-brand-border) 52%, #35527b 48%);
-  color: #f4f8ff;
+  background: var(--prae-brand-paper);
+  border-color: var(--prae-brand-border);
+  color: var(--prae-brand-ink);
 }
 
 [data-theme='dark'] .prae-brand-powered-prefix,
 [data-theme='dark'] .prae-brand-callout-hint,
 [data-theme='dark'] .prae-brand-link,
 [data-theme='dark'] .prae-brand-updated {
-  color: #b9c9df;
+  color: var(--prae-brand-ink-soft);
 }
 
 [data-theme='dark'] .prae-brand-wordmark,
@@ -240,11 +266,11 @@ select {
 [data-theme='dark'] .prae-brand-callout,
 [data-theme='dark'] .prae-brand-link:hover,
 [data-theme='dark'] .prae-brand-link:focus-visible {
-  color: #f4f8ff;
+  color: var(--prae-brand-ink);
 }
 
 [data-theme='dark'] .prae-brand-mark {
-  color: #f4f8ff;
+  color: var(--prae-brand-ink);
 }
 
 @media (max-width: 860px) {

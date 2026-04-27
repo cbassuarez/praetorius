@@ -1,11 +1,13 @@
 import { defineConfig } from 'vitepress'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createPraeBuilderApiPlugin } from './builder-api'
 
 /** Repo + paths */
 const REPO = 'cbassuarez/praetorius'
 const here = path.dirname(fileURLToPath(import.meta.url)) // .../website/docs/.vitepress
 const componentsDir = path.resolve(here, '../components')
+const repoRoot = path.resolve(here, '../../..')
 
 /** DocSearch env (set these in CI to enable Algolia; otherwise we use local search) */
 const DOCSEARCH_APP_ID     = process.env.DOCSEARCH_APP_ID     || process.env.ALGOLIA_APP_ID     || ''
@@ -19,7 +21,7 @@ export default defineConfig({
   description: 'Interactive works console with synchronized audio + page-follow PDFs.',
   lastUpdated: true,
   cleanUrls: true,
-  appearance: 'light',
+  appearance: true,
   base: '/praetorius/',
   outDir: './.vitepress/dist',
 
@@ -32,14 +34,21 @@ export default defineConfig({
   ],
 
   themeConfig: {
+    siteTitle: false,
 
     nav: [
       { text: 'Home', link: '/' },
       { text: 'Docs', link: '/docs/getting-started' },
-      { text: 'Playground', link: '/playground' },
-      { text: 'Showcase', link: '/showcase' },
-      { text: 'Press', link: '/press/' },
-      { text: 'Changelog', link: '/changelog' }
+      { text: 'Builder', link: '/builder' },
+      {
+        text: 'More',
+        items: [
+          { text: 'Playground', link: '/playground' },
+          { text: 'Showcase', link: '/showcase' },
+          { text: 'Press', link: '/press/' },
+          { text: 'Changelog', link: '/changelog' }
+        ]
+      }
     ],
 
     /** Sidebar:
@@ -87,6 +96,7 @@ export default defineConfig({
         {
           text: 'Site',
           items: [
+            { text: 'Builder', link: '/builder' },
             { text: 'Playground', link: '/playground' },
             { text: 'Showcase',  link: '/showcase'  },
             { text: 'Press Kit', link: '/press/' },
@@ -136,6 +146,12 @@ export default defineConfig({
   vite: {
     optimizeDeps: { include: ['pdfjs-dist'] },
     resolve: { alias: { '@components': componentsDir } },
+    plugins: [createPraeBuilderApiPlugin({ repoRoot, basePath: '/praetorius' })],
+    server: {
+      fs: {
+        allow: [repoRoot],
+      },
+    },
     build: { chunkSizeWarningLimit: 1024 }
   }
 })

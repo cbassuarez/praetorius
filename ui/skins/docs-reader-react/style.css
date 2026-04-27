@@ -5,13 +5,13 @@
 
   --dr-bg: var(--prae-bg, #eaf1fb);
   --dr-surface: var(--prae-surface, #ffffff);
-  --dr-surface-2: var(--prae-surface2, #f1f5fb);
+  --dr-surface-2: var(--prae-surface-2, #f1f5fb);
   --dr-text: var(--prae-text, #132845);
   --dr-muted: var(--prae-muted, #4f6988);
   --dr-border: color-mix(in srgb, var(--prae-border, #8fa3be) 78%, transparent);
-  --dr-border-strong: color-mix(in srgb, var(--prae-borderStrong, #6d86a8) 92%, transparent);
-  --dr-accent: var(--prae-accent, #d36a0a);
-  --dr-accent-2: var(--prae-accent2, #1f63ca);
+  --dr-border-strong: color-mix(in srgb, var(--prae-border-strong, #6d86a8) 92%, transparent);
+  --dr-accent: var(--prae-accent-live, var(--prae-accent, #d36a0a));
+  --dr-accent-2: var(--prae-accent-2-live, var(--prae-accent-2, #1f63ca));
 
   --dr-radius: 2px;
   --dr-gap-xs: 0.35rem;
@@ -20,8 +20,8 @@
   --dr-gap-lg: 1.4rem;
   --dr-gap-xl: 2rem;
   --dr-shell-width: min(1520px, calc(100vw - 2rem));
-  --dr-shadow-soft: 0 18px 34px rgba(7, 26, 48, 0.08);
-  --dr-shadow-card: 0 10px 24px rgba(7, 26, 48, 0.1);
+  --dr-shadow-soft: 0 18px 34px color-mix(in srgb, var(--dr-border-strong) 22%, transparent);
+  --dr-shadow-card: 0 10px 24px color-mix(in srgb, var(--dr-border-strong) 24%, transparent);
   --dr-focus: 0 0 0 2px color-mix(in srgb, var(--dr-accent-2) 55%, transparent);
 }
 
@@ -42,6 +42,10 @@ body {
   color: var(--dr-text);
   font-family: var(--dr-font-sans);
   line-height: 1.6;
+}
+
+body[data-palette='ryb-tricolor'] {
+  background: var(--dr-bg);
 }
 
 .dr-app {
@@ -723,7 +727,7 @@ body {
   border: 1px solid var(--dr-border-strong);
   border-radius: var(--dr-radius);
   background: var(--dr-surface);
-  box-shadow: 0 26px 60px rgba(5, 12, 23, 0.34);
+  box-shadow: 0 26px 60px color-mix(in srgb, var(--dr-border-strong) 34%, transparent);
   overflow: hidden;
 }
 
@@ -881,7 +885,7 @@ body {
   .dr-score-open
 ):hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--dr-accent-2) 44%, var(--dr-border-strong));
+  border-color: color-mix(in srgb, var(--prae-button-hover-color, var(--dr-accent-2)) 44%, var(--dr-border-strong));
   background: color-mix(in srgb, var(--dr-surface-2) 88%, var(--dr-surface));
 }
 

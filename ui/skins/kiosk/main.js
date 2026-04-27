@@ -48,6 +48,12 @@ function praeNormalizeTheme(value) {
 
 function praeReadStoredTheme() {
   try {
+    const docTheme = document.documentElement?.getAttribute('data-theme');
+    if (docTheme === 'light' || docTheme === 'dark') return docTheme;
+    const bodyTheme = document.body?.getAttribute('data-theme');
+    if (bodyTheme === 'light' || bodyTheme === 'dark') return bodyTheme;
+  } catch (_) {}
+  try {
     const saved = localStorage.getItem(PRAE_THEME_STORAGE_KEY);
     if (!saved) return 'dark';
     if (saved.trim().charAt(0) === '{') {

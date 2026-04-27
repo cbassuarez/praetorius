@@ -23,6 +23,7 @@ html, body { background:#fff; }
     font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
     --border-ctl: rgba(255,255,255,.18);
     --border-hover: rgba(245,158,11,.35);
+    --wc-hover-color: var(--border-hover);
   }
   /* Frame: translucent glass, blur, deep shadow (6px corners) */
   #works-console .wc-frame{
@@ -85,7 +86,8 @@ html, body { background:#fff; }
   }
   #works-console .btn:hover{
     background:var(--chip-bg-h); transform:translateY(-1px);
-    border-color:var(--border-hover); box-shadow:inset 0 1px rgba(255,255,255,.1), 0 0 6px rgba(245,158,11,.12);
+    border-color:var(--wc-hover-color, var(--border-hover));
+    box-shadow:inset 0 1px rgba(255,255,255,.1), 0 0 6px color-mix(in srgb, var(--wc-hover-color, var(--border-hover)) 34%, transparent);
   }
   #works-console .btn:active{transform:translateY(0)}
   #works-console .btn:focus-visible{outline:none; box-shadow:0 0 0 3px var(--chip-ring)}
@@ -930,4 +932,65 @@ flex:0 0 auto;
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce){
   .wc-pdfpane{ transition: none !important; }
+}
+
+/* Global appearance guard: let palette + mode drive console visuals */
+#works-group[data-palette][data-theme] {
+  background: var(--prae-bg, #0f1728) !important;
+}
+
+#works-group[data-palette][data-theme] .wc-titlebar,
+#works-group[data-palette][data-theme] .wc-crumbs,
+#works-group[data-palette][data-theme] .wc-split {
+  background: transparent !important;
+}
+
+#works-group[data-palette][data-theme] #works-console {
+  --radius: 2px;
+  --accent: var(--prae-accent-live, var(--prae-accent, #ff8f2f));
+  --warn: var(--prae-accent-live, var(--prae-accent, #ff8f2f));
+  --err: color-mix(in srgb, var(--prae-accent-live, var(--prae-accent, #ff8f2f)) 72%, #ba1f1f);
+  --ok: color-mix(in srgb, var(--prae-accent-2-live, var(--prae-accent-2, #2f7df0)) 54%, #15803d);
+  --line: color-mix(in srgb, var(--prae-border, #93a4bb) 44%, transparent);
+  --border-ctl: color-mix(in srgb, var(--prae-border-strong, #2f4a70) 52%, transparent);
+  --border-hover: color-mix(in srgb, var(--prae-button-hover-color, var(--prae-accent-live, var(--prae-accent, #ff8f2f))) 66%, transparent);
+}
+
+#works-group[data-palette][data-theme='dark'] #works-console {
+  --fg: color-mix(in srgb, var(--prae-surface, #eef2f8) 92%, white);
+  --muted: color-mix(in srgb, var(--prae-surface-2, #d8e1ee) 76%, var(--prae-muted, #61778f));
+  --dim: color-mix(in srgb, var(--prae-surface-2, #d8e1ee) 62%, var(--prae-muted, #61778f));
+  --btn-fg: color-mix(in srgb, var(--prae-surface, #eef2f8) 92%, white);
+  --title-fg: color-mix(in srgb, var(--prae-surface, #eef2f8) 92%, white);
+  --aero-bg: color-mix(in srgb, var(--prae-bg, #0f1728) 90%, black 10%);
+  --aero-stroke: color-mix(in srgb, var(--prae-border, #4a6588) 48%, transparent);
+  --aero-glow: 0 0 0 1px color-mix(in srgb, var(--prae-border-strong, #2f4a70) 28%, transparent);
+  --aero-shadow: 0 26px 58px color-mix(in srgb, var(--prae-border-strong, #2f4a70) 38%, transparent);
+}
+
+#works-group[data-palette][data-theme='light'] #works-console {
+  --fg: var(--prae-text, #10213b);
+  --muted: color-mix(in srgb, var(--prae-muted, #536b86) 86%, var(--prae-text, #10213b));
+  --dim: color-mix(in srgb, var(--prae-muted, #536b86) 68%, var(--prae-text, #10213b));
+  --btn-fg: var(--prae-text, #10213b);
+  --title-fg: var(--prae-text, #10213b);
+  --aero-bg: color-mix(in srgb, var(--prae-surface, #ffffff) 94%, white 6%);
+  --aero-stroke: color-mix(in srgb, var(--prae-border, #8fa3be) 54%, transparent);
+  --aero-glow: 0 0 0 1px color-mix(in srgb, var(--prae-border-strong, #6d86a8) 24%, transparent);
+  --aero-shadow: 0 22px 48px color-mix(in srgb, var(--prae-border-strong, #6d86a8) 30%, transparent);
+}
+
+#works-group[data-palette][data-theme] #works-console .wc-frame {
+  background: var(--aero-bg) !important;
+  border-color: var(--aero-stroke) !important;
+  box-shadow: var(--aero-shadow), var(--aero-glow) inset !important;
+}
+
+#works-group[data-palette='ryb-tricolor'][data-theme] #works-console {
+  --aero-shadow: 0 30px 76px rgba(0,0,0,.46);
+  --border-hover: color-mix(in srgb, var(--prae-button-hover-color, var(--prae-accent-live, #000000)) 52%, black 48%);
+}
+
+#works-group[data-palette='ryb-tricolor'][data-theme] #works-console .wc-frame {
+  background-image: none;
 }

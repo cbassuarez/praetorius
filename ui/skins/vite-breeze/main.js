@@ -10,6 +10,12 @@ function praeNormalizeTheme(value){
 
 function praeReadStoredTheme(){
   try {
+    var docTheme = document.documentElement && document.documentElement.getAttribute('data-theme');
+    if (docTheme === 'light' || docTheme === 'dark') return docTheme;
+    var bodyTheme = document.body && document.body.getAttribute('data-theme');
+    if (bodyTheme === 'light' || bodyTheme === 'dark') return bodyTheme;
+  } catch (_) {}
+  try {
     var saved = localStorage.getItem(PRAE_THEME_STORAGE_KEY);
     if (saved && saved.trim().charAt(0) === '{') {
       try { saved = (JSON.parse(saved) || {}).mode || 'light'; } catch (_) { saved = 'light'; }

@@ -148,7 +148,7 @@ html.ct-scroll-lock body {
   padding: 1rem clamp(1rem, 2.2vw, 2.2rem);
   border-bottom: 2px solid var(--ct-border-strong);
   background: color-mix(in srgb, var(--ct-surface) 90%, white 10%);
-  box-shadow: 0 8px 0 rgba(6, 29, 57, 0.17);
+  box-shadow: 0 8px 0 color-mix(in srgb, var(--ct-border-strong) 28%, transparent);
 }
 
 .ct-header-left {
@@ -209,7 +209,7 @@ html.ct-scroll-lock body {
 .ct-nav a:focus-visible {
   outline: none;
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 rgba(5, 26, 49, 0.2);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--ct-border-strong) 32%, transparent);
   background: color-mix(in srgb, var(--ct-accent) 22%, var(--ct-surface));
 }
 
@@ -224,7 +224,7 @@ html.ct-scroll-lock body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 5px 5px 0 rgba(5, 26, 49, 0.2);
+  box-shadow: 5px 5px 0 color-mix(in srgb, var(--ct-border-strong) 32%, transparent);
   transition: transform var(--ct-dur-fast) var(--ct-ease), box-shadow var(--ct-dur-fast) var(--ct-ease), background var(--ct-dur-fast) var(--ct-ease);
 }
 
@@ -237,13 +237,13 @@ html.ct-scroll-lock body {
 .ct-theme-toggle:focus-visible {
   outline: none;
   transform: translate(-1px, -1px);
-  box-shadow: 7px 7px 0 rgba(5, 26, 49, 0.24);
+  box-shadow: 7px 7px 0 color-mix(in srgb, var(--ct-border-strong) 38%, transparent);
   background: color-mix(in srgb, var(--ct-accent) 20%, var(--ct-surface));
 }
 
 .ct-theme-toggle:active {
   transform: translate(0, 0);
-  box-shadow: 2px 2px 0 rgba(5, 26, 49, 0.28);
+  box-shadow: 2px 2px 0 color-mix(in srgb, var(--ct-border-strong) 44%, transparent);
 }
 
 .ct-shell {
@@ -310,7 +310,7 @@ html.ct-scroll-lock body {
   border: 2px solid var(--ct-border);
   border-radius: var(--ct-radius-md);
   background: color-mix(in srgb, var(--ct-surface-2) 90%, white 10%);
-  box-shadow: 4px 4px 0 rgba(4, 22, 42, 0.18);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--ct-border-strong) 30%, transparent);
   padding: 0.58rem 0.72rem 0.62rem;
   min-height: 86px;
 }
@@ -426,7 +426,7 @@ html.ct-scroll-lock body {
 .work:hover,
 .work:focus-within {
   transform: translate(var(--prae-hover-card-x, -2px), var(--prae-hover-card-y, -3px));
-  box-shadow: var(--prae-hover-card-shadow, 11px 11px 0 rgba(5, 26, 49, 0.27));
+  box-shadow: var(--prae-hover-card-shadow, 11px 11px 0 color-mix(in srgb, var(--ct-border-strong) 42%, transparent));
 }
 
 .work:hover::before,
@@ -441,12 +441,12 @@ html.ct-scroll-lock body {
 
 .work:focus-visible {
   outline: none;
-  box-shadow: var(--ct-focus), 11px 11px 0 rgba(5, 26, 49, 0.28);
+  box-shadow: var(--ct-focus), 11px 11px 0 color-mix(in srgb, var(--ct-border-strong) 44%, transparent);
 }
 
 .work.is-selected {
   border-color: var(--ct-accent);
-  box-shadow: 11px 11px 0 color-mix(in srgb, var(--ct-accent) 46%, rgba(7, 28, 52, 0.4));
+  box-shadow: 11px 11px 0 color-mix(in srgb, var(--ct-accent) 46%, color-mix(in srgb, var(--ct-border-strong) 56%, transparent));
 }
 
 .work.playing {
@@ -489,7 +489,7 @@ html.ct-scroll-lock body {
   border-radius: var(--ct-radius-sm);
   background: linear-gradient(140deg, rgba(255, 255, 255, 0.74), rgba(194, 219, 250, 0.9));
   overflow: hidden;
-  box-shadow: 4px 4px 0 rgba(6, 29, 57, 0.17);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--ct-border-strong) 28%, transparent);
   flex: none;
 }
 
@@ -575,7 +575,7 @@ html.ct-scroll-lock body {
 .ct-rail-btn:focus-visible {
   outline: none;
   transform: translate(var(--prae-button-hover-x, -1px), var(--prae-button-hover-y, -1px));
-  box-shadow: var(--prae-button-hover-shadow, 4px 4px 0 rgba(5, 26, 49, 0.18));
+  box-shadow: var(--prae-button-hover-shadow, 4px 4px 0 color-mix(in srgb, var(--ct-border-strong) 30%, transparent));
   background: color-mix(in srgb, var(--ct-accent) 18%, var(--ct-surface));
   border-color: var(--ct-accent);
 }
@@ -584,7 +584,7 @@ html.ct-scroll-lock body {
 .ct-playback-button:active,
 .ct-rail-btn:active {
   transform: translate(0, 0);
-  box-shadow: 2px 2px 0 rgba(5, 26, 49, 0.24);
+  box-shadow: 2px 2px 0 color-mix(in srgb, var(--ct-border-strong) 38%, transparent);
 }
 
 .work-action:disabled,
@@ -982,7 +982,7 @@ html.ct-scroll-lock body {
 .ct-pdf-close:focus-visible {
   outline: none;
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 rgba(5, 26, 49, 0.2);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--ct-border-strong) 32%, transparent);
   border-color: var(--ct-accent);
   background: color-mix(in srgb, var(--ct-accent) 16%, var(--ct-surface));
 }
@@ -1021,7 +1021,7 @@ html.ct-scroll-lock body {
   border: 2px solid var(--ct-border-strong);
   border-radius: 2px;
   background: color-mix(in srgb, var(--ct-surface) 94%, white 6%);
-  box-shadow: 6px 6px 0 rgba(5, 25, 47, 0.22);
+  box-shadow: 6px 6px 0 color-mix(in srgb, var(--ct-border-strong) 38%, transparent);
 }
 
 #wc-hud[data-component='prae-hud'] .hud-left {
@@ -1096,7 +1096,7 @@ html.ct-scroll-lock body {
 #wc-hud[data-component='prae-hud'] .hud-btn:focus-visible {
   outline: none;
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 rgba(5, 26, 49, 0.21);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--ct-border-strong) 34%, transparent);
   border-color: var(--ct-accent);
   background: color-mix(in srgb, var(--ct-accent) 18%, var(--ct-surface));
 }
@@ -1105,17 +1105,32 @@ html.ct-scroll-lock body {
   display: none !important;
 }
 
+:root[data-palette][data-theme],
 body[data-palette][data-theme] {
   --ct-bg: var(--prae-bg);
-  --ct-bg-2: color-mix(in srgb, var(--prae-bg) 82%, var(--prae-accent-2) 18%);
+  --ct-bg-2: color-mix(in srgb, var(--prae-bg) 82%, var(--prae-accent-2-live) 18%);
   --ct-surface: var(--prae-surface);
   --ct-surface-2: var(--prae-surface-2);
   --ct-text: var(--prae-text);
   --ct-muted: var(--prae-muted);
   --ct-border: var(--prae-border);
   --ct-border-strong: var(--prae-border-strong);
-  --ct-accent: var(--prae-accent);
-  --ct-accent-2: var(--prae-accent-2);
+  --ct-accent: var(--prae-accent-live);
+  --ct-accent-2: var(--prae-accent-2-live);
+  --ct-shadow-hard: 8px 8px 0 color-mix(in srgb, var(--prae-border-strong) 38%, transparent);
+  --ct-shadow-soft: 0 24px 44px color-mix(in srgb, var(--prae-border-strong) 28%, transparent);
+  --ct-focus: 0 0 0 3px color-mix(in srgb, var(--prae-accent-2-live) 44%, transparent);
+  --ct-nav-bg: color-mix(in srgb, var(--ct-surface) 88%, white 12%);
+}
+
+:root[data-palette='ryb-tricolor'][data-theme],
+body[data-palette='ryb-tricolor'][data-theme] {
+  --ct-bg-2: var(--prae-bg);
+  --ct-nav-bg: var(--ct-surface);
+}
+
+body[data-palette='ryb-tricolor'] {
+  background: linear-gradient(170deg, var(--ct-bg), var(--ct-bg-2));
 }
 
 body[data-button-effect] .ct-nav a:hover,
@@ -1127,7 +1142,8 @@ body[data-button-effect] .ct-pdf-close:focus-visible,
 body[data-button-effect] #wc-hud[data-component='prae-hud'] .hud-btn:hover,
 body[data-button-effect] #wc-hud[data-component='prae-hud'] .hud-btn:focus-visible {
   transform: translate(var(--prae-button-hover-x, -1px), var(--prae-button-hover-y, -1px));
-  box-shadow: var(--prae-button-hover-shadow, 4px 4px 0 rgba(5, 26, 49, 0.2));
+  border-color: var(--prae-button-hover-color, var(--ct-accent));
+  box-shadow: var(--prae-button-hover-shadow, 4px 4px 0 color-mix(in srgb, var(--ct-border-strong) 32%, transparent));
 }
 
 /* anti-legacy override guards */

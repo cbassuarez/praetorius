@@ -13,6 +13,12 @@ function normalizeTheme(value) {
 
 function readStoredTheme() {
   try {
+    const docTheme = document.documentElement?.getAttribute('data-theme');
+    if (docTheme === 'light' || docTheme === 'dark') return docTheme;
+    const bodyTheme = document.body?.getAttribute('data-theme');
+    if (bodyTheme === 'light' || bodyTheme === 'dark') return bodyTheme;
+  } catch (_) {}
+  try {
     let saved = localStorage.getItem(PRAE_THEME_STORAGE_KEY);
     if (!saved) return 'light';
     if (saved.trim().charAt(0) === '{') {

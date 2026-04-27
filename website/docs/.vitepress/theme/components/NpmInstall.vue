@@ -74,16 +74,19 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.25rem 0.5rem 0.25rem 0.4rem;
-  border-radius: 9999px;
-  background: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-divider);
-  color: var(--vp-c-text-1);
+  padding: 0.24rem 0.5rem 0.24rem 0.4rem;
+  border-radius: 2px;
+  background: #fff;
+  border: 2px solid #000;
+  color: #000;
   font-size: 0.85rem;
   line-height: 1.2;
-  margin-left: 0.75rem;
+  margin-left: 0.3rem;
   white-space: nowrap;
   flex-shrink: 0;
+  max-width: min(380px, 30vw);
+  min-width: 0;
+  box-shadow: 3px 3px 0 color-mix(in srgb, oklch(0.5797 0.2296 263.44) 22%, transparent);
 }
 
 .npm-badge {
@@ -106,6 +109,10 @@ onBeforeUnmount(() => {
   color: inherit;
   background: transparent;
   user-select: all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 150px;
 }
 
 .copy-button {
@@ -113,23 +120,24 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.3rem;
   padding: 0.2rem 0.4rem;
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background: var(--vp-c-bg);
+  border-radius: 2px;
+  border: 2px solid #000;
+  background: #fff;
   color: inherit;
   font-size: 0.78rem;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  flex: 0 0 auto;
 }
 
 .copy-button:hover {
-  background: var(--vp-c-bg-soft);
-  border-color: var(--vp-c-divider-strong);
+  background: color-mix(in srgb, oklch(0.9035 0.1796 104.9) 28%, #fff);
+  border-color: #000;
 }
 
 .copy-button:focus-visible {
-  outline: 2px solid var(--vp-c-brand);
+  outline: 2px solid oklch(0.5797 0.2296 263.44);
   outline-offset: 2px;
 }
 
@@ -149,6 +157,22 @@ onBeforeUnmount(() => {
 @media (max-width: 560px) {
   .npm-install {
     display: none;
+  }
+}
+
+@media (max-width: 1220px) {
+  .npm-install {
+    max-width: min(300px, 28vw);
+    gap: 0.35rem;
+  }
+
+  .command {
+    flex-basis: 110px;
+    font-size: 0.76rem;
+  }
+
+  .copy-button {
+    padding-inline: 0.32rem;
   }
 }
 </style>

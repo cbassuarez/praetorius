@@ -32,6 +32,7 @@
   --vbx-focus: 0 0 0 2px rgba(15, 142, 233, 0.35);
 }
 
+:root[data-theme='dark'],
 body[data-theme='dark'],
 body.prae-theme-dark {
   --vbx-bg: radial-gradient(140% 95% at 0% 0%, rgba(62, 102, 165, 0.5) 0%, rgba(10, 16, 28, 0.94) 52%, rgba(5, 9, 18, 1) 100%);
@@ -628,19 +629,40 @@ button:focus-visible {
   width: 100%;
 }
 
+:root[data-palette][data-theme],
 body[data-palette][data-theme] {
-  --vbx-bg: radial-gradient(145% 98% at 0% 0%, color-mix(in srgb, var(--prae-accent-2) 28%, transparent) 0%, color-mix(in srgb, var(--prae-bg) 88%, transparent) 56%, var(--prae-bg) 100%);
+  --vbx-bg: radial-gradient(145% 98% at 0% 0%, color-mix(in srgb, var(--prae-accent-2-live) 28%, transparent) 0%, color-mix(in srgb, var(--prae-bg) 88%, transparent) 56%, var(--prae-bg) 100%);
   --vbx-panel: var(--prae-surface);
   --vbx-panel-2: var(--prae-surface-2);
   --vbx-ink: var(--prae-text);
   --vbx-ink-soft: var(--prae-muted);
   --vbx-line: color-mix(in srgb, var(--prae-border) 72%, transparent);
   --vbx-line-strong: var(--prae-border-strong);
-  --vbx-accent: var(--prae-accent);
-  --vbx-accent-soft: color-mix(in srgb, var(--prae-accent) 44%, var(--prae-accent-2));
-  --vbx-glow: color-mix(in srgb, var(--prae-accent-2) 72%, var(--prae-accent));
-  --vbx-sheen: color-mix(in srgb, var(--prae-accent) 28%, white);
-  --vbx-focus: 0 0 0 2px color-mix(in srgb, var(--prae-accent) 45%, transparent);
+  --vbx-accent: var(--prae-accent-live);
+  --vbx-accent-soft: color-mix(in srgb, var(--prae-accent-live) 44%, var(--prae-accent-2-live));
+  --vbx-glow: color-mix(in srgb, var(--prae-accent-2-live) 72%, var(--prae-accent-live));
+  --vbx-sheen: color-mix(in srgb, var(--prae-accent-live) 28%, white);
+  --vbx-shadow-a: 0 34px 70px -52px color-mix(in srgb, var(--prae-border-strong) 42%, transparent);
+  --vbx-shadow-b: 0 20px 38px -28px color-mix(in srgb, var(--prae-border-strong) 34%, transparent);
+  --vbx-focus: 0 0 0 2px color-mix(in srgb, var(--prae-accent-2-live) 42%, transparent);
+}
+
+:root[data-palette='ryb-tricolor'][data-theme],
+body[data-palette='ryb-tricolor'][data-theme] {
+  --vbx-bg: var(--prae-bg);
+  --vbx-panel: var(--prae-surface);
+  --vbx-panel-2: var(--prae-surface-2);
+  --vbx-ink: #000000;
+  --vbx-ink-soft: color-mix(in srgb, #000000 72%, transparent);
+  --vbx-line: color-mix(in srgb, var(--prae-border-strong) 82%, transparent);
+  --vbx-line-strong: var(--prae-border-strong);
+  --vbx-accent: var(--prae-accent-live);
+  --vbx-accent-soft: color-mix(in oklch, var(--prae-accent-live) 18%, transparent);
+  --vbx-glow: var(--prae-accent-2-live);
+  --vbx-sheen: var(--prae-accent-live);
+  --vbx-focus: 0 0 0 2px color-mix(in oklch, var(--prae-accent-2-live) 74%, transparent);
+  --vbx-shadow-a: 0 34px 70px -52px rgba(0,0,0,.52);
+  --vbx-shadow-b: 0 20px 38px -28px rgba(0,0,0,.42);
 }
 
 body[data-hover-effect] .vbx-card:hover,
@@ -674,6 +696,7 @@ body[data-button-effect] .vbx-hud-toggle:focus-visible,
 body[data-button-effect] #wc-hud.vbx-hud[data-component='prae-hud'] [data-part='toggle']:hover,
 body[data-button-effect] #wc-hud.vbx-hud[data-component='prae-hud'] [data-part='toggle']:focus-visible {
   transform: translate(var(--prae-button-hover-x, 0px), var(--prae-button-hover-y, -2px));
+  border-color: var(--prae-button-hover-color, var(--vbx-accent));
   box-shadow: var(--prae-button-hover-shadow, 0 9px 18px -14px color-mix(in srgb, var(--vbx-glow) 70%, transparent));
 }
 

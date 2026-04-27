@@ -16,6 +16,8 @@ import SinceBadge from '@components/SinceBadge.vue'
 import PraePlayground from '@components/PraePlayground.vue'
 import PraeViewer from '@components/PraeViewer.vue'
 import PraeConsoleDemo from '@components/PraeConsoleDemo.vue'
+import FolioBuilder from '@components/FolioBuilder.vue'
+import PraeHomeShell from '@components/PraeHomeShell.vue'
 
 export default {
   ...DefaultTheme,
@@ -33,5 +35,7 @@ export default {
     app.component('PraeViewer', PraeViewer)
     app.component('PraeConsoleDemo', PraeConsoleDemo)
     app.component('PraeConsoleExact', PraeConsoleExact)
+    app.component('PraeHomeShell', PraeHomeShell)
+    app.component('FolioBuilder', FolioBuilder)
   }
 }

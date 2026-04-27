@@ -49,6 +49,17 @@ body[data-theme="dark"] {
   --selection: rgba(221, 183, 135, 0.2);
 }
 
+body[data-palette][data-theme] {
+  --bg: var(--prae-bg, #f8f3ea);
+  --ink: var(--prae-text, #1a120a);
+  --ink-soft: color-mix(in srgb, var(--prae-text, #1a120a) 72%, var(--prae-muted, #6f5d4c));
+  --muted: color-mix(in srgb, var(--prae-muted, #6f5d4c) 86%, var(--prae-text, #1a120a));
+  --accent: var(--prae-accent-live, var(--prae-accent, #8b5a2b));
+  --border: color-mix(in srgb, var(--prae-border, #8f755b) 62%, transparent);
+  --selection: color-mix(in srgb, var(--prae-accent-live, var(--prae-accent, #8b5a2b)) 24%, transparent);
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--prae-accent-2-live, var(--prae-accent-2, #5e7cf0)) 46%, transparent);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -529,6 +540,27 @@ body *::selection {
   color: var(--accent);
 }
 
+body[data-button-effect] :is(
+  .tf-flow a:hover,
+  .tf-preview-open:hover,
+  .tf-preview-drawer-toggle:hover,
+  .tf-theme-toggle:hover,
+  .tf-foot a:hover,
+  .tf-foot-play:hover:not(:disabled),
+  .tf-preview-close:hover,
+  .tf-timestamp:hover
+) {
+  color: var(--prae-button-hover-color, var(--accent));
+}
+
+body[data-button-effect] :is(
+  .tf-preview-open:hover,
+  .tf-preview-drawer-toggle:hover,
+  .tf-theme-toggle:hover
+) {
+  border-color: color-mix(in srgb, var(--border) 60%, var(--prae-button-hover-color, var(--accent)));
+}
+
 .tf-foot-play:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -612,7 +644,7 @@ body *::selection {
     border-top: 1px solid var(--border);
     transform: translateX(100%);
     transition: transform 0.24s ease;
-    box-shadow: -24px 0 48px rgba(0, 0, 0, 0.18);
+    box-shadow: -24px 0 48px color-mix(in srgb, var(--border) 30%, transparent);
     z-index: 20;
     background: var(--bg);
   }

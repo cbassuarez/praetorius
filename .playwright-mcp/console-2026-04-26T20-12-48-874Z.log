@@ -1,0 +1,2 @@
+[     119ms] [INFO] [prae] data: user count: 3 @ http://127.0.0.1:4173/script.js:0
+[     175ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:4173/favicon.ico:0

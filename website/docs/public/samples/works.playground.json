@@ -2,19 +2,19 @@
   "version": "0.2",
   "works": [
     {
-      "id": "demo-satie-gymnopedie-1",
-      "title": "Gymnopédies — Satie",
-      "oneliner": "Erik Satie’s Gymnopédies are three short piano pieces built from slow, floating melodies over gently shifting, unresolved harmonies. Their spacious pacing and soft, almost whispered dynamics create a sense of suspended time, making them iconic examples of intimate, minimalist piano writing. They’re ideal for showcasing clear notation, pedaling detail, and subtle rubato in a demo.",
-      "description": "Composed in 1888, Satie’s Gymnopédies distill piano writing down to its essentials: a single, cantabile line supported by simple, gently rocking chords. Each piece unfolds at a very slow tempo, with wide registral spacing and unresolved sonorities that feel more like open questions than cadences. The music invites the listener into a quiet, interior space, where small changes in voicing, touch, and pedaling become expressive events. For a demo site, Gymnopédies are perfect for showing off legible score rendering, expressive playback, and page-follow in a calm, non-dense texture that works beautifully on any device.",
+      "id": "satie-gnossienne-no-1",
+      "title": "Gnossienne No. 1 — Erik Satie",
+      "oneliner": "A sparse piano line with transparent rhythm and breathing room for score-follow and cue sync.",
+      "description": "A minimalist piano texture that keeps notation readable while exposing page-follow and audio sync behavior.",
       "cues": [{ "label": "@0:00", "t": 0 }],
       "audio": "https://upload.wikimedia.org/wikipedia/commons/b/b7/Gymnopedie_No._1..ogg",
       "pdf": "https://www.mutopiaproject.org/ftp/SatieE/gymnopedie_1/gymnopedie_1-a4.pdf"
     },
     {
-      "id": "est-ist-ein-praetorius",
-      "title": "Es ist ein Ros entsprungen – Praetorius",
-      "oneliner": "Michael Praetorius’s setting of Es ist ein Ros entsprungen is a four-part chorale built from smooth, hymn-like lines and gently glowing harmonies. The melody unfolds in long phrases over a supportive, mostly syllabic texture, giving the piece a sense of quiet radiance rather than showy virtuosity. It’s a classic example of early 17th-century choral writing that reads clearly on the page and sounds rich even at modest playback levels.",
-      "description": "Praetorius’s Es ist ein Ros entsprungen (early 1600s) takes a simple Christmas chorale tune and surrounds it with balanced SATB counterpoint. The voices move mostly stepwise, with careful spacing and occasional suspensions that bloom into consonance, creating an atmosphere that is both devotional and surprisingly modern in its clarity. Because the texture is transparent and the ranges are comfortable, the piece translates well across ensembles—choir, small vocal consort, or even instrumental quartet. On a demo site, it’s an excellent work for showcasing choral engraving, lyric alignment, transpositions or alternate voicings, and synchronized score-follow playback that lets users visually track each voice as the harmony blossoms.",
+      "id": "lo-how-a-rose-praetorius",
+      "title": "Lo, How a Rose — Michael Praetorius",
+      "oneliner": "A transparent chorale texture that is ideal for verifying score-follow timing and clean playback transitions.",
+      "description": "Praetorius material is included as a second stock piece so playground behavior mirrors real generated output workflows.",
       "cues": [{ "label": "@0:00", "t": 0 }],
       "audio": "https://upload.wikimedia.org/wikipedia/commons/c/c9/U.S._Army_Band_-_Lo_How_a_Rose.ogg",
       "pdf": "https://www.mutopiaproject.org/ftp/Anonymous/es_ist_ein_ros/es_ist_ein_ros-a4.pdf"

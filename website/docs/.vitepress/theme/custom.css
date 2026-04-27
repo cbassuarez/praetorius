@@ -1,192 +1,644 @@
-:root{
-  --prae-accent: #111111; /* art-forward, minimal */
-  --prae-card: rgba(0,0,0,.04);
-  --prae-blur: 12px;
-  --prae-radius: 16px;
-}
-.VPHome .VPHero.has-image .image-bg { display: none; }
+:root {
+  --prae-red: oklch(0.6463 0.2409 32.62);
+  --prae-blue: oklch(0.5797 0.2296 263.44);
+  --prae-yellow: oklch(0.9035 0.1796 104.9);
+  --prae-black: #000000;
+  --prae-white: #ffffff;
+  --prae-card-bg: #ffffff;
+  --prae-card-bg-elev: #f8f8f8;
+  --prae-shadow: 5px 5px 0 color-mix(in srgb, var(--prae-blue) 30%, transparent);
+  --prae-shadow-soft: 3px 3px 0 color-mix(in srgb, var(--prae-blue) 22%, transparent);
 
-/* subtle glass panels */
-.prae-card{
-  background: var(--prae-card);
-  backdrop-filter: blur(var(--prae-blur));
-  border: 1px solid var(--vp-c-divider);
-  border-radius: var(--prae-radius);
-}
-
-/* motion prefs */
-@media (prefers-reduced-motion: reduce){
-  *{ animation: none !important; transition: none !important; scroll-behavior:auto !important; }
-}
-
-/* PraeViewer skins */
-.prae-viewer{ position: relative; display: grid; gap: 1.5rem; }
-.prae-viewer[data-ready="false"] .prae-viewer__canvas{ opacity: 0.25; }
-.prae-viewer__hud{ display: grid; gap: .75rem; padding: 1rem; border-radius: var(--prae-radius); background: rgba(17,17,17,0.05); color: var(--vp-c-text-1); }
-.prae-viewer__transport{ display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-.prae-viewer__time{ font-variant-numeric: tabular-nums; font-size: .875rem; }
-.prae-viewer__scrub{ flex: 1 1 220px; }
-.prae-viewer__scrub input[type="range"]{ width: 100%; accent-color: var(--prae-accent); }
-.prae-viewer__meta{ display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; font-size: .85rem; }
-.prae-viewer__actions{ display: flex; gap: .5rem; }
-.prae-viewer button{ font: inherit; padding: .45rem .75rem; border-radius: .75rem; border: 1px solid transparent; background: var(--prae-accent); color: #fff; cursor: pointer; transition: background .2s ease, transform .2s ease; }
-.prae-viewer button[data-variant="ghost"]{ background: transparent; color: inherit; border-color: currentColor; }
-.prae-viewer button:disabled{ opacity: .6; cursor: not-allowed; }
-.prae-viewer button:hover:not(:disabled){ transform: translateY(-1px); }
-.prae-viewer select{ padding: .45rem .75rem; border-radius: .75rem; border: 1px solid var(--vp-c-divider); background: var(--vp-c-bg-soft); color: inherit; }
-.prae-viewer__canvas{ position: relative; display: grid; justify-items: center; }
-.prae-viewer__canvas canvas{ max-width: min(100%, 960px); box-shadow: 0 20px 48px rgba(0,0,0,.18); border-radius: 8px; }
-
-/* typefolio skin */
-.prae-skin-typefolio .prae-viewer__hud{ background: rgba(240,236,228,.7); color: #222; border: 1px solid rgba(70,50,40,.15); box-shadow: 0 8px 32px rgba(70,50,40,.2); }
-.prae-skin-typefolio .prae-viewer button{ background: #222; color: #f6f1e7; border-radius: 999px; }
-.prae-skin-typefolio .prae-viewer button[data-variant="ghost"]{ border-color: rgba(34,34,34,.25); }
-.prae-skin-typefolio .prae-viewer__scrub input[type="range"]{ accent-color: #222; }
-
-/* console skin */
-.prae-skin-console{ --prae-accent: #10b981; }
-.prae-skin-console .prae-viewer{ background: radial-gradient(circle at 20% -20%, rgba(16,185,129,.35), transparent 60%); padding: 1px; border-radius: 16px; }
-.prae-skin-console .prae-viewer__hud{ background: rgba(15,23,42,.85); color: #e2e8f0; border: 1px solid rgba(148,163,184,.3); box-shadow: 0 24px 64px rgba(15,23,42,.45); }
-.prae-skin-console .prae-viewer button{ background: linear-gradient(120deg, #10b981, #22d3ee); color: #052e16; font-weight: 600; }
-.prae-skin-console .prae-viewer button[data-variant="ghost"]{ border-color: rgba(34,211,238,.4); color: #67e8f9; background: rgba(14,116,144,.2); }
-.prae-skin-console .prae-viewer__scrub input[type="range"]{ accent-color: #22d3ee; }
-
-/* vite breeze skin */
-.prae-skin-vitebreeze{ --prae-accent: #646cff; }
-.prae-skin-vitebreeze .prae-viewer__hud{ background: rgba(100,108,255,.12); color: #2f2f2f; border: 1px solid rgba(100,108,255,.25); box-shadow: 0 16px 48px rgba(100,108,255,.22); backdrop-filter: blur(14px); }
-.prae-skin-vitebreeze .prae-viewer button{ background: linear-gradient(135deg, #646cff, #42d392); color: white; font-weight: 500; }
-.prae-skin-vitebreeze .prae-viewer button[data-variant="ghost"]{ border-color: rgba(100,108,255,.35); color: #3730a3; background: rgba(99,102,241,.12); }
-.prae-skin-vitebreeze .prae-viewer__scrub input[type="range"]{ accent-color: #42d392; }
-
-@media (max-width: 640px){
-  .prae-viewer__transport{ flex-direction: column; align-items: stretch; }
-  .prae-viewer__scrub{ width: 100%; }
-  .prae-viewer__meta{ flex-direction: column; align-items: flex-start; }
+  --vp-c-bg: var(--prae-white);
+  --vp-c-bg-soft: var(--prae-white);
+  --vp-c-bg-alt: var(--prae-white);
+  --vp-c-gutter: var(--prae-white);
+  --vp-c-divider: color-mix(in srgb, var(--prae-black) 16%, transparent);
+  --vp-c-divider-2: color-mix(in srgb, var(--prae-black) 28%, transparent);
+  --vp-c-divider-3: color-mix(in srgb, var(--prae-black) 40%, transparent);
+  --vp-c-text-1: var(--prae-black);
+  --vp-c-text-2: color-mix(in srgb, var(--prae-black) 74%, transparent);
+  --vp-c-text-3: color-mix(in srgb, var(--prae-black) 56%, transparent);
+  --vp-c-brand-1: var(--prae-red);
+  --vp-c-brand-2: var(--prae-blue);
+  --vp-c-brand-3: color-mix(in srgb, var(--prae-red) 84%, var(--prae-black));
+  --vp-c-brand-soft: color-mix(in srgb, var(--prae-yellow) 40%, var(--prae-white));
 }
 
-/* widen VitePress content area (docs pages only) */
-.VPDoc{
-  --vp-layout-max-width: 1600px;
-  --vp-content-max-width: 1280px;
+:root.dark {
+  --prae-black: #f6f8ff;
+  --prae-white: #0d1016;
+  --prae-card-bg: #141a26;
+  --prae-card-bg-elev: #1c2436;
+  --prae-shadow: 5px 5px 0 color-mix(in srgb, var(--prae-blue) 42%, transparent);
+  --prae-shadow-soft: 3px 3px 0 color-mix(in srgb, var(--prae-blue) 30%, transparent);
+
+  --vp-c-bg: #090b10;
+  --vp-c-bg-soft: #111624;
+  --vp-c-bg-alt: #171e30;
+  --vp-c-gutter: #0f1422;
+  --vp-c-divider: color-mix(in srgb, #ffffff 22%, transparent);
+  --vp-c-divider-2: color-mix(in srgb, #ffffff 34%, transparent);
+  --vp-c-divider-3: color-mix(in srgb, #ffffff 48%, transparent);
+  --vp-c-text-1: #f6f8ff;
+  --vp-c-text-2: color-mix(in srgb, #f6f8ff 78%, transparent);
+  --vp-c-text-3: color-mix(in srgb, #f6f8ff 62%, transparent);
+  --vp-c-brand-1: var(--prae-yellow);
+  --vp-c-brand-2: var(--prae-blue);
+  --vp-c-brand-3: color-mix(in srgb, var(--prae-yellow) 75%, #ffffff);
+  --vp-c-brand-soft: color-mix(in srgb, var(--prae-blue) 25%, #000000);
 }
 
-/* === Equal columns for the Home hero; stack on small screens === */
-.VPHome .VPHero .container{
-  /* Replace the theme's mixed flex with an explicit 2-col grid */
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
+html,
+body,
+#app,
+.VPApp,
+.Layout,
+.VPContent,
+.VPContent .container,
+.VPContent .content,
+.VPContent .content-container {
+  background: var(--vp-c-bg) !important;
+  color: var(--vp-c-text-1);
+}
+
+.VPHome .VPHero.has-image .image-bg,
+.VPHome .VPHero .image-bg {
+  display: none !important;
+}
+
+.VPNav {
+  background: var(--vp-c-bg) !important;
+  border-bottom: 0;
+  box-shadow: none !important;
+}
+
+.VPNavBar {
+  background: transparent !important;
+}
+
+.VPNavBar .content {
+  max-width: min(1640px, 97vw);
+}
+
+.VPNavBar .content-body {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  min-height: 56px;
+  display: flex;
   align-items: center;
-  gap: clamp(16px, 3vw, 40px);
+  gap: 12px;
 }
 
-/* Remove any column width caps the theme applies */
+.VPNavBarTitle {
+  flex: 0 0 auto !important;
+  min-width: max-content;
+  margin-right: 0.35rem;
+}
+
+.VPNavBarTitle,
+.VPNavBarTitle .title,
+.VPNavBarTitle .title .title,
+.VPNavBarSearch .search {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.VPNavBarTitle .title {
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+.VPNavBarTitle .title a {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--vp-c-text-1);
+  gap: 0.45rem;
+}
+
+.VPNavBarSearch {
+  padding-inline: 0 !important;
+}
+
+.VPLocalSearchBox .button {
+  border: 2px solid var(--vp-c-text-1) !important;
+  border-radius: 2px !important;
+  background: var(--vp-c-bg) !important;
+  box-shadow: var(--prae-shadow-soft) !important;
+}
+
+.VPNavBarMenu {
+  gap: 0;
+}
+
+.VPNavBarMenuLink {
+  font-weight: 500;
+}
+
+.VPNavBarMenuLink.active,
+.VPSidebarItem.level-0.is-active > .item .link .text,
+.VPSidebarItem.level-1.is-active > .item .link .text {
+  color: var(--prae-red) !important;
+}
+
+.VPNavBarMenuGroup .VPFlyout .button {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.VPNavBarMenuGroup .VPFlyout .text {
+  font-weight: 600;
+}
+
+.VPNavBarMenuGroup .VPFlyout:hover .text,
+.VPNavBarMenuGroup .VPFlyout.active .text {
+  color: var(--prae-red) !important;
+}
+
+.VPNavBarMenuGroup .VPFlyout .menu {
+  top: calc(var(--vp-nav-height) - 4px);
+  padding-top: 6px;
+}
+
+.VPNavBarMenuGroup .VPMenu,
+.VPFlyout .VPMenu {
+  border: 2px solid var(--vp-c-text-1) !important;
+  border-radius: 2px !important;
+  background: var(--vp-c-bg) !important;
+  box-shadow: var(--prae-shadow) !important;
+  padding: 8px !important;
+  min-width: 200px;
+}
+
+.VPNavBarMenuGroup .VPMenu .VPMenuLink + .VPMenuLink,
+.VPFlyout .VPMenu .VPMenuLink + .VPMenuLink {
+  border-top: 2px solid color-mix(in srgb, var(--vp-c-text-1) 14%, transparent);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.VPNavBarMenuGroup .VPMenu .link,
+.VPFlyout .VPMenu .link {
+  border-radius: 0 !important;
+  padding: 8px 12px !important;
+  font: 700 11px/1 "IBM Plex Mono", ui-monospace, monospace !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-1) !important;
+  background: transparent !important;
+  transition: transform .12s ease, color .12s ease, background .12s ease !important;
+}
+
+.VPNavBarMenuGroup .VPMenu .link:hover,
+.VPFlyout .VPMenu .link:hover {
+  color: var(--prae-red) !important;
+  background: color-mix(in srgb, var(--prae-blue) 10%, transparent) !important;
+  transform: translateX(2px);
+}
+
+.VPNavBarMenuGroup .VPMenu .link.active,
+.VPFlyout .VPMenu .link.active {
+  color: var(--prae-red) !important;
+}
+
+.VPNavBarExtra {
+  margin-left: auto !important;
+  gap: 8px;
+}
+
+.VPNavBarExtra .VPSocialLinks {
+  margin-right: 0;
+}
+
+.VPSwitchAppearance {
+  border: 2px solid var(--vp-c-text-1) !important;
+  border-radius: 2px !important;
+  width: 50px !important;
+  min-width: 50px !important;
+  height: 30px !important;
+  background: var(--vp-c-bg) !important;
+  box-shadow: var(--prae-shadow-soft) !important;
+}
+
+.VPSwitchAppearance .check {
+  top: 3px !important;
+  left: 3px !important;
+  border-radius: 2px !important;
+  width: 18px !important;
+  height: 18px !important;
+  transform: translateX(0) !important;
+}
+
+.dark .VPSwitchAppearance .check {
+  transform: translateX(20px) !important;
+}
+
+.VPSwitchAppearance .icon {
+  border-radius: 2px !important;
+}
+
+.VPSidebar {
+  background: var(--prae-white) !important;
+  border-right: 2px solid color-mix(in srgb, var(--prae-black) 14%, transparent);
+}
+
+.VPSidebar .curtain {
+  background: var(--prae-white) !important;
+}
+
+.VPSidebarItem .item .link {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding-inline: 0 !important;
+}
+
+.VPSidebarItem .item .indicator {
+  display: none !important;
+}
+
+.VPDoc .content .content-container {
+  max-width: min(1240px, 96vw);
+}
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4 {
+  color: var(--prae-black);
+}
+
+.vp-doc h2 {
+  border-bottom: 2px solid color-mix(in srgb, var(--prae-black) 14%, transparent);
+  padding-bottom: 0.35rem;
+}
+
+.vp-doc p,
+.vp-doc li {
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc a {
+  color: var(--prae-blue);
+  font-weight: 600;
+}
+
+.vp-doc a:hover {
+  color: var(--prae-red);
+}
+
+.vp-doc div[class*='language-'],
+.vp-doc .vp-code-group,
+.vp-doc .custom-block,
+.vp-doc table,
+.vp-doc .tip,
+.vp-doc .warning,
+.vp-doc .danger {
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  box-shadow: var(--prae-shadow-soft);
+}
+
+.VPButton,
+.vp-doc button,
+.npm-install .copy-button {
+  border: 2px solid var(--vp-c-text-1) !important;
+  border-radius: 2px !important;
+  background: var(--vp-c-bg) !important;
+  color: var(--vp-c-text-1) !important;
+  box-shadow: var(--prae-shadow-soft) !important;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.VPButton.brand {
+  background: var(--prae-red) !important;
+  color: var(--prae-white) !important;
+}
+
+.VPButton:hover,
+.vp-doc button:hover,
+.npm-install .copy-button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 color-mix(in srgb, var(--prae-blue) 42%, transparent) !important;
+}
+
+.VPButton:focus-visible,
+.vp-doc button:focus-visible,
+.npm-install .copy-button:focus-visible,
+.VPSidebarItem .item .link:focus-visible,
+.VPNavBarMenuLink:focus-visible {
+  outline: 2px solid var(--prae-blue) !important;
+  outline-offset: 2px;
+}
+
+.npm-install {
+  margin-left: 0.25rem;
+  max-width: min(420px, 42vw);
+  min-width: 0;
+}
+
+.npm-install .command {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.VPHome .VPContent .container {
+  max-width: min(1460px, 96vw) !important;
+}
+
+.VPHome .VPHero .container {
+  display: grid !important;
+  grid-template-columns: 1.04fr 0.96fr !important;
+  align-items: center;
+  gap: clamp(18px, 2.8vw, 42px);
+  padding: clamp(24px, 2.4vw, 38px);
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  box-shadow: var(--prae-shadow);
+}
+
 .VPHome .VPHero .container .main,
-.VPHome .VPHero .container .image{
+.VPHome .VPHero .container .image {
   max-width: none !important;
   width: auto !important;
-  flex: initial !important; /* neutralize DefaultTheme flex-basis */
+  flex: initial !important;
 }
 
-/* Keep the hero page width roomy so both columns can breathe */
-.VPHome .VPContent .container{
-  max-width: min(1320px, 95vw) !important;
-}
-
-/* Center the media inside its column */
-.VPHome .VPHero .container .image{
-  display: grid;
-  place-items: center;
-}
-
-/* Never stretch the GIF: preserve intrinsic aspect and avoid squish */
-.VPHome .VPHero .container .image img{
-  /* Let the image size itself by its own dimensions */
+.VPHome .VPHero .container .image img {
   width: auto !important;
-  max-width: 100% !important;  /* but don't overflow the column */
+  max-width: 100% !important;
   height: auto !important;
-  object-fit: contain;         /* safety if a height is ever imposed */
-  /* No fixed heights here; we want natural aspect ratio */
+  object-fit: contain;
+  border-radius: 2px;
 }
 
-/* Stack to a single column on smaller screens */
-@media (max-width: 960px){
-  .VPHome .VPHero .container{
+.VPHome .VPFeatures .item {
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  box-shadow: var(--prae-shadow);
+}
+
+.prae-embed {
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  box-shadow: var(--prae-shadow);
+  overflow: hidden;
+}
+
+.prae-viewer {
+  position: relative;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.prae-viewer__hud {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  border: 2px solid var(--prae-black);
+}
+
+.prae-viewer button,
+.prae-viewer select {
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  color: var(--prae-black);
+  box-shadow: var(--prae-shadow-soft);
+}
+
+.prae-viewer button:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+}
+
+.builder-page .VPSidebar {
+  display: none !important;
+}
+
+.builder-page .VPContent.has-sidebar {
+  padding-left: 0 !important;
+}
+
+.builder-page .VPContent .container,
+.builder-page .VPDoc .container {
+  max-width: min(1840px, 98vw) !important;
+}
+
+.builder-page .VPDoc .content {
+  padding: 0 !important;
+}
+
+.home-page .VPDoc {
+  padding-top: clamp(18px, 2.6vw, 36px) !important;
+}
+
+.home-page .VPDoc .container {
+  max-width: min(1560px, 96vw) !important;
+}
+
+.home-page .VPDoc .content {
+  max-width: 100%;
+  padding: clamp(14px, 2.2vw, 28px) clamp(14px, 2.4vw, 28px) clamp(28px, 4vw, 48px) !important;
+}
+
+.prae-home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: clamp(18px, 2.6vw, 34px);
+  align-items: stretch;
+  padding: clamp(24px, 3.2vw, 44px);
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  box-shadow: var(--prae-shadow);
+}
+
+.prae-home-copy {
+  display: grid;
+  align-content: center;
+  gap: 14px;
+}
+
+.prae-home-kicker {
+  margin: 0;
+  font: 700 13px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--prae-red);
+}
+
+.prae-home-copy h1 {
+  margin: 0;
+  font: 700 clamp(38px, 4.4vw, 64px)/0.98 "Space Grotesk", ui-sans-serif, sans-serif;
+  letter-spacing: -0.03em;
+  color: var(--prae-black);
+}
+
+.prae-home-copy p {
+  margin: 0;
+  max-width: 42ch;
+  font: 500 clamp(17px, 1.4vw, 22px)/1.32 "Space Grotesk", ui-sans-serif, sans-serif;
+  color: color-mix(in srgb, var(--prae-black) 82%, transparent);
+}
+
+.prae-home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.prae-home-actions .VPButton {
+  min-height: 44px;
+  padding: 0.6rem 1.1rem !important;
+}
+
+.prae-home-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.prae-home-chips span {
+  display: inline-flex;
+  align-items: center;
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  padding: 10px 16px;
+  font: 700 12px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--prae-shadow-soft);
+}
+
+.prae-home-shell {
+  min-width: 0;
+}
+
+.prae-home-features {
+  margin-top: clamp(16px, 2.4vw, 28px);
+  display: grid;
+  gap: clamp(12px, 1.8vw, 20px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.prae-home-feature {
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  box-shadow: var(--prae-shadow);
+  padding: clamp(20px, 2.4vw, 32px);
+}
+
+.prae-home-feature h3 {
+  margin: 0 0 10px;
+}
+
+.prae-home-feature p {
+  margin: 0;
+}
+
+.playground-page .VPDoc {
+  padding-top: clamp(18px, 2.6vw, 36px) !important;
+}
+
+.playground-page .VPDoc .container {
+  max-width: min(1560px, 96vw) !important;
+}
+
+.playground-page .VPDoc .content {
+  max-width: 100%;
+  padding: clamp(14px, 2.2vw, 28px) clamp(14px, 2.4vw, 28px) clamp(28px, 4vw, 48px) !important;
+}
+
+.prae-playground {
+  display: grid;
+  gap: clamp(16px, 2vw, 24px);
+}
+
+.prae-playground__header {
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  box-shadow: var(--prae-shadow);
+  padding: clamp(20px, 2.6vw, 32px);
+  display: grid;
+  gap: 8px;
+}
+
+.prae-playground__header h1 {
+  margin: 0;
+  font: 700 clamp(28px, 3.2vw, 44px)/1 "Space Grotesk", ui-sans-serif, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.prae-playground__header p {
+  margin: 0;
+  color: color-mix(in srgb, var(--prae-black) 78%, transparent);
+}
+
+.prae-playground__kicker {
+  margin: 0 0 4px;
+  font: 700 12px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--prae-red);
+}
+
+.prae-playground__stage {
+  border: 2px solid var(--prae-black);
+  border-radius: 2px;
+  background: var(--prae-card-bg);
+  box-shadow: var(--prae-shadow);
+  padding: clamp(16px, 2vw, 24px);
+}
+
+
+@media (max-width: 960px) {
+  .VPHome .VPHero .container {
     grid-template-columns: 1fr !important;
   }
-  /* Put text first, image second when stacked */
-  .VPHome .VPHero .container .main{ order: 1; }
-  .VPHome .VPHero .container .image{ order: 2; }
+
+  .prae-home-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .prae-home-copy h1 {
+    font-size: clamp(34px, 8vw, 52px);
+  }
+
+  .prae-home-copy p {
+    font-size: clamp(16px, 4vw, 20px);
+  }
+
+  .prae-home-features {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* If the theme renders a decorative image backdrop, hide it for GIF clarity */
-.VPHome .VPHero .image-bg{ display: none !important; }
-
-
-
-
-
-/* Place in your works-console CSS, **after** the existing THEME MAPS block. */ /* Tokens: blue→purple gradient (keeps solid --accent for safety) */
-
-/* Dark /
-#works-group[data-theme="dark"] #works-console{
---accent0: #3B82F6; / blue 500 /
---accent1: #8B5CF6; / violet 500 */
---accent0a40: rgba(59,130,246,.40);
---accent1a40: rgba(139,92,246,.40);
---accent-grad: linear-gradient(135deg, var(--accent0), var(--accent1));
+@media (max-width: 860px) {
+  .npm-install {
+    display: none;
+  }
 }
 
-/* Light /
-#works-group[data-theme="light"] #works-console{
---accent0: #2563EB; / blue 600 /
---accent1: #7C3AED; / violet 600 */
---accent0a40: rgba(37,99,235,.40);
---accent1a40: rgba(124,58,237,.40);
---accent-grad: linear-gradient(135deg, var(--accent0), var(--accent1));
-
-/* Optional: make hover borders pick up the accent hue */
---border-hover: var(--accent1);
-}
-
-
-```css
-/* Place in the same works-console CSS, near component styles. */
-/* Use the gradient on key accents without breaking existing color usage. */
-
-/* 1) Prompt “$” mark — gradient text */
-#works-console .cmd-echo .prompt{
-  background: var(--accent-grad);
-  -webkit-background-clip: text;
-          background-clip: text;
-  color: transparent;                  /* preserves layout; text is the gradient */
-}
-
-/* 2) Progress meter fill — blue→purple sweep */
-#works-console .meter > span{
-  background: linear-gradient(90deg, var(--accent0), var(--accent1));
-}
-
-/* 3) Chips & links underlines — subtle gradient rule */
-#works-group .wc-crumbs .wb-chip::after,
-#works-group .wc-crumbs .wb-link::after{
-  background: linear-gradient(90deg, var(--accent0), var(--accent1));
-}
-
-/* 4) Button hover glow + focus ring — tinted by accent */
-#works-console .btn:hover{
-  box-shadow:
-    inset 0 1px rgba(255,255,255,.10),
-    0 0 6px var(--accent1a40);
-  border-color: var(--border-hover);
-}
-#works-console .btn:focus-visible{
-  outline: none;
-  box-shadow: 0 0 0 3px var(--accent0a40);
-}
-
-/* 5) “Now playing” pill divider shimmer (optional, subtle) */
-#works-console .wc-hud .tag.is-marquee .scroll{
-  /* keep your animation; this only sets a masked sheen */
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
-          mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }

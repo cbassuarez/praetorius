@@ -35,6 +35,7 @@
   --vb-pdf-width: 0px;
 }
 
+:root[data-theme='dark'],
 body[data-theme='dark'],
 body.prae-theme-dark {
   --vb-bg: radial-gradient(145% 98% at 0% 0%, rgba(61, 101, 165, 0.5) 0%, rgba(10, 16, 28, 0.94) 50%, rgba(5, 9, 18, 1) 100%);
@@ -151,7 +152,7 @@ button:focus-visible {
 
 .vb-nav a:hover {
   color: var(--vb-ink);
-  border-color: var(--vb-line-strong);
+  border-color: var(--prae-button-hover-color, var(--vb-line-strong));
   background: color-mix(in srgb, var(--vb-accent-soft) 48%, transparent);
   transform: translate(var(--prae-button-hover-x, 0px), var(--prae-button-hover-y, -2px));
   box-shadow: var(--prae-button-hover-shadow, none);
@@ -172,7 +173,7 @@ button:focus-visible {
 
 .vb-theme-toggle:hover {
   transform: translate(var(--prae-button-hover-x, 0px), var(--prae-button-hover-y, -2px)) scale(1.02);
-  border-color: var(--vb-line-strong);
+  border-color: var(--prae-button-hover-color, var(--vb-line-strong));
   box-shadow: var(--prae-button-hover-shadow, 0 0 0 3px color-mix(in srgb, var(--vb-accent-soft) 55%, transparent));
 }
 
@@ -415,7 +416,7 @@ button:focus-visible {
 .chip:hover,
 .btn:hover {
   transform: translate(var(--prae-button-hover-x, 0px), var(--prae-button-hover-y, -2px));
-  border-color: var(--vb-line-strong);
+  border-color: var(--prae-button-hover-color, var(--vb-line-strong));
   background: color-mix(in srgb, var(--vb-panel) 92%, transparent);
   box-shadow: var(--prae-button-hover-shadow, 0 9px 18px -14px color-mix(in srgb, var(--vb-glow) 70%, transparent));
 }
@@ -677,7 +678,7 @@ button:focus-visible {
 
 #wc-hud[data-component='prae-hud'] [data-part='toggle']:hover {
   transform: translate(var(--prae-button-hover-x, 0px), var(--prae-button-hover-y, -2px));
-  border-color: var(--vb-line-strong);
+  border-color: var(--prae-button-hover-color, var(--vb-line-strong));
   box-shadow: var(--prae-button-hover-shadow, 0 9px 18px -14px color-mix(in srgb, var(--vb-glow) 70%, transparent));
 }
 
@@ -690,19 +691,42 @@ button:focus-visible {
   grid-column: 2;
 }
 
+:root[data-palette][data-theme],
 body[data-palette][data-theme] {
   --vb-bg: var(--prae-bg);
-  --vb-bg-2: color-mix(in srgb, var(--prae-bg) 84%, var(--prae-accent-2) 16%);
+  --vb-bg-2: color-mix(in srgb, var(--prae-bg) 84%, var(--prae-accent-2-live) 16%);
   --vb-panel: var(--prae-surface);
   --vb-panel-2: var(--prae-surface-2);
   --vb-ink: var(--prae-text);
   --vb-ink-soft: var(--prae-muted);
   --vb-line: color-mix(in srgb, var(--prae-border) 72%, transparent);
   --vb-line-strong: var(--prae-border-strong);
-  --vb-accent: var(--prae-accent);
-  --vb-accent-soft: color-mix(in srgb, var(--prae-accent) 44%, var(--prae-accent-2));
-  --vb-sheen: color-mix(in srgb, var(--prae-accent) 28%, white);
-  --vb-glow: color-mix(in srgb, var(--prae-accent-2) 72%, var(--prae-accent));
+  --vb-accent: var(--prae-accent-live);
+  --vb-accent-soft: color-mix(in srgb, var(--prae-accent-live) 44%, var(--prae-accent-2-live));
+  --vb-sheen: color-mix(in srgb, var(--prae-accent-live) 28%, white);
+  --vb-glow: color-mix(in srgb, var(--prae-accent-2-live) 72%, var(--prae-accent-live));
+  --vb-shadow-a: 0 34px 70px -50px color-mix(in srgb, var(--prae-border-strong) 42%, transparent);
+  --vb-shadow-b: 0 20px 38px -24px color-mix(in srgb, var(--prae-border-strong) 34%, transparent);
+  --vb-focus: 0 0 0 2px color-mix(in srgb, var(--prae-accent-2-live) 42%, transparent);
+}
+
+:root[data-palette='ryb-tricolor'][data-theme],
+body[data-palette='ryb-tricolor'][data-theme] {
+  --vb-bg: var(--prae-bg);
+  --vb-bg-2: var(--prae-bg);
+  --vb-panel: var(--prae-surface);
+  --vb-panel-2: var(--prae-surface-2);
+  --vb-ink: #000000;
+  --vb-ink-soft: color-mix(in srgb, #000000 72%, transparent);
+  --vb-line: color-mix(in srgb, #000000 72%, transparent);
+  --vb-line-strong: #000000;
+  --vb-accent: var(--prae-accent-live);
+  --vb-accent-soft: color-mix(in oklch, var(--prae-accent-live) 18%, transparent);
+  --vb-glow: var(--prae-accent-2-live);
+  --vb-sheen: var(--prae-accent-live);
+  --vb-focus: 0 0 0 2px color-mix(in oklch, var(--prae-accent-2-live) 74%, transparent);
+  --vb-shadow-a: 0 34px 70px -50px rgba(0,0,0,.52);
+  --vb-shadow-b: 0 20px 38px -24px rgba(0,0,0,.42);
 }
 
 @keyframes vbSheenSweep {

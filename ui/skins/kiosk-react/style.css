@@ -11,8 +11,8 @@
   --k-accent-2: #18b1c6;
   --k-success: #0f8f5a;
   --k-danger: #ba1c1c;
-  --k-shadow-hard: 9px 9px 0 rgba(4, 21, 41, 0.28);
-  --k-shadow-soft: 0 28px 50px rgba(4, 21, 41, 0.28);
+  --k-shadow-hard: 9px 9px 0 color-mix(in srgb, var(--k-border-strong) 45%, transparent);
+  --k-shadow-soft: 0 28px 50px color-mix(in srgb, var(--k-border-strong) 45%, transparent);
   --k-radius: 2px;
   --k-radius-sm: 2px;
   --k-focus: 0 0 0 3px color-mix(in srgb, var(--k-accent) 48%, transparent);
@@ -215,7 +215,7 @@ select {
 .kiosk-nav a:focus-visible {
   outline: none;
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 rgba(6, 28, 51, 0.2);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--k-border-strong) 32%, transparent);
   border-color: var(--k-accent);
   background: color-mix(in srgb, var(--k-accent) 14%, var(--k-surface));
 }
@@ -230,7 +230,7 @@ select {
   display: grid;
   place-items: center;
   cursor: pointer;
-  box-shadow: 5px 5px 0 rgba(6, 28, 51, 0.2);
+  box-shadow: 5px 5px 0 color-mix(in srgb, var(--k-border-strong) 32%, transparent);
   transition: transform var(--k-dur-fast) var(--k-ease), box-shadow var(--k-dur-fast) var(--k-ease), border-color var(--k-dur-fast) var(--k-ease), background var(--k-dur-fast) var(--k-ease);
 }
 
@@ -238,7 +238,7 @@ select {
 .kiosk-theme-toggle:focus-visible {
   outline: none;
   transform: translate(-1px, -1px);
-  box-shadow: 7px 7px 0 rgba(6, 28, 51, 0.25);
+  box-shadow: 7px 7px 0 color-mix(in srgb, var(--k-border-strong) 40%, transparent);
   border-color: var(--k-accent);
   background: color-mix(in srgb, var(--k-accent) 14%, var(--k-surface));
 }
@@ -399,7 +399,7 @@ select {
 .kiosk-tile:hover,
 .kiosk-tile:focus-within {
   transform: translate(var(--prae-hover-card-x, -2px), var(--prae-hover-card-y, -3px));
-  box-shadow: var(--prae-hover-card-shadow, 11px 11px 0 rgba(6, 28, 51, 0.28));
+  box-shadow: var(--prae-hover-card-shadow, 11px 11px 0 color-mix(in srgb, var(--k-border-strong) 45%, transparent));
 }
 
 .kiosk-tile:hover::before,
@@ -414,7 +414,7 @@ select {
 
 .kiosk-tile:focus-visible {
   outline: none;
-  box-shadow: var(--k-focus), 11px 11px 0 rgba(6, 28, 51, 0.28);
+  box-shadow: var(--k-focus), 11px 11px 0 color-mix(in srgb, var(--k-border-strong) 45%, transparent);
 }
 
 .kiosk-tile.playing {
@@ -456,7 +456,7 @@ select {
   border: 2px solid var(--k-border);
   border-radius: var(--k-radius-sm);
   overflow: hidden;
-  box-shadow: 4px 4px 0 rgba(6, 28, 51, 0.2);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--k-border-strong) 32%, transparent);
   margin-left: auto;
   background: linear-gradient(140deg, rgba(255, 255, 255, 0.8), rgba(183, 212, 247, 0.9));
 }
@@ -519,7 +519,7 @@ select {
 .kiosk-operator-close:focus-visible {
   outline: none;
   transform: translate(var(--prae-button-hover-x, -1px), var(--prae-button-hover-y, -1px));
-  box-shadow: var(--prae-button-hover-shadow, 4px 4px 0 rgba(6, 28, 51, 0.2));
+  box-shadow: var(--prae-button-hover-shadow, 4px 4px 0 color-mix(in srgb, var(--k-border-strong) 32%, transparent));
   border-color: var(--k-accent);
   background: color-mix(in srgb, var(--k-accent) 16%, var(--k-surface));
 }
@@ -594,7 +594,7 @@ select {
   border: 2px solid var(--k-border);
   border-radius: var(--k-radius-sm);
   background: color-mix(in srgb, var(--k-surface-2) 88%, white 12%);
-  box-shadow: 4px 4px 0 rgba(6, 28, 51, 0.19);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--k-border-strong) 31%, transparent);
   padding: 0.42rem 0.5rem;
 }
 
@@ -670,7 +670,7 @@ select {
 #wc-hud[data-component='prae-hud'] .hud-btn:focus-visible {
   outline: none;
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 rgba(6, 28, 51, 0.22);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--k-border-strong) 35%, transparent);
   border-color: var(--k-accent);
   background: color-mix(in srgb, var(--k-accent) 16%, var(--k-surface));
 }
@@ -874,7 +874,7 @@ body.kiosk-detail-open .kiosk-stage {
 .kiosk-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(6, 20, 38, 0.58);
+  background: color-mix(in srgb, var(--k-border-strong) 62%, transparent);
   backdrop-filter: blur(8px);
   z-index: 100;
 }
@@ -923,7 +923,7 @@ body.kiosk-detail-open .kiosk-stage {
 .kiosk-pdf-close:focus-visible {
   outline: none;
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 rgba(6, 28, 51, 0.2);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--k-border-strong) 32%, transparent);
   border-color: var(--k-accent);
   background: color-mix(in srgb, var(--k-accent) 16%, var(--k-surface));
 }
@@ -945,7 +945,7 @@ body.kiosk-detail-open .kiosk-stage {
   border: 2px solid var(--k-border-strong);
   border-radius: var(--k-radius-sm);
   background: color-mix(in srgb, var(--k-surface) 94%, white 6%);
-  box-shadow: 6px 6px 0 rgba(6, 28, 51, 0.22);
+  box-shadow: 6px 6px 0 color-mix(in srgb, var(--k-border-strong) 35%, transparent);
   font-family: var(--prae-font-mono, 'IBM Plex Mono', monospace);
   font-size: 0.73rem;
   letter-spacing: 0.07em;
@@ -994,17 +994,30 @@ body[data-attract-mode='full-autoplay'] .kiosk-mode-chip::before {
   content: 'Attract Autoplay';
 }
 
+:root[data-palette][data-theme],
 body[data-palette][data-theme] {
   --k-bg: var(--prae-bg);
-  --k-bg-2: color-mix(in srgb, var(--prae-bg) 84%, var(--prae-accent-2) 16%);
+  --k-bg-2: color-mix(in srgb, var(--prae-bg) 84%, var(--prae-accent-2-live) 16%);
   --k-surface: var(--prae-surface);
   --k-surface-2: var(--prae-surface-2);
   --k-text: var(--prae-text);
   --k-muted: var(--prae-muted);
   --k-border: var(--prae-border);
   --k-border-strong: var(--prae-border-strong);
-  --k-accent: var(--prae-accent);
-  --k-accent-2: var(--prae-accent-2);
+  --k-accent: var(--prae-accent-live);
+  --k-accent-2: var(--prae-accent-2-live);
+  --k-shadow-hard: 9px 9px 0 color-mix(in srgb, var(--prae-border-strong) 38%, transparent);
+  --k-shadow-soft: 0 28px 50px color-mix(in srgb, var(--prae-border-strong) 28%, transparent);
+  --k-focus: 0 0 0 3px color-mix(in srgb, var(--prae-accent-2-live) 48%, transparent);
+}
+
+:root[data-palette='ryb-tricolor'][data-theme],
+body[data-palette='ryb-tricolor'][data-theme] {
+  --k-bg-2: var(--prae-bg);
+}
+
+body[data-palette='ryb-tricolor'] {
+  background: linear-gradient(175deg, var(--k-bg), var(--k-bg-2));
 }
 
 body[data-button-effect] .kiosk-nav a:hover,
@@ -1016,7 +1029,8 @@ body[data-button-effect] .kiosk-pdf-close:focus-visible,
 body[data-button-effect] #wc-hud[data-component='prae-hud'] .hud-btn:hover,
 body[data-button-effect] #wc-hud[data-component='prae-hud'] .hud-btn:focus-visible {
   transform: translate(var(--prae-button-hover-x, -1px), var(--prae-button-hover-y, -1px));
-  box-shadow: var(--prae-button-hover-shadow, 4px 4px 0 rgba(6, 28, 51, 0.2));
+  border-color: var(--prae-button-hover-color, var(--k-accent));
+  box-shadow: var(--prae-button-hover-shadow, 4px 4px 0 color-mix(in srgb, var(--k-border-strong) 32%, transparent));
 }
 
 /* anti-legacy override guards */

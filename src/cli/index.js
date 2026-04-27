@@ -27,24 +27,27 @@ const APPEARANCE_CSS = `/* Praetorius — global appearance tokens + presets */
   --prae-accent-2:#2f7df0;
   --prae-hover-card-x:-2px;
   --prae-hover-card-y:-3px;
-  --prae-hover-card-shadow:11px 11px 0 rgba(7,26,48,.28);
+  --prae-hover-card-shadow:11px 11px 0 color-mix(in srgb, var(--prae-border-strong,#2f4a70) 36%, transparent);
   --prae-hover-sheen-opacity:.52;
   --prae-hover-spot-opacity:.32;
   --prae-button-hover-x:-1px;
   --prae-button-hover-y:-1px;
-  --prae-button-hover-shadow:4px 4px 0 rgba(7,26,48,.2);
+  --prae-button-hover-shadow:4px 4px 0 color-mix(in srgb, var(--prae-border-strong,#2f4a70) 28%, transparent);
+  --prae-accent-live:var(--prae-accent,#ff8f2f);
+  --prae-accent-2-live:var(--prae-accent-2,#2f7df0);
+  --prae-button-hover-color:var(--prae-accent-live,var(--prae-accent,#ff8f2f));
 }
 body[data-hover-effect='minimal']{
   --prae-hover-card-x:0px;
   --prae-hover-card-y:0px;
-  --prae-hover-card-shadow:var(--ct-shadow-hard, var(--k-shadow-hard, var(--vb-shadow, 8px 8px 0 rgba(7,26,48,.2))));
+  --prae-hover-card-shadow:var(--ct-shadow-hard, var(--k-shadow-hard, var(--vb-shadow-a, 8px 8px 0 color-mix(in srgb, var(--prae-border-strong,#2f4a70) 30%, transparent))));
   --prae-hover-sheen-opacity:.12;
   --prae-hover-spot-opacity:.08;
 }
 body[data-hover-effect='high-drama']{
   --prae-hover-card-x:-4px;
   --prae-hover-card-y:-6px;
-  --prae-hover-card-shadow:16px 16px 0 rgba(7,26,48,.34);
+  --prae-hover-card-shadow:16px 16px 0 color-mix(in srgb, var(--prae-border-strong,#2f4a70) 44%, transparent);
   --prae-hover-sheen-opacity:.78;
   --prae-hover-spot-opacity:.56;
 }
@@ -56,7 +59,25 @@ body[data-button-effect='minimal']{
 body[data-button-effect='high-drama']{
   --prae-button-hover-x:-2px;
   --prae-button-hover-y:-2px;
-  --prae-button-hover-shadow:7px 7px 0 rgba(7,26,48,.28);
+  --prae-button-hover-shadow:7px 7px 0 color-mix(in srgb, var(--prae-border-strong,#2f4a70) 40%, transparent);
+}
+body[data-palette='orange-blue-white-silver']{
+  --prae-hover-card-shadow:13px 13px 0 color-mix(in srgb, var(--prae-border-strong,#234264) 42%, rgba(0,0,0,.28));
+  --prae-button-hover-shadow:5px 5px 0 color-mix(in srgb, var(--prae-border-strong,#234264) 36%, rgba(0,0,0,.22));
+  --prae-hover-sheen-opacity:.3;
+  --prae-hover-spot-opacity:.2;
+}
+body[data-palette='ryb-tricolor']{
+  --prae-ryb-red:oklch(0.6463 0.2409 32.62);
+  --prae-ryb-yellow:oklch(0.9035 0.1796 104.9);
+  --prae-ryb-blue:oklch(0.5797 0.2296 263.44);
+  --prae-accent-live:var(--prae-ryb-red);
+  --prae-accent-2-live:var(--prae-ryb-blue);
+  --prae-button-hover-color:var(--prae-ryb-red);
+  --prae-hover-card-shadow:14px 14px 0 rgba(0,0,0,.42);
+  --prae-button-hover-shadow:5px 5px 0 rgba(0,0,0,.38);
+  --prae-hover-sheen-opacity:.12;
+  --prae-hover-spot-opacity:.08;
 }
 body[data-cursor='block-square'],
 body[data-cursor='block-square'] *{
@@ -79,6 +100,7 @@ body[data-cursor='prism-diamond'] *{
 const THEME_CSS = `/* Praetorius — theme tokens */
 #works-console.prae-theme-dark,
 body.prae-theme-dark,
+:root[data-theme='dark'],
 body[data-theme='dark']{
   --bg:var(--prae-bg,#0f1728);
   --fg:color-mix(in srgb, var(--prae-surface,#eef2f8) 90%, white);
@@ -87,6 +109,7 @@ body[data-theme='dark']{
 }
 #works-console.prae-theme-light,
 body.prae-theme-light,
+:root[data-theme='light'],
 body[data-theme='light']{
   --bg:var(--prae-bg,#ffffff);
   --fg:var(--prae-text,#10213b);
@@ -894,20 +917,62 @@ function renderScriptFromDb(db, opts = {}) {
     var key = mode === 'light' ? 'light' : 'dark';
     var table = {
       'orange-blue-white-silver': {
-        dark: { bg:'#0f1728', surface:'#eef2f8', surface2:'#d8e1ee', text:'#112745', muted:'#536b86', border:'#4a6588', borderStrong:'#2f4a70', accent:'#ff8f2f', accent2:'#2f7df0' },
-        light:{ bg:'#e8eff8', surface:'#ffffff', surface2:'#f2f5fa', text:'#132845', muted:'#5d728d', border:'#8fa3be', borderStrong:'#6d86a8', accent:'#d36a0a', accent2:'#1f63ca' }
+        dark: {
+          bg:'#0b121d',
+          surface:'#ffffff',
+          surface2:'#ffffff',
+          text:'#101d30',
+          muted:'#465a73',
+          border:'#5a6f89',
+          borderStrong:'#223f62',
+          accent:'#f1791f',
+          accent2:'#2d78e5'
+        },
+        light:{
+          bg:'#e4ebf3',
+          surface:'#ffffff',
+          surface2:'#ffffff',
+          text:'#112038',
+          muted:'#546783',
+          border:'#95a7bd',
+          borderStrong:'#3a5c84',
+          accent:'#d96312',
+          accent2:'#1f67d5'
+        }
       },
       'gem-diamond': {
-        dark: { bg:'#071523', surface:'#d8ebff', surface2:'#c0dbfb', text:'#081b34', muted:'#33577f', border:'#0d3767', borderStrong:'#062a50', accent:'#2f80ff', accent2:'#18b1c6' },
-        light:{ bg:'#d9ecff', surface:'#f6fbff', surface2:'#e8f2ff', text:'#10284d', muted:'#4d6b8f', border:'#2b598e', borderStrong:'#214f84', accent:'#005ee6', accent2:'#0a94af' }
+        dark: { bg:'#071523', surface:'#ffffff', surface2:'#ffffff', text:'#081b34', muted:'#33577f', border:'#0d3767', borderStrong:'#062a50', accent:'#2f80ff', accent2:'#18b1c6' },
+        light:{ bg:'#d9ecff', surface:'#ffffff', surface2:'#ffffff', text:'#10284d', muted:'#4d6b8f', border:'#2b598e', borderStrong:'#214f84', accent:'#005ee6', accent2:'#0a94af' }
       },
       'ryb-tricolor': {
-        dark: { bg:'#1a1420', surface:'#f4efe6', surface2:'#eadfcd', text:'#2a1a12', muted:'#6b5444', border:'#8a3c2d', borderStrong:'#63241a', accent:'#df3427', accent2:'#2157d0' },
-        light:{ bg:'#f8f1e3', surface:'#fffdf7', surface2:'#f5ebd4', text:'#2f230f', muted:'#6e5b3b', border:'#a77a33', borderStrong:'#8c6424', accent:'#cc2d21', accent2:'#1c4ab8' }
+        dark: {
+          bg:'#000000',
+          surface:'#ffffff',
+          surface2:'#ffffff',
+          text:'#000000',
+          muted:'#1f1f1f',
+          border:'#000000',
+          borderStrong:'#000000',
+          accent:'oklch(0.6463 0.2409 32.62)',
+          accent2:'oklch(0.5797 0.2296 263.44)',
+          accent3:'oklch(0.9035 0.1796 104.9)'
+        },
+        light:{
+          bg:'#ffffff',
+          surface:'#ffffff',
+          surface2:'#ffffff',
+          text:'#000000',
+          muted:'#232323',
+          border:'#000000',
+          borderStrong:'#000000',
+          accent:'oklch(0.6463 0.2409 32.62)',
+          accent2:'oklch(0.5797 0.2296 263.44)',
+          accent3:'oklch(0.9035 0.1796 104.9)'
+        }
       },
       'mono-bw': {
-        dark: { bg:'#111111', surface:'#ececec', surface2:'#d8d8d8', text:'#111111', muted:'#525252', border:'#666666', borderStrong:'#3a3a3a', accent:'#141414', accent2:'#5b5b5b' },
-        light:{ bg:'#f1f1f1', surface:'#ffffff', surface2:'#f3f3f3', text:'#1a1a1a', muted:'#666666', border:'#9a9a9a', borderStrong:'#7a7a7a', accent:'#141414', accent2:'#575757' }
+        dark: { bg:'#111111', surface:'#ffffff', surface2:'#ffffff', text:'#111111', muted:'#525252', border:'#666666', borderStrong:'#3a3a3a', accent:'#141414', accent2:'#5b5b5b' },
+        light:{ bg:'#f1f1f1', surface:'#ffffff', surface2:'#ffffff', text:'#1a1a1a', muted:'#666666', border:'#9a9a9a', borderStrong:'#7a7a7a', accent:'#141414', accent2:'#575757' }
       }
     };
     if (palette === 'mono-one') {
@@ -941,6 +1006,147 @@ function renderScriptFromDb(db, opts = {}) {
     return (table[palette] && table[palette][key]) || table['orange-blue-white-silver'][key];
   }
 
+  var PRAE_RYB_COLORS = ['var(--prae-ryb-red)', 'var(--prae-ryb-yellow)', 'var(--prae-ryb-blue)'];
+  var praeRybAccentPool = [];
+  var praeRybAccent2Pool = [];
+  var praeRybButtonPool = [];
+  var praeRybListenersBound = false;
+  var praeRybLastHoverTarget = null;
+
+  function praeShuffle(items){
+    for (var i = items.length - 1; i > 0; i -= 1){
+      var j = Math.floor(Math.random() * (i + 1));
+      var swap = items[i];
+      items[i] = items[j];
+      items[j] = swap;
+    }
+    return items;
+  }
+
+  function praeNextRybColor(kind){
+    var pool;
+    if (kind === 'accent2') pool = praeRybAccent2Pool;
+    else if (kind === 'button') pool = praeRybButtonPool;
+    else pool = praeRybAccentPool;
+    if (!pool.length){
+      pool = praeShuffle(PRAE_RYB_COLORS.slice());
+      if (kind === 'accent2') praeRybAccent2Pool = pool;
+      else if (kind === 'button') praeRybButtonPool = pool;
+      else praeRybAccentPool = pool;
+    }
+    return pool.pop() || PRAE_RYB_COLORS[0];
+  }
+
+  function praeSetLiveCssVar(name, value){
+    var doc = document.documentElement;
+    var body = document.body;
+    if (doc && doc.style) doc.style.setProperty(name, value);
+    if (body && body.style) body.style.setProperty(name, value);
+  }
+
+  function praeCurrentPalette(){
+    var doc = document.documentElement;
+    var body = document.body;
+    var host = document.getElementById('works-console');
+    return (body && body.getAttribute('data-palette'))
+      || (host && host.getAttribute('data-palette'))
+      || (doc && doc.getAttribute('data-palette'))
+      || '';
+  }
+
+  function praeResetLiveAppearanceVars(){
+    var doc = document.documentElement;
+    var cs = window.getComputedStyle(doc || document.body || document.documentElement);
+    var baseAccent = (cs.getPropertyValue('--prae-accent') || '').trim() || '#ff8f2f';
+    var baseAccent2 = (cs.getPropertyValue('--prae-accent-2') || '').trim() || '#2f7df0';
+    praeSetLiveCssVar('--prae-accent-live', baseAccent);
+    praeSetLiveCssVar('--prae-accent-2-live', baseAccent2);
+    praeSetLiveCssVar('--prae-button-hover-color', baseAccent);
+  }
+
+  function praeStepRybAccentChase(includeButtonColor){
+    var accent = praeNextRybColor('accent');
+    var accent2 = praeNextRybColor('accent2');
+    if (accent2 === accent && PRAE_RYB_COLORS.length > 1){
+      accent2 = praeNextRybColor('accent2');
+    }
+    praeSetLiveCssVar('--prae-accent-live', accent);
+    praeSetLiveCssVar('--prae-accent-2-live', accent2);
+    if (includeButtonColor){
+      praeSetLiveCssVar('--prae-button-hover-color', praeNextRybColor('button'));
+    }
+  }
+
+  function praeAccentTarget(node){
+    if (!node || !node.closest) return null;
+    return node.closest(
+      '.work, .vbx-card, .ct-summary-card, .kiosk-tile, .dr-module, .dr-nav-link, .dr-outline-link, .tf-work, .ts-item-title, .vb-nav a, .vbx-nav a, [data-work], [data-work-id], [data-work-index], [data-activatable=\"1\"], [role=\"tab\"], [data-tab]'
+    );
+  }
+
+  function praeInteractiveTarget(node){
+    if (!node || !node.closest) return null;
+    return node.closest(
+      'button, [role="button"], a[href], summary, input[type="button"], input[type="submit"], input[type="reset"], .btn, .chip'
+    );
+  }
+
+  function praeHandleRybHoverEvent(event){
+    if (praeCurrentPalette() !== 'ryb-tricolor') return;
+    var interactive = praeInteractiveTarget(event && event.target);
+    if (!interactive) return;
+    if (event.type === 'pointerover'){
+      if (praeRybLastHoverTarget === interactive) return;
+      praeRybLastHoverTarget = interactive;
+    }
+    praeSetLiveCssVar('--prae-button-hover-color', praeNextRybColor('button'));
+  }
+
+  function praeHandleRybAccentEvent(event){
+    if (praeCurrentPalette() !== 'ryb-tricolor') return;
+    if (!event || event.type !== 'click') return;
+    var accentTarget = praeAccentTarget(event && event.target);
+    if (!accentTarget) return;
+    praeStepRybAccentChase(false);
+  }
+
+  function praeHandleRybPointerOut(event){
+    var interactive = praeInteractiveTarget(event && event.target);
+    if (interactive && praeRybLastHoverTarget === interactive){
+      praeRybLastHoverTarget = null;
+    }
+  }
+
+  function praeBindRybHoverListeners(){
+    if (praeRybListenersBound || !document) return;
+    document.addEventListener('pointerover', praeHandleRybHoverEvent, true);
+    document.addEventListener('focusin', praeHandleRybHoverEvent, true);
+    document.addEventListener('click', praeHandleRybAccentEvent, true);
+    document.addEventListener('pointerout', praeHandleRybPointerOut, true);
+    praeRybListenersBound = true;
+  }
+
+  function praeStartRybMotion(){
+    praeBindRybHoverListeners();
+    praeStepRybAccentChase(true);
+  }
+
+  function praeStopRybMotion(){
+    praeRybAccentPool = [];
+    praeRybAccent2Pool = [];
+    praeRybButtonPool = [];
+    praeRybLastHoverTarget = null;
+    praeResetLiveAppearanceVars();
+  }
+
+  function praeSyncRybMotion(palette){
+    if (palette === 'ryb-tricolor'){
+      praeStartRybMotion();
+      return;
+    }
+    praeStopRybMotion();
+  }
+
   function praeApplyAppearance(cfg){
     var appearance = praeNormalizeAppearance((cfg && cfg.appearance) || {});
     var mode = (cfg && cfg.theme) === 'light' ? 'light' : 'dark';
@@ -966,8 +1172,9 @@ function renderScriptFromDb(db, opts = {}) {
       node.classList.remove('prae-theme-light', 'prae-theme-dark');
       node.classList.add(mode === 'light' ? 'prae-theme-light' : 'prae-theme-dark');
     });
+    praeSyncRybMotion(appearance.theme.palette);
     try {
-      if (window.localStorage && !window.localStorage.getItem('wc.theme')) {
+      if (window.localStorage) {
         window.localStorage.setItem('wc.theme', mode);
       }
     } catch (_) {}

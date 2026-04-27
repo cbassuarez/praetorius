@@ -37,8 +37,11 @@
     "test:e2e": "vitest run -t e2e",
     "e2e:smoke": "node scripts/e2e-smoke.mjs",
     "test:cli-matrix": "node scripts/cli-matrix.mjs",
+    "test:web-parity": "node scripts/web-parity-matrix.mjs",
+    "test:builder-smoke": "node scripts/builder-a11y-perf-smoke.mjs",
+    "test:release-gate": "npm run test:cli-matrix && PRAE_STRICT_WEB_PARITY=1 npm run test:web-parity && PRAE_STRICT_BUILDER_SMOKE=1 npm run test:builder-smoke",
     "prepack": "node scripts/prepack-verify.mjs && chmod +x src/cli/index.js",
-    "prepublishOnly": "npm run test && npm run test:cli-matrix && npm pack --dry-run",
+    "prepublishOnly": "npm run test && npm run test:release-gate && npm pack --dry-run",
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s"
   },
   "publishConfig": {
@@ -55,6 +58,7 @@
     "conventional-changelog-cli": "^5.0.0",
     "execa": "^9.2.0",
     "husky": "^9.1.6",
+    "playwright": "^1.59.1",
     "vite": "^7.2.2",
     "vitest": "^2.0.0"
   },
