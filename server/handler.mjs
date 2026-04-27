@@ -349,15 +349,34 @@ function guessMime(filePath) {
 const HEIGHT_POSTER_SCRIPT = `<script>(function(){
   if (window.__praeHeightPoster) return;
   window.__praeHeightPoster = true;
-  function measure() {
+  function neutralizeViewportMinHeight() {
+    // Skin CSS often sets 100vh / 100dvh / 100% min-heights on html/body/wrappers
+    // which combined with auto-resize creates a feedback loop. Reset them so
+    // scrollHeight reflects the natural content size.
     var doc = document.documentElement;
     var body = document.body;
-    return Math.max(
-      doc ? doc.scrollHeight : 0,
-      doc ? doc.offsetHeight : 0,
-      body ? body.scrollHeight : 0,
-      body ? body.offsetHeight : 0
-    );
+    if (doc) {
+      doc.style.setProperty('min-height', '0', 'important');
+      doc.style.setProperty('height', 'auto', 'important');
+      doc.style.setProperty('overflow', 'hidden', 'important');
+    }
+    if (body) {
+      body.style.setProperty('min-height', '0', 'important');
+      body.style.setProperty('height', 'auto', 'important');
+      body.style.margin = '0';
+    }
+  }
+  function measure() {
+    neutralizeViewportMinHeight();
+    var body = document.body;
+    if (!body) return 0;
+    var max = 0;
+    var children = body.children || [];
+    for (var i = 0; i < children.length; i += 1) {
+      var rect = children[i].getBoundingClientRect();
+      if (rect.bottom > max) max = rect.bottom;
+    }
+    return Math.max(max, body.scrollHeight, body.offsetHeight);
   }
   function send() {
     try {
@@ -376,14 +395,13 @@ const HEIGHT_POSTER_SCRIPT = `<script>(function(){
   try {
     if (typeof ResizeObserver === 'function') {
       var ro = new ResizeObserver(function(){ send(); });
-      if (document.documentElement) ro.observe(document.documentElement);
       if (document.body) ro.observe(document.body);
     }
   } catch (_) { /* ignore */ }
   try {
-    if (typeof MutationObserver === 'function' && document.documentElement) {
+    if (typeof MutationObserver === 'function' && document.body) {
       var mo = new MutationObserver(function(){ send(); });
-      mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+      mo.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
     }
   } catch (_) { /* ignore */ }
 })();</script>`;

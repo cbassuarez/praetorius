@@ -116,7 +116,7 @@ function onMessage(event: MessageEvent) {
   if (data.type !== 'prae:height') return
   const next = Number(data.value)
   if (!Number.isFinite(next) || next <= 0) return
-  iframeHeight.value = Math.min(2400, Math.max(360, Math.ceil(next)))
+  iframeHeight.value = Math.min(960, Math.max(360, Math.ceil(next)))
 }
 
 const stockWorks = [
