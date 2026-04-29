@@ -57,6 +57,21 @@ describe('normalizeWork', () => {
     const view = normalizeWork({ tags: 'orchestral, chamber, 2026' });
     expect(view.tags).toEqual(['orchestral', 'chamber', '2026']);
   });
+
+  it('normalizes youtube media fields', () => {
+    const view = normalizeWork({
+      media: {
+        kind: 'youtube',
+        youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ',
+        startAtSec: 12
+      }
+    });
+    expect(view.media).toEqual({
+      kind: 'youtube',
+      youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ',
+      startAtSec: 12
+    });
+  });
 });
 
 describe('works schema validation', () => {
@@ -84,5 +99,29 @@ describe('works schema validation', () => {
       tags: ['portfolio', 'string quartet']
     });
     expect(validate(db)).toBe(true);
+  });
+
+  it('accepts youtube media when url is present', () => {
+    const db = buildDb({
+      oneliner: 'Media object test',
+      media: {
+        kind: 'youtube',
+        youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        startAtSec: 30
+      }
+    });
+    expect(validate(db)).toBe(true);
+  });
+
+  it('rejects youtube media when url is missing', () => {
+    const db = buildDb({
+      oneliner: 'Invalid youtube media',
+      media: {
+        kind: 'youtube'
+      }
+    });
+    expect(validate(db)).toBe(false);
+    const hasYoutubeUrlError = (validate.errors || []).some((error) => String(error.instancePath || '').includes('/media') || String(error.message || '').includes('youtubeUrl'));
+    expect(hasYoutubeUrlError).toBe(true);
   });
 });

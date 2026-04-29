@@ -113,7 +113,23 @@ function normalizeSrc(url) {
   return str;
 }
 
+function resolveWorkMedia(work) {
+  if (praeMedia && typeof praeMedia.resolveWorkMedia === 'function') {
+    try { return praeMedia.resolveWorkMedia(work || {}); } catch (_) {}
+  }
+  return {
+    kind: 'score',
+    audioUrl: work?.audioUrl || work?.audio || '',
+    pdfUrl: work?.pdfUrl || work?.pdf || '',
+    pageFollow: work?.pageFollow || work?.score || null,
+    startAtSec: 0
+  };
+}
+
 function normalizePdfUrl(url) {
+  if (praeMedia && typeof praeMedia.normalizePdfUrl === 'function') {
+    try { return praeMedia.normalizePdfUrl(url); } catch (_) {}
+  }
   if (!url) return '';
   const str = String(url);
   const match = str.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
@@ -124,6 +140,12 @@ function normalizePdfUrl(url) {
 }
 
 function choosePdfViewer(url) {
+  if (praeMedia && typeof praeMedia.choosePdfViewer === 'function') {
+    try {
+      const chosen = praeMedia.choosePdfViewer(url);
+      if (chosen) return chosen;
+    } catch (_) {}
+  }
   const str = String(url || '');
   const match = str.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : str;
@@ -189,6 +211,7 @@ const PRAE_DATA = window.__PRAE_DATA__ || {};
 const works = Array.isArray(PRAE_DATA.works)
   ? PRAE_DATA.works
   : (Array.isArray(PRAE.works) ? PRAE.works : []);
+const praeMedia = PRAE && PRAE.media ? PRAE.media : null;
 const pageFollowMaps = (() => {
   const provided = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
   if (Object.keys(provided).length) return provided;
@@ -239,8 +262,11 @@ const state = {
     followHandler: null,
     followSlug: null,
     lastPrinted: null,
+    followToken: null,
+    followSourceKind: 'audio',
     drawerOpen: false
-  }
+  },
+  youtube: { controller: null, workId: null, workSlug: null }
 };
 
 PRAE.hud = Object.assign({}, PRAE.hud || {}, {
@@ -277,7 +303,7 @@ function ensureAudioTags() {
 }
 
 function getAudioSourceFor(work) {
-  return work?.audioUrl || work?.audio || '';
+  return resolveWorkMedia(work).audioUrl || '';
 }
 
 function ensureAudioFor(work) {
@@ -288,7 +314,7 @@ function ensureAudioFor(work) {
     el.id = 'wc-a' + work.id;
     el.preload = 'none';
     el.playsInline = true;
-    const src = getAudioSourceFor(work);
+    const src = resolveWorkMedia(work).audioUrl || getAudioSourceFor(work);
     if (src) el.setAttribute('data-audio', src);
     document.body.appendChild(el);
   }
@@ -296,6 +322,9 @@ function ensureAudioFor(work) {
 }
 
 function pauseAllAudio(exceptId) {
+  if (state.youtube.controller && state.youtube.workId != null && Number(state.youtube.workId) !== Number(exceptId)) {
+    try { state.youtube.controller.pause(); } catch (_) {}
+  }
   for (const work of works) {
     if (!work || work.id == null) continue;
     if (Number(work.id) === Number(exceptId)) continue;
@@ -326,6 +355,19 @@ function updateHud(id, audio) {
   state.hudEl.textContent = `Now playing — ${title} ${current} / ${duration} · vol ${volume}% · ${rate}x`;
   state.hudEl.hidden = false;
   updateFooterAudioControl(audio);
+}
+
+function updateHudYouTube(id, controller) {
+  if (!state.hudEl) return;
+  const record = findWorkById(id);
+  const work = record?.data;
+  const title = work?.title || work?.slug || `Work ${id}`;
+  const current = controller && typeof controller.getCurrentTime === 'function'
+    ? formatClock(controller.getCurrentTime() || 0)
+    : '0:00';
+  state.hudEl.textContent = `Now playing — ${title} ${current} / YouTube`;
+  state.hudEl.hidden = false;
+  updateFooterAudioControl();
 }
 
 function bindAudioToHud(id, audio) {
@@ -364,9 +406,14 @@ function playAt(id, seconds = 0) {
   const record = findWorkById(id);
   const work = record?.data;
   if (!work) return;
+  const media = resolveWorkMedia(work);
   const index = works.indexOf(work);
   if (index >= 0) {
     setActiveWork(index, { announce: false, scroll: false, updatePreview: false });
+  }
+  if (media.kind === 'youtube') {
+    playYouTubeAt(work, seconds || media.startAtSec || 0, media);
+    return;
   }
   syncPdfForWork(work, { seconds });
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
@@ -375,7 +422,7 @@ function playAt(id, seconds = 0) {
   state.hudState.last = { id: work.id, at: seconds || 0 };
   bindAudioToHud(work.id, audio);
   if (!audio.src) {
-    const src = normalizeSrc(getAudioSourceFor(work));
+    const src = normalizeSrc(media.audioUrl || getAudioSourceFor(work));
     if (src) {
       audio.src = src;
       audio.load();
@@ -392,6 +439,46 @@ function playAt(id, seconds = 0) {
     seekAndPlay();
   } else {
     audio.addEventListener('loadedmetadata', () => seekAndPlay(), { once: true });
+  }
+}
+
+async function playYouTubeAt(work, seconds = 0, media = resolveWorkMedia(work)) {
+  if (!work) return;
+  if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+      praeMedia.openYouTubeTab(work);
+    }
+    return;
+  }
+  pauseAllAudio(work.id);
+  const normalized = normalizePdfUrl(getPdfSourceFrom(work));
+  if (normalized) {
+    showPdfForWork(work, { openDrawer: true, announce: false });
+  } else {
+    showNoPdfForWork(work, { announce: false });
+  }
+  const frame = ensurePreviewFrame(work.slug || workKey(work) || `work-${work.id}`, work, media.youtubeEmbedUrl || media.youtubeUrl || 'about:blank');
+  if (!frame) {
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+      praeMedia.openYouTubeTab(work);
+    }
+    return;
+  }
+  try {
+    const controller = await praeMedia.mountYouTubePlayer(frame, work, { onError: () => {} });
+    state.youtube.controller = controller;
+    state.youtube.workId = work.id;
+    state.youtube.workSlug = work.slug || null;
+    const seek = Number.isFinite(Number(seconds)) ? Number(seconds) : Number(media.startAtSec || 0);
+    if (typeof controller.seekTo === 'function') controller.seekTo(Math.max(0, seek));
+    if (typeof controller.play === 'function') controller.play();
+    state.hudState.last = { id: work.id, at: Math.max(0, seek) };
+    attachYouTubePageFollow(work, controller);
+    updateHudYouTube(work.id, controller);
+  } catch (_) {
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+      praeMedia.openYouTubeTab(work);
+    }
   }
 }
 
@@ -617,12 +704,14 @@ function showPdfForWork(work, { openDrawer = false, announce = true } = {}) {
   setPreviewTitle(work.title || work.slug || 'Score');
   setPreviewLink(normalized, 'Open PDF');
   const slug = workKey(work) || `work-${work.id ?? Date.now()}`;
-  detachPageFollow();
   const viewerUrl = choosePdfViewer(normalized);
   ensurePreviewFrame(slug, work, viewerUrl);
   state.pdf.currentSlug = work.slug || slug;
   state.pdf.pendingGoto = null;
-  if (work.slug) {
+  detachPageFollow();
+  if (work.slug && state.youtube.controller && state.youtube.workId === work.id && typeof state.youtube.controller.getCurrentTime === 'function') {
+    attachYouTubePageFollow(work, state.youtube.controller);
+  } else if (work.slug) {
     const audio = document.getElementById('wc-a' + work.id);
     if (audio) attachPageFollow(work.slug, audio);
   }
@@ -635,6 +724,12 @@ function showPdfForWork(work, { openDrawer = false, announce = true } = {}) {
 }
 
 function showNoPdfForWork(work, { announce = true } = {}) {
+  if (state.youtube.controller && (!work || state.youtube.workId !== work.id) && typeof state.youtube.controller.pause === 'function') {
+    try { state.youtube.controller.pause(); } catch (_) {}
+    state.youtube.controller = null;
+    state.youtube.workId = null;
+    state.youtube.workSlug = null;
+  }
   const pdf = ensurePdfDom();
   if (!pdf.root) return;
   const title = work?.title || work?.slug || 'this work';
@@ -664,6 +759,12 @@ function showNoPdfForWork(work, { announce = true } = {}) {
 }
 
 function showPreviewPlaceholder() {
+  if (state.youtube.controller && typeof state.youtube.controller.pause === 'function') {
+    try { state.youtube.controller.pause(); } catch (_) {}
+    state.youtube.controller = null;
+    state.youtube.workId = null;
+    state.youtube.workSlug = null;
+  }
   const pdf = ensurePdfDom();
   if (!pdf.root) return;
   markPreviewEmpty(true);
@@ -741,6 +842,9 @@ function gotoPdfPage(pageNum) {
 }
 
 function printedPageForTime(cfg, tSec) {
+  if (praeMedia && typeof praeMedia.printedPageForTime === 'function') {
+    try { return praeMedia.printedPageForTime(cfg, tSec || 0); } catch (_) {}
+  }
   const time = (tSec || 0) + (cfg.mediaOffsetSec || 0);
   let current = cfg.pageMap?.[0]?.page ?? 1;
   for (const row of cfg.pageMap || []) {
@@ -754,11 +858,17 @@ function printedPageForTime(cfg, tSec) {
 function computePdfPage(slug, tSec) {
   const cfg = pageFollowMaps?.[slug];
   if (!cfg) return 1;
+  if (praeMedia && typeof praeMedia.computePdfPage === 'function') {
+    try { return praeMedia.computePdfPage(cfg, tSec || 0); } catch (_) {}
+  }
   const printed = printedPageForTime(cfg, tSec || 0);
   return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
 }
 
 function detachPageFollow() {
+  if (state.pdf.followToken && typeof state.pdf.followToken.detach === 'function') {
+    try { state.pdf.followToken.detach(); } catch (_) {}
+  }
   if (state.pdf.followAudio && state.pdf.followHandler) {
     state.pdf.followAudio.removeEventListener('timeupdate', state.pdf.followHandler);
     state.pdf.followAudio.removeEventListener('seeking', state.pdf.followHandler);
@@ -767,11 +877,24 @@ function detachPageFollow() {
   state.pdf.followHandler = null;
   state.pdf.followSlug = null;
   state.pdf.lastPrinted = null;
+  state.pdf.followToken = null;
+  state.pdf.followSourceKind = 'audio';
 }
 
 function attachPageFollow(slug, audio) {
   detachPageFollow();
   if (!slug || !audio) return;
+  const work = works.find((w) => w && w.slug === slug) || null;
+  if (praeMedia && typeof praeMedia.attachPageFollow === 'function' && work) {
+    state.pdf.followAudio = audio;
+    state.pdf.followSlug = slug;
+    state.pdf.followToken = praeMedia.attachPageFollow(work, { kind: 'audio', audio });
+    state.pdf.followSourceKind = 'audio';
+    if (state.pdf.followToken && typeof state.pdf.followToken.tick === 'function') {
+      try { state.pdf.followToken.tick(); } catch (_) {}
+    }
+    return;
+  }
   const cfg = pageFollowMaps?.[slug];
   if (!cfg) return;
   const handler = () => {
@@ -788,9 +911,29 @@ function attachPageFollow(slug, audio) {
   state.pdf.followHandler = handler;
   state.pdf.followSlug = slug;
   state.pdf.lastPrinted = null;
+  state.pdf.followToken = null;
+  state.pdf.followSourceKind = 'audio';
   audio.addEventListener('timeupdate', handler, { passive: true });
   audio.addEventListener('seeking', handler, { passive: true });
   handler();
+}
+
+function attachYouTubePageFollow(work, controller) {
+  detachPageFollow();
+  if (!work || !controller || !praeMedia || typeof praeMedia.attachPageFollow !== 'function') return;
+  state.pdf.followSlug = work.slug || null;
+  state.pdf.followToken = praeMedia.attachPageFollow(work, { kind: 'youtube', controller });
+  state.pdf.followSourceKind = 'youtube';
+  if (state.pdf.followToken && typeof state.pdf.followToken.tick === 'function') {
+    try { state.pdf.followToken.tick(); } catch (_) {}
+  }
+}
+
+function getPageFollowSeconds() {
+  if (state.pdf.followSourceKind === 'youtube' && state.youtube.controller && typeof state.youtube.controller.getCurrentTime === 'function') {
+    try { return Number(state.youtube.controller.getCurrentTime() || 0); } catch (_) { return 0; }
+  }
+  return Number(state.pdf.followAudio?.currentTime || 0);
 }
 
 function openPdfFor(workOrId) {
@@ -1115,9 +1258,10 @@ function updateFooterAudioControl(activeAudio) {
     return;
   }
   const label = work.title || work.slug || `Work ${state.activeWorkIndex + 1}`;
-  const hasAudio = !!getAudioSourceFor(work);
-  state.activeHasAudio = hasAudio;
-  if (!hasAudio) {
+  const media = resolveWorkMedia(work);
+  const playable = media.kind === 'youtube' || !!getAudioSourceFor(work);
+  state.activeHasAudio = playable;
+  if (!playable) {
     btn.hidden = false;
     btn.disabled = true;
     btn.classList.add('tf-foot-play--disabled');
@@ -1127,19 +1271,33 @@ function updateFooterAudioControl(activeAudio) {
     return;
   }
   const audio = activeAudio || document.getElementById('wc-a' + work.id) || null;
-  const playing = audio ? !audio.paused && !audio.ended : false;
+  const playing = (media.kind === 'youtube' && state.youtube.controller && state.youtube.workId === work.id
+    && typeof state.youtube.controller.isPlaying === 'function' && state.youtube.controller.isPlaying())
+    || (audio ? !audio.paused && !audio.ended : false);
   btn.hidden = false;
   btn.disabled = false;
   btn.classList.toggle('tf-foot-play--disabled', false);
-  btn.textContent = playing ? 'Pause Ⅱ' : 'Play ▷';
+  btn.textContent = playing ? 'Pause Ⅱ' : (media.kind === 'youtube' ? 'Play YouTube ▷' : 'Play ▷');
   btn.setAttribute('aria-pressed', playing ? 'true' : 'false');
-  btn.setAttribute('aria-label', playing ? `Pause audio for ${label}` : `Play audio for ${label}`);
+  const noun = media.kind === 'youtube' ? 'YouTube' : 'audio';
+  btn.setAttribute('aria-label', playing ? `Pause ${noun} for ${label}` : `Play ${noun} for ${label}`);
 }
 
 function toggleActiveAudio() {
   const work = getActiveWork();
   if (!work) return;
-  const src = getAudioSourceFor(work);
+  const media = resolveWorkMedia(work);
+  if (media.kind === 'youtube') {
+    const controller = state.youtube.controller;
+    if (controller && state.youtube.workId === work.id && typeof controller.isPlaying === 'function' && controller.isPlaying()) {
+      try { controller.pause(); } catch (_) {}
+    } else {
+      playYouTubeAt(work, getPageFollowSeconds() || media.startAtSec || 0, media);
+    }
+    updateFooterAudioControl();
+    return;
+  }
+  const src = media.audioUrl || getAudioSourceFor(work);
   if (!src) {
     updateFooterAudioControl();
     return;
@@ -1176,8 +1334,9 @@ function setActiveWork(index, { force = false, scroll = false, announce = true, 
   state.activeWorkIndex = clamped;
   const work = works[clamped];
   state.activeWorkKey = workKey(work);
+  const media = resolveWorkMedia(work);
   state.activeHasPdf = !!normalizePdfUrl(getPdfSourceFrom(work));
-  state.activeHasAudio = !!getAudioSourceFor(work);
+  state.activeHasAudio = media.kind === 'youtube' || !!getAudioSourceFor(work);
   updateActiveSectionHighlight();
   updateHeaderCurrent(work?.title || work?.slug || null);
   updateFooterCounter();

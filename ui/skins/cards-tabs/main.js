@@ -134,6 +134,7 @@ const PRAE_DATA = window.__PRAE_DATA__ || {};
 const works = Array.isArray(PRAE_DATA.works)
   ? PRAE_DATA.works
   : (Array.isArray(PRAE.works) ? PRAE.works : []);
+const praeMedia = PRAE && PRAE.media ? PRAE.media : null;
 
 const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
 
@@ -165,6 +166,9 @@ const state = {
   },
   pageFollow: { audio: null, slug: null, lastPrinted: null, on: null }
 };
+state.pageFollow.token = null;
+state.pageFollow.sourceKind = 'audio';
+state.youtube = { controller: null, workId: null };
 
 function ensureHudRoot() {
   const HUD_ID = 'wc-hud';
@@ -262,7 +266,28 @@ function normalizeSrc(url) {
   return url;
 }
 
+function resolveWorkMedia(work) {
+  if (praeMedia && typeof praeMedia.resolveWorkMedia === 'function') {
+    try { return praeMedia.resolveWorkMedia(work || {}); } catch (_) {}
+  }
+  return {
+    kind: 'score',
+    audioUrl: work?.audioUrl || work?.audio || '',
+    pdfUrl: work?.pdfUrl || work?.pdf || '',
+    pageFollow: work?.pageFollow || work?.score || null,
+    startAtSec: 0
+  };
+}
+
+function hasPlayableMedia(work) {
+  const media = resolveWorkMedia(work);
+  return media.kind === 'youtube' || !!media.audioUrl;
+}
+
 function normalizePdfUrl(url) {
+  if (praeMedia && typeof praeMedia.normalizePdfUrl === 'function') {
+    try { return praeMedia.normalizePdfUrl(url); } catch (_) {}
+  }
   if (!url) return '';
   const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   if (match) return `https://drive.google.com/file/d/${match[1]}/view?usp=drivesdk`;
@@ -270,6 +295,12 @@ function normalizePdfUrl(url) {
 }
 
 function choosePdfViewer(url) {
+  if (praeMedia && typeof praeMedia.choosePdfViewer === 'function') {
+    try {
+      const chosen = praeMedia.choosePdfViewer(url);
+      if (chosen) return chosen;
+    } catch (_) {}
+  }
   const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : url;
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
@@ -337,11 +368,17 @@ function flash(element, text) {
 function computePdfPage(slug, tSec) {
   const cfg = pfMap[slug];
   if (!cfg) return 1;
+  if (praeMedia && typeof praeMedia.computePdfPage === 'function') {
+    try { return praeMedia.computePdfPage(cfg, tSec || 0); } catch (_) {}
+  }
   const printed = printedPageForTime(cfg, tSec || 0);
   return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
 }
 
 function printedPageForTime(cfg, tSec) {
+  if (praeMedia && typeof praeMedia.printedPageForTime === 'function') {
+    try { return praeMedia.printedPageForTime(cfg, tSec || 0); } catch (_) {}
+  }
   const time = (tSec || 0) + (cfg.mediaOffsetSec || 0);
   let current = cfg.pageMap?.[0]?.page ?? 1;
   for (const row of cfg.pageMap || []) {
@@ -378,16 +415,34 @@ function gotoPdfPage(pageNum) {
 }
 
 function detachPageFollow() {
+  if (state.pageFollow.token && typeof state.pageFollow.token.detach === 'function') {
+    try { state.pageFollow.token.detach(); } catch (_) {}
+  }
   if (state.pageFollow.audio && state.pageFollow.on) {
     state.pageFollow.audio.removeEventListener('timeupdate', state.pageFollow.on);
     state.pageFollow.audio.removeEventListener('seeking', state.pageFollow.on);
   }
-  state.pageFollow = { audio: null, slug: null, lastPrinted: null, on: null };
+  state.pageFollow = { audio: null, slug: null, lastPrinted: null, on: null, token: null, sourceKind: 'audio' };
 }
 
 function attachPageFollow(slug, audio) {
   detachPageFollow();
   if (!slug || !audio) return;
+  const work = works.find((w) => w && w.slug === slug) || null;
+  if (praeMedia && typeof praeMedia.attachPageFollow === 'function' && work) {
+    state.pageFollow = {
+      audio,
+      slug,
+      lastPrinted: null,
+      on: null,
+      token: praeMedia.attachPageFollow(work, { kind: 'audio', audio }),
+      sourceKind: 'audio'
+    };
+    if (state.pageFollow.token && typeof state.pageFollow.token.tick === 'function') {
+      try { state.pageFollow.token.tick(); } catch (_) {}
+    }
+    return;
+  }
   const cfg = pfMap[slug];
   if (!cfg) return;
   const onTick = () => {
@@ -400,18 +455,81 @@ function attachPageFollow(slug, audio) {
       }));
     }
   };
-  state.pageFollow = { audio, slug, lastPrinted: null, on: onTick };
+  state.pageFollow = { audio, slug, lastPrinted: null, on: onTick, token: null, sourceKind: 'audio' };
   audio.addEventListener('timeupdate', onTick, { passive: true });
   audio.addEventListener('seeking', onTick, { passive: true });
   onTick();
+}
+
+function attachYouTubeFollow(work, controller) {
+  detachPageFollow();
+  if (!work || !controller || !praeMedia || typeof praeMedia.attachPageFollow !== 'function') return;
+  state.pageFollow = {
+    audio: null,
+    slug: work.slug || null,
+    lastPrinted: null,
+    on: null,
+    token: praeMedia.attachPageFollow(work, { kind: 'youtube', controller }),
+    sourceKind: 'youtube'
+  };
+  if (state.pageFollow.token && typeof state.pageFollow.token.tick === 'function') {
+    try { state.pageFollow.token.tick(); } catch (_) {}
+  }
+}
+
+function getPageFollowSeconds() {
+  if (state.pageFollow.sourceKind === 'youtube' && state.youtube.controller && typeof state.youtube.controller.getCurrentTime === 'function') {
+    try { return Number(state.youtube.controller.getCurrentTime() || 0); } catch (_) { return 0; }
+  }
+  return Number(state.pageFollow.audio?.currentTime || 0);
+}
+
+async function playYouTubeAt(work, id, t = 0) {
+  if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
+    flash(findWorkById(id)?.el, 'YouTube runtime unavailable');
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') praeMedia.openYouTubeTab(work);
+    return;
+  }
+  try {
+    if (window.PRAE && typeof window.PRAE.pauseAllAudio === 'function') {
+      window.PRAE.pauseAllAudio(id);
+    }
+  } catch (_) {}
+  showYouTubePane(work, resolveWorkMedia(work));
+  try {
+    const controller = await praeMedia.mountYouTubePlayer(state.pdf.frame, work, {
+      onError: () => {
+        flash(findWorkById(id)?.el, 'YouTube embed blocked');
+        if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') praeMedia.openYouTubeTab(work);
+      }
+    });
+    state.youtube.controller = controller;
+    state.youtube.workId = id;
+    const seek = Math.max(0, Number(t) || 0);
+    if (typeof controller.seekTo === 'function') controller.seekTo(seek);
+    if (typeof controller.play === 'function') controller.play();
+    hudState.last = { id, at: seek };
+    attachYouTubeFollow(work, controller);
+    hudSetTitle(`Now playing — ${work.title || work.slug || ('Work ' + id)}`);
+    hudSetSubtitle('YouTube stream');
+    hudSetPlaying(true);
+  } catch (_) {
+    flash(findWorkById(id)?.el, 'YouTube unavailable');
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') praeMedia.openYouTubeTab(work);
+  }
 }
 
 function playAt(id, t = 0) {
   const meta = findWorkById(id);
   if (!meta) return;
   const work = meta.data;
+  const media = resolveWorkMedia(work);
   if (selectedId !== work.id) {
     selectWork(work.id);
+  }
+  if (media.kind === 'youtube') {
+    playYouTubeAt(work, id, t || media.startAtSec || 0);
+    return;
   }
   const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
   if (!audio) return;
@@ -469,7 +587,7 @@ function openPdfFor(id) {
   let initPage = 1;
   try {
     if (state.pageFollow.slug && state.pageFollow.slug === state.pdf.currentSlug) {
-      initPage = computePdfPage(state.pdf.currentSlug, state.pageFollow.audio?.currentTime || 0);
+      initPage = computePdfPage(state.pdf.currentSlug, getPageFollowSeconds());
     } else if (pfMap[state.pdf.currentSlug]) {
       initPage = computePdfPage(state.pdf.currentSlug, 0);
     }
@@ -487,8 +605,31 @@ function openPdfFor(id) {
   });
 }
 
+function showYouTubePane(work, media) {
+  const shell = state.pdf.shell;
+  const pane = state.pdf.pane;
+  const frame = state.pdf.frame;
+  if (!shell || !pane || !frame) {
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+      praeMedia.openYouTubeTab(work);
+    }
+    return;
+  }
+  state.pdf.currentSlug = work.slug || null;
+  if (state.pdf.title) state.pdf.title.textContent = String(work.title || 'YouTube');
+  shell.classList.add('has-pdf');
+  pane.setAttribute('aria-hidden', 'false');
+  state.pdf.backdrop?.removeAttribute('hidden');
+  document.documentElement.classList.add('ct-scroll-lock');
+  state.pdf.viewerReady = false;
+  frame.src = media?.youtubeEmbedUrl || media?.youtubeUrl || 'about:blank';
+}
+
 function hidePdfPane() {
   const { shell, pane, frame } = state.pdf;
+  if (state.youtube.controller && typeof state.youtube.controller.pause === 'function') {
+    try { state.youtube.controller.pause(); } catch (_) {}
+  }
   shell?.classList.remove('has-pdf');
   pane?.setAttribute('aria-hidden', 'true');
   state.pdf.backdrop?.setAttribute('hidden', '');
@@ -496,6 +637,8 @@ function hidePdfPane() {
   if (frame) frame.src = 'about:blank';
   state.pdf.currentSlug = null;
   state.pdf.viewerReady = false;
+  state.youtube.controller = null;
+  state.youtube.workId = null;
   const restore = state.pdf.restoreFocus;
   state.pdf.restoreFocus = null;
   if (restore && typeof restore.focus === 'function') {
@@ -504,19 +647,33 @@ function hidePdfPane() {
 }
 
 function getActiveAudioInfo() {
+  if (state.youtube.controller && state.youtube.workId != null && typeof state.youtube.controller.isPlaying === 'function') {
+    try {
+      if (state.youtube.controller.isPlaying()) {
+        return { id: state.youtube.workId, audio: null, source: 'youtube' };
+      }
+    } catch (_) {}
+  }
   for (const work of works) {
     const audio = document.getElementById('wc-a' + work.id);
     if (audio && !audio.paused && !audio.ended) {
-      return { id: work.id, audio };
+      return { id: work.id, audio, source: 'audio' };
     }
   }
-  return { id: null, audio: null };
+  return { id: null, audio: null, source: null };
 }
 
 function syncHudWithActivePlayback() {
   const now = getActiveAudioInfo();
   if (now.audio && now.id != null) {
     hudUpdate(now.id, now.audio);
+    return;
+  }
+  if (now.source === 'youtube' && now.id != null) {
+    const work = findWorkById(now.id)?.data;
+    hudSetTitle(`Now playing — ${work ? work.title : 'YouTube'}`);
+    hudSetSubtitle('YouTube stream');
+    hudSetPlaying(true);
     return;
   }
   hudSetIdle();
@@ -571,6 +728,27 @@ function bindPlaybackListeners(id) {
 function updatePlaybackContext(id) {
   const ctx = state.playbackContext.get(id);
   if (!ctx) return;
+  const work = findWorkById(id)?.data || null;
+  const media = resolveWorkMedia(work);
+  if (media.kind === 'youtube') {
+    const isPlaying = !!(state.youtube.controller
+      && state.youtube.workId === id
+      && typeof state.youtube.controller.isPlaying === 'function'
+      && state.youtube.controller.isPlaying());
+    if (ctx.status) {
+      const current = formatTime(Math.floor(getPageFollowSeconds() || 0));
+      ctx.status.textContent = `${isPlaying ? 'Playing' : 'Paused'} · ${current} / YouTube`;
+    }
+    if (ctx.playBtn) {
+      const label = isPlaying ? 'Pause' : 'Play';
+      const titleSuffix = work?.title ? ` ${work.title}` : '';
+      ctx.playBtn.dataset.icon = isPlaying ? 'pause' : 'play';
+      ctx.playBtn.setAttribute('aria-label', `${label}${titleSuffix}`.trim());
+      if (ctx.sr) ctx.sr.textContent = `${label}${titleSuffix}`.trim();
+      if (ctx.text) ctx.text.textContent = isPlaying ? 'Pause' : 'Play YouTube';
+    }
+    return;
+  }
   const audio = document.getElementById('wc-a' + id);
   if (!audio) return;
   const isPlaying = !audio.paused && !audio.ended;
@@ -580,7 +758,6 @@ function updatePlaybackContext(id) {
     ctx.status.textContent = `${isPlaying ? 'Playing' : 'Paused'} · ${current} / ${total}`;
   }
   if (ctx.playBtn) {
-    const work = findWorkById(id)?.data;
     const label = isPlaying ? 'Pause' : 'Play';
     const titleSuffix = work?.title ? ` ${work.title}` : '';
     ctx.playBtn.dataset.icon = isPlaying ? 'pause' : 'play';
@@ -765,7 +942,7 @@ function renderPanels() {
       const detailsList = document.createElement('dl');
       detailsList.className = 'ct-details-list';
       const rows = [
-        ['Playback', work.audio ? 'Available' : 'Unavailable'],
+        ['Playback', hasPlayableMedia(work) ? 'Available' : 'Unavailable'],
         ['Score PDF', work.pdf ? 'Available' : 'Unavailable'],
         ['Cue Points', String(Array.isArray(work.cues) ? work.cues.length : 0)]
       ];
@@ -820,12 +997,15 @@ function renderPanels() {
   if (playbackPanel) {
     if (!work) {
       playbackPanel.innerHTML = `<div class="ct-empty">Select a work to control playback.</div>`;
-    } else if (!work.audio) {
+    } else if (!hasPlayableMedia(work)) {
       playbackPanel.innerHTML = `<div class="ct-empty">No playback available.</div>`;
     } else {
-      const audio = document.getElementById('wc-a' + work.id) || ensureAudioFor(work);
-      bindAudio(work.id);
-      bindPlaybackListeners(work.id);
+      const media = resolveWorkMedia(work);
+      const audio = media.kind === 'youtube' ? null : (document.getElementById('wc-a' + work.id) || ensureAudioFor(work));
+      if (audio) {
+        bindAudio(work.id);
+        bindPlaybackListeners(work.id);
+      }
       playbackPanel.innerHTML = '';
       const header = document.createElement('header');
       const heading = document.createElement('h2');
@@ -852,6 +1032,17 @@ function renderPanels() {
         <span class="ct-btn-text" aria-hidden="true">Play</span>
       `;
       playBtn.addEventListener('click', () => {
+        if (media.kind === 'youtube') {
+          const now = getActiveAudioInfo();
+          if (now.source === 'youtube' && now.id === work.id && state.youtube.controller && typeof state.youtube.controller.pause === 'function') {
+            hudState.last = { id: work.id, at: getPageFollowSeconds() || 0 };
+            state.youtube.controller.pause();
+          } else {
+            playAt(work.id, getPageFollowSeconds() || 0);
+          }
+          updatePlaybackContext(work.id);
+          return;
+        }
         if (!audio) return;
         if (audio.paused || audio.ended) {
           playAt(work.id, audio.currentTime || 0);
@@ -1020,7 +1211,7 @@ function renderSummary() {
   container.innerHTML = '';
   const cards = [
     { key: 'total', title: 'Total Works', value: String(works.length) },
-    { key: 'audio', title: 'Playable', value: String(works.filter((w) => !!w.audio).length) },
+    { key: 'audio', title: 'Playable', value: String(works.filter((w) => hasPlayableMedia(w)).length) },
     { key: 'pdf', title: 'With Scores', value: String(works.filter((w) => !!w.pdf).length) }
   ];
   let durationSum = 0;
@@ -1111,7 +1302,7 @@ function renderWorksList() {
     setActionButton(playBtn, 'play', 'Play');
     playBtn.dataset.act = 'play';
     playBtn.dataset.id = String(work.id);
-    if (!work.audio) playBtn.disabled = true;
+    if (!hasPlayableMedia(work)) playBtn.disabled = true;
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'work-action';
@@ -1145,7 +1336,7 @@ function renderWorksList() {
     });
     container.appendChild(card);
     state.worksById.set(Number(work.id), { data: work, el: card });
-    if (work.audio) ensureAudioFor(work);
+    if (resolveWorkMedia(work).audioUrl) ensureAudioFor(work);
   });
   selectWork(selectedId, { skipHash: true });
 }
@@ -1241,7 +1432,7 @@ function renderActionRail() {
       ${railCoverMarkup}
     </div>
     <div class="ct-rail-actions">
-      <button type="button" class="ct-rail-btn" data-act="play" data-id="${work.id}" ${work.audio ? '' : 'disabled'}>${icon('play')}<span>Play</span></button>
+      <button type="button" class="ct-rail-btn" data-act="play" data-id="${work.id}" ${hasPlayableMedia(work) ? '' : 'disabled'}>${icon('play')}<span>Play</span></button>
       <button type="button" class="ct-rail-btn" data-act="pdf" data-id="${work.id}" ${work.pdf ? '' : 'disabled'}>${icon('document')}<span>Score</span></button>
       <button type="button" class="ct-rail-btn" data-act="copy" data-id="${work.id}">${icon('link')}<span>Copy Link</span></button>
       <button type="button" class="ct-rail-btn" data-act="open-window" data-id="${work.id}">${icon('arrowUpRight')}<span>New Tab</span></button>
@@ -1422,6 +1613,12 @@ function bindHudToggle() {
     const btn = event.target.closest('button[data-hud="toggle"]');
     if (!btn) return;
     const now = getActiveAudioInfo();
+    if (now.source === 'youtube' && state.youtube.controller && typeof state.youtube.controller.pause === 'function') {
+      hudState.last = { id: now.id, at: getPageFollowSeconds() || 0 };
+      state.youtube.controller.pause();
+      syncHudWithActivePlayback();
+      return;
+    }
     if (now.audio && !now.audio.paused) {
       hudState.last = { id: now.id, at: now.audio.currentTime || 0 };
       now.audio.pause();

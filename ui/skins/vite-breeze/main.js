@@ -164,6 +164,7 @@ ensureHudRoot();
   const works = Array.isArray(PRAE_DATA.works)
     ? PRAE_DATA.works
     : (Array.isArray(PRAE.works) ? PRAE.works : []);
+  const praeMedia = PRAE && PRAE.media ? PRAE.media : null;
   const site  = (PRAE.config && PRAE.config.site) || {};
   const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
   const prefersReducedMotion = typeof window.matchMedia === 'function'
@@ -172,7 +173,9 @@ ensureHudRoot();
   let currentPdfSlug = null;
   let pdfViewerReady = false;
   let pendingPdfGoto = null;
-  let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
+  let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null, token:null, sourceKind:'audio' };
+  let youtubeController = null;
+  let youtubeWorkId = null;
   if (typeof PRAE.ensureAudioTags === 'function') PRAE.ensureAudioTags();
 
   // DOM refs are bound inside mount() so they exist when used
@@ -385,6 +388,12 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   if (hudBox) hudBox.addEventListener('click', (e)=>{
     const btn = e.target.closest('button[data-hud="toggle"]'); if (!btn) return;
     const now = getActiveAudioInfo();
+    if (now.source === 'youtube' && youtubeController && typeof youtubeController.pause === 'function') {
+      hudState.last = { id: now.id, at: getPageFollowSeconds() || 0 };
+      youtubeController.pause();
+      hudSetPlaying(false);
+      return;
+    }
     if (now.audio && !now.audio.paused){
       hudState.last = { id: now.id, at: now.audio.currentTime||0 };
       now.audio.pause();
@@ -465,6 +474,19 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
   }
 
   // ---------------- Helpers ----------------
+  function resolveWorkMedia(work){
+    if (praeMedia && typeof praeMedia.resolveWorkMedia === 'function') {
+      try { return praeMedia.resolveWorkMedia(work || {}); } catch (_) {}
+    }
+    return {
+      kind: 'score',
+      audioUrl: work?.audioUrl || work?.audio || '',
+      pdfUrl: work?.pdfUrl || work?.pdf || '',
+      pageFollow: work?.pageFollow || work?.score || null,
+      startAtSec: 0
+    };
+  }
+
   function ensureAudioFor(w){
     let a = document.getElementById('wc-a'+w.id);
     if (!a) {
@@ -478,9 +500,57 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     return a;
   }
 
+  async function playYouTubeAt(work, id, t, media){
+    if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
+      flash(null, 'YouTube runtime unavailable');
+      if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+        praeMedia.openYouTubeTab(work);
+      }
+      return;
+    }
+    if (window.PRAE && typeof window.PRAE.pauseAllAudio === 'function') {
+      window.PRAE.pauseAllAudio(id);
+    }
+    showYouTubePane(work, media);
+    try {
+      const controller = await praeMedia.mountYouTubePlayer(pdfFrame, work, {
+        onError: function(){
+          if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+            praeMedia.openYouTubeTab(work);
+          }
+        }
+      });
+      youtubeController = controller;
+      youtubeWorkId = id;
+      const seek = Number.isFinite(Number(t)) ? Number(t) : Number(media.startAtSec || 0);
+      if (typeof controller.seekTo === 'function') controller.seekTo(Math.max(0, seek));
+      if (typeof controller.play === 'function') controller.play();
+      hudState.last = { id: id, at: Math.max(0, seek) };
+      if (praeMedia && typeof praeMedia.attachPageFollow === 'function') {
+        detachPageFollow();
+        pageFollow.token = praeMedia.attachPageFollow(work, { kind: 'youtube', controller });
+        pageFollow.slug = work.slug || null;
+        pageFollow.sourceKind = 'youtube';
+      }
+      hudSetTitle('Now playing — ' + String(work.title || work.slug || ('Work ' + id)));
+      hudSetSubtitle('YouTube stream');
+      hudSetPlaying(true);
+    } catch (_) {
+      flash(null, 'YouTube blocked; opening tab');
+      if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+        praeMedia.openYouTubeTab(work);
+      }
+    }
+  }
+
   function playAt(id, t){
     const meta = findWorkById(id);
     if (!meta) return;
+    const media = resolveWorkMedia(meta.data);
+    if (media.kind === 'youtube') {
+      playYouTubeAt(meta.data, id, t, media);
+      return;
+    }
     const a = document.getElementById('wc-a'+id) || ensureAudioFor(meta.data);
     // lazy source
     if (!a.src) {
@@ -535,7 +605,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     try {
       // If we’re already following THIS work’s audio, start at the current page
       if (pageFollow.slug && pageFollow.slug === currentPdfSlug) {
-        initPage = computePdfPage(pageFollow.slug, pageFollow.audio?.currentTime || 0);
+        initPage = computePdfPage(pageFollow.slug, getPageFollowSeconds());
       } else if (pfMap[currentPdfSlug]) {
         initPage = computePdfPage(currentPdfSlug, 0);
       }
@@ -554,12 +624,40 @@ pdfViewerReady = false;
       pdfFrame.src = `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`;
     });
   }
+
+  function showYouTubePane(work, media){
+    if (!shell || !pdfPane || !pdfFrame) {
+      if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+        praeMedia.openYouTubeTab(work);
+      }
+      return;
+    }
+    currentPdfSlug = work.slug || null;
+    if (pdfTitle) pdfTitle.textContent = String(work.title || 'YouTube');
+    shell.classList.add('has-pdf');
+    pdfPane.removeAttribute('aria-hidden');
+    pdfViewerReady = false;
+    const src = media?.youtubeEmbedUrl || media?.youtubeUrl || 'about:blank';
+    pdfFrame.src = src;
+  }
+
+  function getPageFollowSeconds(){
+    if (pageFollow.sourceKind === 'youtube' && youtubeController && typeof youtubeController.getCurrentTime === 'function') {
+      try { return Number(youtubeController.getCurrentTime() || 0); } catch (_) { return 0; }
+    }
+    return Number(pageFollow.audio?.currentTime || 0);
+  }
   function hidePdfPane(){
+    if (youtubeController && typeof youtubeController.pause === 'function') {
+      try { youtubeController.pause(); } catch (_) {}
+    }
     shell?.classList.remove('has-pdf');
     pdfPane?.setAttribute('aria-hidden','true');
     pdfFrame.src = 'about:blank';
     currentPdfSlug = null;
     pdfViewerReady = false;
+    youtubeController = null;
+    youtubeWorkId = null;
   }
 
   function markPlaying(id, on){
@@ -603,6 +701,9 @@ pdfViewerReady = false;
     return u;
   }
   function normalizePdfUrl(u){
+    if (praeMedia && typeof praeMedia.normalizePdfUrl === 'function') {
+      try { return praeMedia.normalizePdfUrl(u); } catch (_) {}
+    }
     if(!u) return '';
     const m = u.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
     if(m) return `https://drive.google.com/file/d/${m[1]}/view?usp=drivesdk`;
@@ -610,6 +711,12 @@ pdfViewerReady = false;
   }
   
   function choosePdfViewer(url){
+  if (praeMedia && typeof praeMedia.choosePdfViewer === 'function') {
+    try {
+      const chosen = praeMedia.choosePdfViewer(url);
+      if (chosen) return chosen;
+    } catch (_) {}
+  }
   const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   const file = m ? `https://drive.google.com/uc?export=download&id=${m[1]}` : url;
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
@@ -620,10 +727,16 @@ pdfViewerReady = false;
   // Minimal printed→PDF page support (if pageFollowMaps exists)
   function computePdfPage(slug, tSec){
     const cfg = pfMap[slug]; if (!cfg) return 1;
+    if (praeMedia && typeof praeMedia.computePdfPage === 'function') {
+      try { return praeMedia.computePdfPage(cfg, tSec || 0); } catch (_) {}
+    }
     const printed = printedPageForTime(cfg, tSec||0);
     return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
   }
   function printedPageForTime(cfg, tSec){
+    if (praeMedia && typeof praeMedia.printedPageForTime === 'function') {
+      try { return praeMedia.printedPageForTime(cfg, tSec || 0); } catch (_) {}
+    }
     const T = (tSec || 0) + (cfg.mediaOffsetSec || 0);
     let current = cfg.pageMap?.[0]?.page ?? 1;
     for(const row of (cfg.pageMap || [])){
@@ -670,15 +783,33 @@ pdfViewerReady = false;
     gotoPdfPage(pdfPage);
   });
   function detachPageFollow(){
+    if (pageFollow.token && typeof pageFollow.token.detach === 'function') {
+      try { pageFollow.token.detach(); } catch (_) {}
+    }
     if (pageFollow.audio && pageFollow._on){
       pageFollow.audio.removeEventListener('timeupdate', pageFollow._on);
       pageFollow.audio.removeEventListener('seeking', pageFollow._on);
     }
-    pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
+    pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null, token:null, sourceKind:'audio' };
   }
   function attachPageFollow(slug, audio){
     detachPageFollow();
     if (!slug || !audio) return;
+    const work = works.find((w) => w && w.slug === slug) || null;
+    if (praeMedia && typeof praeMedia.attachPageFollow === 'function' && work) {
+      pageFollow = {
+        audio,
+        slug,
+        lastPrinted:null,
+        _on:null,
+        token: praeMedia.attachPageFollow(work, { kind: 'audio', audio }),
+        sourceKind:'audio'
+      };
+      if (pageFollow.token && typeof pageFollow.token.tick === 'function') {
+        try { pageFollow.token.tick(); } catch (_) {}
+      }
+      return;
+    }
     const cfg = pfMap[slug];
     if (!cfg) return;
     const onTick = ()=>{
@@ -691,18 +822,23 @@ pdfViewerReady = false;
         }));
       }
     };
-    pageFollow = { audio, slug, lastPrinted:null, _on:onTick };
+    pageFollow = { audio, slug, lastPrinted:null, _on:onTick, token:null, sourceKind:'audio' };
     audio.addEventListener('timeupdate', onTick, { passive:true });
     audio.addEventListener('seeking', onTick, { passive:true });
     onTick();
   }
     // ---- HUD helpers ----
   function getActiveAudioInfo(){
+    if (youtubeController && youtubeWorkId != null && typeof youtubeController.isPlaying === 'function') {
+      try {
+        if (youtubeController.isPlaying()) return { id: youtubeWorkId, audio: null, source:'youtube' };
+      } catch (_) {}
+    }
     for (const w of works){
       const a = document.getElementById('wc-a'+w.id);
-      if (a && !a.paused && !a.ended) return { id:w.id, audio:a };
+      if (a && !a.paused && !a.ended) return { id:w.id, audio:a, source:'audio' };
     }
-    return { id:null, audio:null };
+    return { id:null, audio:null, source:null };
   }
 
   function hudUpdate(id, a){

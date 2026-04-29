@@ -72,6 +72,26 @@
           },
           "audioUrl": { "type": ["string", "null"] },
           "pdfUrl": { "type": ["string", "null"] },
+          "media": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["score", "youtube"] },
+              "youtubeUrl": { "type": "string", "minLength": 1 },
+              "startAtSec": { "type": "number", "minimum": 0 }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "kind": { "const": "youtube" } }
+                },
+                "then": {
+                  "required": ["youtubeUrl"]
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
           "cover": { "type": ["string", "null"] },
           "coverUrl": { "type": ["string", "null"] },
           "tags": {

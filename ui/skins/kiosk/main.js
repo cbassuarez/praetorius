@@ -134,6 +134,7 @@ const PRAE_DATA = window.__PRAE_DATA__ || {};
 const works = Array.isArray(PRAE_DATA.works)
   ? PRAE_DATA.works
   : (Array.isArray(PRAE.works) ? PRAE.works : []);
+const praeMedia = PRAE && PRAE.media ? PRAE.media : null;
 const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
 
 const HASH_KEY = 'work';
@@ -159,7 +160,8 @@ const state = {
     currentSlug: null,
     restoreFocus: null
   },
-  pageFollow: { audio: null, slug: null, lastPrinted: null, on: null },
+  pageFollow: { audio: null, slug: null, lastPrinted: null, on: null, token: null, sourceKind: 'audio' },
+  youtube: { controller: null, workId: null, workSlug: null },
   detail: { container: null, progress: null, play: null, pdf: null },
   live: null,
   attract: { timer: null, loop: null, index: 0, active: false },
@@ -365,7 +367,23 @@ function normalizeSrc(url) {
   return url;
 }
 
+function resolveWorkMedia(work) {
+  if (praeMedia && typeof praeMedia.resolveWorkMedia === 'function') {
+    try { return praeMedia.resolveWorkMedia(work || {}); } catch (_) {}
+  }
+  return {
+    kind: 'score',
+    audioUrl: work?.audioUrl || work?.audio || '',
+    pdfUrl: work?.pdfUrl || work?.pdf || '',
+    pageFollow: work?.pageFollow || work?.score || null,
+    startAtSec: 0
+  };
+}
+
 function normalizePdfUrl(url) {
+  if (praeMedia && typeof praeMedia.normalizePdfUrl === 'function') {
+    try { return praeMedia.normalizePdfUrl(url); } catch (_) {}
+  }
   if (!url) return '';
   const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   if (match) return `https://drive.google.com/file/d/${match[1]}/view?usp=drivesdk`;
@@ -373,6 +391,12 @@ function normalizePdfUrl(url) {
 }
 
 function choosePdfViewer(url) {
+  if (praeMedia && typeof praeMedia.choosePdfViewer === 'function') {
+    try {
+      const chosen = praeMedia.choosePdfViewer(url);
+      if (chosen) return chosen;
+    } catch (_) {}
+  }
   const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : url;
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
@@ -386,7 +410,8 @@ function ensureAudioFor(work) {
     el.id = 'wc-a' + work.id;
     el.preload = 'none';
     el.playsInline = true;
-    if (work.audio) el.setAttribute('data-audio', work.audio);
+    const src = resolveWorkMedia(work).audioUrl || '';
+    if (src) el.setAttribute('data-audio', src);
     document.body.appendChild(el);
   }
   return el;
@@ -488,6 +513,19 @@ function hudUpdate(id, audio) {
   updateDetailPlayback(id, audio);
 }
 
+function hudUpdateYouTube(id, controller) {
+  const work = findWorkById(id)?.data;
+  const name = work ? work.title : '—';
+  const current = (controller && typeof controller.getCurrentTime === 'function')
+    ? formatTime(controller.getCurrentTime() || 0)
+    : '0:00';
+  hudSetTitle(`Now playing — ${name}`);
+  hudSetSubtitle(`${current} / YouTube`);
+  hudSetProgress(0);
+  hudSetPlaying(true);
+  updateDetailPlayback(id, null, 'youtube');
+}
+
 function bindAudio(id, audio) {
   if (!audio || audio.dataset.kioskBound === '1') return;
   const update = () => hudUpdate(id, audio);
@@ -525,6 +563,9 @@ function markTileState(id, opts = {}) {
 }
 
 function pauseOthers(exceptId) {
+  if (state.youtube.controller && state.youtube.workId != null && Number(state.youtube.workId) !== Number(exceptId)) {
+    try { state.youtube.controller.pause(); } catch (_) {}
+  }
   works.forEach((w) => {
     if (Number(w.id) === Number(exceptId)) return;
     const audio = document.getElementById('wc-a' + w.id);
@@ -534,11 +575,75 @@ function pauseOthers(exceptId) {
   });
 }
 
+async function playYouTubeAt(work, id, t = 0, media = resolveWorkMedia(work)) {
+  const seek = Number.isFinite(Number(t)) ? Number(t) : Number(media.startAtSec || 0);
+  stopAttractPreview();
+  if (state.selectedId !== work.id) {
+    showDetail(work.id);
+  }
+  if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+      praeMedia.openYouTubeTab(work);
+      announce('YouTube opened in new tab');
+    }
+    return;
+  }
+  try {
+    if (window.PRAE && typeof window.PRAE.pauseAllAudio === 'function') {
+      window.PRAE.pauseAllAudio(work.id);
+    }
+  } catch (_) {}
+  pauseOthers(work.id);
+  const { pane, frame, title, backdrop } = state.pdf;
+  if (!pane || !frame) {
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+      praeMedia.openYouTubeTab(work);
+      announce('YouTube opened in new tab');
+    }
+    return;
+  }
+  state.pdf.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  state.pdf.currentSlug = work.slug || null;
+  pane.removeAttribute('hidden');
+  pane.setAttribute('aria-hidden', 'false');
+  backdrop?.removeAttribute('hidden');
+  pane.classList.add('is-open');
+  pane.focus?.({ preventScroll: true });
+  if (title) title.textContent = String(work.title || 'YouTube');
+  state.pdf.viewerReady = false;
+  frame.src = media.youtubeEmbedUrl || media.youtubeUrl || 'about:blank';
+  try {
+    const controller = await praeMedia.mountYouTubePlayer(frame, work, {
+      onError: () => {
+        announce('YouTube embed blocked');
+      }
+    });
+    state.youtube.controller = controller;
+    state.youtube.workId = work.id;
+    state.youtube.workSlug = work.slug || null;
+    if (typeof controller.seekTo === 'function') controller.seekTo(Math.max(0, seek));
+    if (typeof controller.play === 'function') controller.play();
+    state.hudState.last = { id: work.id, at: Math.max(0, seek) };
+    attachYouTubePageFollow(work, controller);
+    hudUpdateYouTube(work.id, controller);
+  } catch (_) {
+    if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+      praeMedia.openYouTubeTab(work);
+      announce('YouTube opened in new tab');
+    }
+  }
+}
+
 function playAt(id, t = 0) {
   const meta = findWorkById(id);
   if (!meta) return;
   stopAttractPreview();
   const work = meta.data;
+  const media = resolveWorkMedia(work);
+  if (media.kind === 'youtube') {
+    playYouTubeAt(work, id, t || media.startAtSec || 0, media);
+    return;
+  }
   if (state.selectedId !== work.id) {
     showDetail(work.id);
   }
@@ -551,7 +656,7 @@ function playAt(id, t = 0) {
   } catch (_) {}
   pauseOthers(work.id);
   hudSetTitle(`Now playing — ${work.title || work.slug || 'Work'}`);
-  const raw = audio.getAttribute('data-audio') || work.audio || '';
+  const raw = audio.getAttribute('data-audio') || media.audioUrl || work.audio || '';
   const src = normalizeSrc(raw);
   if (src && audio.src !== src) {
     audio.src = src;
@@ -577,7 +682,22 @@ function playAt(id, t = 0) {
 }
 
 function togglePlay(id) {
-  const audio = document.getElementById('wc-a' + id) || ensureAudioFor(findWorkById(id)?.data);
+  const work = findWorkById(id)?.data;
+  if (!work) return;
+  const media = resolveWorkMedia(work);
+  if (media.kind === 'youtube') {
+    const controller = state.youtube.controller;
+    if (controller && state.youtube.workId === work.id && typeof controller.isPlaying === 'function' && controller.isPlaying()) {
+      state.hudState.last = { id: work.id, at: getPageFollowSeconds() || 0 };
+      try { controller.pause(); } catch (_) {}
+      hudSetPlaying(false);
+      updateDetailPlayback(work.id, null, 'youtube');
+      return;
+    }
+    playYouTubeAt(work, work.id, getPageFollowSeconds() || media.startAtSec || 0, media);
+    return;
+  }
+  const audio = document.getElementById('wc-a' + id) || ensureAudioFor(work);
   if (!audio) return;
   if (audio.paused || audio.ended) {
     const at = audio.ended ? 0 : audio.currentTime || state.hudState.last.at || 0;
@@ -628,6 +748,7 @@ function showDetail(id) {
   const record = findWorkById(id);
   if (!record) return;
   const work = record.data;
+  const media = resolveWorkMedia(work);
   resetAttract();
   state.selectedId = work.id;
   updateHash(work.id);
@@ -644,8 +765,10 @@ function showDetail(id) {
         })
         .join('')}</div>`
     : '';
-  const pdfDisabled = !work.pdf;
-  const pdfLabel = work.pdf ? 'Open Score' : 'Score unavailable';
+  const pdfUrl = normalizePdfUrl(media.pdfUrl || work.pdf || '');
+  const pdfDisabled = !pdfUrl;
+  const pdfLabel = pdfUrl ? 'Open Score' : 'Score unavailable';
+  const playLabel = media.kind === 'youtube' ? 'Play YouTube' : 'Play';
   const tagsHtml = tags.length
     ? `<div class="kiosk-tags">${tags.map((tag) => `<span class="kiosk-tag">${esc(tag)}</span>`).join('')}</div>`
     : '';
@@ -662,7 +785,7 @@ function showDetail(id) {
     ${cueHtml}
     <div class="kiosk-detail-progress" data-role="progress">Now playing 0:00 / 0:00</div>
     <div class="kiosk-detail-actions">
-      <button type="button" class="kiosk-btn" data-act="toggle-play" data-id="${work.id}">${buttonMarkup('play', 'Play')}</button>
+      <button type="button" class="kiosk-btn" data-act="toggle-play" data-id="${work.id}">${buttonMarkup('play', playLabel)}</button>
       <button type="button" class="kiosk-btn" data-act="pdf" data-id="${work.id}" ${pdfDisabled ? 'disabled aria-disabled="true"' : ''}>${buttonMarkup('document', pdfLabel)}</button>
       <button type="button" class="kiosk-btn" data-act="copy" data-id="${work.id}">${buttonMarkup('link', 'Copy URL')}</button>
       <button type="button" class="kiosk-btn" data-act="open-window" data-id="${work.id}">${buttonMarkup('arrowUpRight', 'Open in New Tab')}</button>
@@ -700,26 +823,34 @@ function hideDetail() {
   }
 }
 
-function updateDetailPlayback(id, audio) {
+function updateDetailPlayback(id, audio, source = 'audio') {
   if (!state.detail.container || state.detail.container.hasAttribute('hidden')) return;
   if (state.selectedId && Number(state.selectedId) !== Number(id)) return;
   const work = findWorkById(id)?.data;
   if (!work) return;
+  const media = resolveWorkMedia(work);
   const btn = state.detail.play;
   const progress = state.detail.progress;
   if (btn) {
-    const playing = audio ? (!audio.paused && !audio.ended) : false;
-    btn.innerHTML = buttonMarkup(playing ? 'pause' : 'play', playing ? 'Pause' : 'Play');
+    const youtubePlaying = media.kind === 'youtube' && source === 'youtube' && state.youtube.controller && state.youtube.workId === work.id;
+    const playing = youtubePlaying || (audio ? (!audio.paused && !audio.ended) : false);
+    const idleLabel = media.kind === 'youtube' ? 'Play YouTube' : 'Play';
+    btn.innerHTML = buttonMarkup(playing ? 'pause' : 'play', playing ? 'Pause' : idleLabel);
     btn.setAttribute('aria-pressed', playing ? 'true' : 'false');
   }
   if (progress) {
-    const now = audio && Number.isFinite(audio.currentTime) ? formatTime(audio.currentTime) : '0:00';
-    const total = audio && Number.isFinite(audio.duration) ? formatTime(audio.duration) : '--:--';
+    const now = source === 'youtube'
+      ? formatTime(getPageFollowSeconds())
+      : (audio && Number.isFinite(audio.currentTime) ? formatTime(audio.currentTime) : '0:00');
+    const total = source === 'youtube'
+      ? 'YouTube'
+      : (audio && Number.isFinite(audio.duration) ? formatTime(audio.duration) : '--:--');
     progress.textContent = `Now playing ${now} / ${total}`;
   }
   if (state.detail.pdf) {
-    state.detail.pdf.disabled = !work.pdf;
-    if (work.pdf) {
+    const pdfUrl = normalizePdfUrl(media.pdfUrl || work.pdf || '');
+    state.detail.pdf.disabled = !pdfUrl;
+    if (pdfUrl) {
       state.detail.pdf.removeAttribute('aria-disabled');
     } else {
       state.detail.pdf.setAttribute('aria-disabled', 'true');
@@ -758,11 +889,14 @@ function hydrateFromHash() {
 }
 
 function detachPageFollow() {
+  if (state.pageFollow.token && typeof state.pageFollow.token.detach === 'function') {
+    try { state.pageFollow.token.detach(); } catch (_) {}
+  }
   if (state.pageFollow.audio && state.pageFollow.on) {
     state.pageFollow.audio.removeEventListener('timeupdate', state.pageFollow.on);
     state.pageFollow.audio.removeEventListener('seeking', state.pageFollow.on);
   }
-  state.pageFollow = { audio: null, slug: null, lastPrinted: null, on: null };
+  state.pageFollow = { audio: null, slug: null, lastPrinted: null, on: null, token: null, sourceKind: 'audio' };
 }
 
 function cueTime(value) {
@@ -775,6 +909,9 @@ function cueTime(value) {
 }
 
 function printedPageForTime(cfg, tSec) {
+  if (praeMedia && typeof praeMedia.printedPageForTime === 'function') {
+    try { return praeMedia.printedPageForTime(cfg, tSec || 0); } catch (_) {}
+  }
   const time = (tSec || 0) + (cfg.mediaOffsetSec || 0);
   let current = cfg.pageMap?.[0]?.page ?? 1;
   for (const row of cfg.pageMap || []) {
@@ -787,6 +924,9 @@ function printedPageForTime(cfg, tSec) {
 function computePdfPage(slug, tSec) {
   const cfg = pfMap[slug];
   if (!cfg) return 1;
+  if (praeMedia && typeof praeMedia.computePdfPage === 'function') {
+    try { return praeMedia.computePdfPage(cfg, tSec || 0); } catch (_) {}
+  }
   const printed = printedPageForTime(cfg, tSec || 0);
   return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
 }
@@ -794,6 +934,21 @@ function computePdfPage(slug, tSec) {
 function attachPageFollow(slug, audio) {
   detachPageFollow();
   if (!slug || !audio) return;
+  const work = works.find((w) => w && w.slug === slug) || null;
+  if (praeMedia && typeof praeMedia.attachPageFollow === 'function' && work) {
+    state.pageFollow = {
+      audio,
+      slug,
+      lastPrinted: null,
+      on: null,
+      token: praeMedia.attachPageFollow(work, { kind: 'audio', audio }),
+      sourceKind: 'audio'
+    };
+    if (state.pageFollow.token && typeof state.pageFollow.token.tick === 'function') {
+      try { state.pageFollow.token.tick(); } catch (_) {}
+    }
+    return;
+  }
   const cfg = pfMap[slug];
   if (!cfg) return;
   const onTick = () => {
@@ -806,10 +961,33 @@ function attachPageFollow(slug, audio) {
       }));
     }
   };
-  state.pageFollow = { audio, slug, lastPrinted: null, on: onTick };
+  state.pageFollow = { audio, slug, lastPrinted: null, on: onTick, token: null, sourceKind: 'audio' };
   audio.addEventListener('timeupdate', onTick, { passive: true });
   audio.addEventListener('seeking', onTick, { passive: true });
   onTick();
+}
+
+function attachYouTubePageFollow(work, controller) {
+  detachPageFollow();
+  if (!work || !controller || !praeMedia || typeof praeMedia.attachPageFollow !== 'function') return;
+  state.pageFollow = {
+    audio: null,
+    slug: work.slug || null,
+    lastPrinted: null,
+    on: null,
+    token: praeMedia.attachPageFollow(work, { kind: 'youtube', controller }),
+    sourceKind: 'youtube'
+  };
+  if (state.pageFollow.token && typeof state.pageFollow.token.tick === 'function') {
+    try { state.pageFollow.token.tick(); } catch (_) {}
+  }
+}
+
+function getPageFollowSeconds() {
+  if (state.pageFollow.sourceKind === 'youtube' && state.youtube.controller && typeof state.youtube.controller.getCurrentTime === 'function') {
+    try { return Number(state.youtube.controller.getCurrentTime() || 0); } catch (_) { return 0; }
+  }
+  return Number(state.pageFollow.audio?.currentTime || 0);
 }
 
 function gotoPdfPage(pageNum) {
@@ -837,8 +1015,9 @@ function openPdfFor(id) {
   const meta = findWorkById(id);
   if (!meta) return;
   const work = meta.data;
-  if (!work.pdf) return;
-  const raw = normalizePdfUrl(work.pdf);
+  const media = resolveWorkMedia(work);
+  const raw = normalizePdfUrl(media.pdfUrl || work.pdf || '');
+  if (!raw) return;
   const viewerUrl = choosePdfViewer(raw);
   const { pane, frame, title, backdrop } = state.pdf;
   if (!pane || !frame) {
@@ -847,6 +1026,14 @@ function openPdfFor(id) {
   }
   state.pdf.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.pdf.currentSlug = work.slug || null;
+  let initPage = 1;
+  try {
+    if (state.pageFollow.slug && state.pageFollow.slug === state.pdf.currentSlug) {
+      initPage = computePdfPage(state.pdf.currentSlug, getPageFollowSeconds());
+    } else if (pfMap[state.pdf.currentSlug]) {
+      initPage = computePdfPage(state.pdf.currentSlug, 0);
+    }
+  } catch (_) {}
   if (pane) {
     pane.removeAttribute('hidden');
     pane.setAttribute('aria-hidden', 'false');
@@ -858,13 +1045,16 @@ function openPdfFor(id) {
   frame.src = 'about:blank';
   state.pdf.viewerReady = false;
   requestAnimationFrame(() => {
-    frame.src = viewerUrl;
+    frame.src = `${viewerUrl.split('#')[0]}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`;
     state.pdf.pendingGoto = null;
   });
 }
 
 function hidePdfPane() {
   const { pane, frame, backdrop } = state.pdf;
+  if (state.youtube.controller && typeof state.youtube.controller.pause === 'function') {
+    try { state.youtube.controller.pause(); } catch (_) {}
+  }
   pane?.setAttribute('aria-hidden', 'true');
   pane?.classList.remove('is-open');
   pane?.setAttribute('hidden', '');
@@ -873,6 +1063,9 @@ function hidePdfPane() {
   state.pdf.currentSlug = null;
   state.pdf.viewerReady = false;
   state.pdf.pendingGoto = null;
+  state.youtube.controller = null;
+  state.youtube.workId = null;
+  state.youtube.workSlug = null;
   const restore = state.pdf.restoreFocus;
   state.pdf.restoreFocus = null;
   if (restore && typeof restore.focus === 'function') {
@@ -1118,6 +1311,9 @@ function renderGrid() {
     return;
   }
   works.forEach((work, index) => {
+    const media = resolveWorkMedia(work);
+    const pdfUrl = normalizePdfUrl(media.pdfUrl || work.pdf || '');
+    const playLabel = media.kind === 'youtube' ? 'Play YouTube' : 'Play';
     const tile = document.createElement('article');
     tile.className = 'kiosk-tile';
     tile.tabIndex = 0;
@@ -1153,13 +1349,13 @@ function renderGrid() {
       ${tagsHtml}
       ${cueHtml}
       <div class="kiosk-actions">
-        <button type="button" class="kiosk-btn" data-act="play" data-id="${work.id}">${buttonMarkup('play', 'Play')}</button>
-        <button type="button" class="kiosk-btn" data-act="pdf" data-id="${work.id}" ${work.pdf ? '' : 'disabled aria-disabled="true"'}>${buttonMarkup('document', 'Open Score')}</button>
+        <button type="button" class="kiosk-btn" data-act="play" data-id="${work.id}">${buttonMarkup('play', playLabel)}</button>
+        <button type="button" class="kiosk-btn" data-act="pdf" data-id="${work.id}" ${pdfUrl ? '' : 'disabled aria-disabled="true"'}>${buttonMarkup('document', 'Open Score')}</button>
         <button type="button" class="kiosk-btn" data-act="copy" data-id="${work.id}">${buttonMarkup('link', 'Copy URL')}</button>
         <button type="button" class="kiosk-btn" data-act="detail" data-id="${work.id}">${buttonMarkup('eye', 'Open')}</button>
       </div>`;
     grid.appendChild(tile);
-    ensureAudioFor(work);
+    if (media.audioUrl) ensureAudioFor(work);
     const record = findWorkById(work.id);
     if (record) record.el = tile;
     state.tiles.push(tile);
@@ -1287,6 +1483,13 @@ function bindHudToggle() {
   const refs = ensureHudDom();
   refs?.btn?.addEventListener('click', () => {
     const now = getActiveAudioInfo();
+    if (now.source === 'youtube' && state.youtube.controller && typeof state.youtube.controller.pause === 'function') {
+      state.hudState.last = { id: now.id, at: getPageFollowSeconds() || 0 };
+      try { state.youtube.controller.pause(); } catch (_) {}
+      hudSetPlaying(false);
+      updateDetailPlayback(now.id, null, 'youtube');
+      return;
+    }
     if (now.audio && !now.audio.paused) {
       state.hudState.last = { id: now.id, at: now.audio.currentTime || 0 };
       now.audio.pause();
@@ -1299,13 +1502,20 @@ function bindHudToggle() {
 }
 
 function getActiveAudioInfo() {
+  if (state.youtube.controller && state.youtube.workId != null && typeof state.youtube.controller.isPlaying === 'function') {
+    try {
+      if (state.youtube.controller.isPlaying()) {
+        return { id: state.youtube.workId, audio: null, source: 'youtube' };
+      }
+    } catch (_) {}
+  }
   for (const work of works) {
     const audio = document.getElementById('wc-a' + work.id);
     if (audio && !audio.paused && !audio.ended) {
-      return { id: work.id, audio };
+      return { id: work.id, audio, source: 'audio' };
     }
   }
-  return { id: null, audio: null };
+  return { id: null, audio: null, source: null };
 }
 
 function attractIntervalMs() {
@@ -1325,7 +1535,8 @@ function attractDelayMs() {
 function playAttractPreview(id, muted) {
   const meta = findWorkById(id);
   const work = meta?.data;
-  if (!work || !work.audio) {
+  const media = resolveWorkMedia(work);
+  if (!work || !media.audioUrl) {
     stopAttractPreview();
     return;
   }
@@ -1335,7 +1546,7 @@ function playAttractPreview(id, muted) {
   stopAttractPreview();
   const audio = ensureAudioFor(work);
   if (!audio) return;
-  const raw = audio.getAttribute('data-audio') || work.audio || '';
+  const raw = audio.getAttribute('data-audio') || media.audioUrl || work.audio || '';
   const src = normalizeSrc(raw);
   if (src && audio.src !== src) {
     audio.src = src;

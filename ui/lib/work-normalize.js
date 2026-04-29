@@ -60,6 +60,37 @@ function normalizeTags(value) {
   return raw.split(',').map((tag) => tag.trim()).filter(Boolean);
 }
 
+function normalizeMediaKind(value) {
+  const raw = coerceString(value).trim().toLowerCase();
+  return raw === 'youtube' ? 'youtube' : 'score';
+}
+
+function normalizeMedia(input, source = {}) {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+  const kind = normalizeMediaKind(input.kind);
+  const output = { kind };
+  if (kind === 'youtube') {
+    const youtubeUrl = coerceString(
+      input.youtubeUrl
+      || input.url
+      || source.youtubeUrl
+      || source.videoUrl
+      || ''
+    ).trim();
+    if (youtubeUrl) output.youtubeUrl = youtubeUrl;
+    const startAtRaw = input.startAtSec;
+    if (startAtRaw !== undefined && startAtRaw !== null && String(startAtRaw).trim() !== '') {
+      const startAtSec = Number(startAtRaw);
+      if (Number.isFinite(startAtSec) && startAtSec >= 0) {
+        output.startAtSec = startAtSec;
+      }
+    }
+  }
+  return output;
+}
+
 function deriveOnelinerFromDescription(description) {
   if (!description) return '';
   const plain = stripMarkdown(description);
@@ -81,6 +112,7 @@ export function normalizeWork(work = {}) {
   const coverRaw = source.cover ?? source.coverUrl ?? null;
   const cover = coverRaw == null ? null : coerceString(coverRaw).trim();
   const tags = normalizeTags(source.tags);
+  const media = normalizeMedia(source.media, source);
 
   if (cover) {
     normalized.cover = cover;
@@ -91,6 +123,11 @@ export function normalizeWork(work = {}) {
   }
   if ('tags' in normalized || tags.length) {
     normalized.tags = tags;
+  }
+  if (media) {
+    normalized.media = media;
+  } else if ('media' in normalized) {
+    delete normalized.media;
   }
 
   const onelinerInput = source.oneliner ?? source.one ?? '';
@@ -232,4 +269,5 @@ export const __workModelInternals = {
   deriveOnelinerFromDescription,
   truncateWithEllipsis,
   normalizeTags,
+  normalizeMedia,
 };

@@ -380,6 +380,76 @@ function normalizePageFollowConfig(work) {
   return cfg;
 }
 
+function parseYouTubeStartToSec(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return 0;
+  if (/^\d+$/.test(value)) return Number(value);
+  const parts = value.match(/(\d+)(h|m|s)/g);
+  if (!parts) return 0;
+  let sec = 0;
+  for (const part of parts) {
+    const m = part.match(/^(\d+)(h|m|s)$/);
+    if (!m) continue;
+    const n = Number(m[1]) || 0;
+    if (m[2] === 'h') sec += n * 3600;
+    else if (m[2] === 'm') sec += n * 60;
+    else sec += n;
+  }
+  return sec;
+}
+
+function parseYouTubeUrlMeta(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (_) {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+  let videoId = '';
+  if (host === 'youtu.be') {
+    videoId = url.pathname.replace(/^\/+/, '').split('/')[0] || '';
+  } else if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+    if (url.pathname === '/watch') {
+      videoId = url.searchParams.get('v') || '';
+    } else if (url.pathname.startsWith('/embed/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    } else if (url.pathname.startsWith('/shorts/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    } else if (url.pathname.startsWith('/live/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    }
+  }
+  if (!videoId) return null;
+  const tRaw = url.searchParams.get('t') || url.searchParams.get('start') || '';
+  const startAtSec = parseYouTubeStartToSec(tRaw);
+  return { videoId, startAtSec, url: raw };
+}
+
+function normalizeWorkMedia(work = {}) {
+  const src = work.media && typeof work.media === 'object' ? work.media : null;
+  if (!src) return null;
+  const kind = String(src.kind || 'score').trim().toLowerCase() === 'youtube' ? 'youtube' : 'score';
+  if (kind === 'youtube') {
+    const youtubeUrl = String(src.youtubeUrl || src.url || work.youtubeUrl || work.videoUrl || '').trim();
+    const meta = parseYouTubeUrlMeta(youtubeUrl);
+    if (!meta) return { kind: 'youtube' };
+    const startAtRaw = src.startAtSec;
+    const explicitStart = Number(startAtRaw);
+    const startAtSec = Number.isFinite(explicitStart) && explicitStart >= 0
+      ? explicitStart
+      : (meta.startAtSec || 0);
+    return {
+      kind: 'youtube',
+      youtubeUrl: meta.url,
+      startAtSec
+    };
+  }
+  return { kind: 'score' };
+}
+
 function buildRuntimeWorks(rawWorks = []) {
   const works = Array.isArray(rawWorks) ? rawWorks : [];
   return works.map((item, idx) => {
@@ -424,6 +494,10 @@ function buildRuntimeWorks(rawWorks = []) {
     const pageFollow = normalizePageFollowConfig(work);
     if (pageFollow) {
       work.pageFollow = pageFollow;
+    }
+    const media = normalizeWorkMedia(work);
+    if (media) {
+      work.media = media;
     }
     return normalizeWork(work);
   });
@@ -500,9 +574,110 @@ function renderScriptFromDb(db, opts = {}) {
   var works = Array.isArray(data.works) ? data.works : [];
   var pageFollowMaps = data.pageFollowMaps || {};
 
+  function praeToSec(value){
+    if (value == null) return 0;
+    var raw = String(value).trim();
+    if (!raw) return 0;
+    if (/^\\d+$/.test(raw)) return Number(raw);
+    var hms = raw.match(/^(\\d+):([0-5]?\\d)(?::([0-5]?\\d))?$/);
+    if (hms) {
+      var h = hms[3] != null ? Number(hms[1]) : 0;
+      var m = hms[3] != null ? Number(hms[2]) : Number(hms[1]);
+      var s = hms[3] != null ? Number(hms[3]) : Number(hms[2]);
+      return (h * 3600) + (m * 60) + s;
+    }
+    var parts = raw.match(/(\\d+)(h|m|s)/g);
+    if (!parts) return 0;
+    var sec = 0;
+    parts.forEach(function(part){
+      var m = part.match(/^(\\d+)(h|m|s)$/);
+      if (!m) return;
+      var n = Number(m[1]) || 0;
+      if (m[2] === 'h') sec += n * 3600;
+      else if (m[2] === 'm') sec += n * 60;
+      else sec += n;
+    });
+    return sec;
+  }
+
+  function praeParseYouTube(input){
+    var raw = String(input || '').trim();
+    if (!raw) return null;
+    var url;
+    try { url = new URL(raw); } catch (_) { return null; }
+    var host = String(url.hostname || '').replace(/^www\\./i, '').toLowerCase();
+    var videoId = '';
+    if (host === 'youtu.be') {
+      videoId = (url.pathname || '').replace(/^\\/+/, '').split('/')[0] || '';
+    } else if (/youtube\\.com$/.test(host) || /youtube-nocookie\\.com$/.test(host)) {
+      if (url.pathname === '/watch') videoId = url.searchParams.get('v') || '';
+      else if (url.pathname.indexOf('/embed/') === 0) videoId = (url.pathname.split('/')[2] || '');
+      else if (url.pathname.indexOf('/shorts/') === 0) videoId = (url.pathname.split('/')[2] || '');
+      else if (url.pathname.indexOf('/live/') === 0) videoId = (url.pathname.split('/')[2] || '');
+    }
+    if (!videoId) return null;
+    var startRaw = url.searchParams.get('t') || url.searchParams.get('start') || '';
+    var startAtSec = praeToSec(startRaw);
+    return {
+      videoId: videoId,
+      startAtSec: startAtSec,
+      url: raw,
+      watchUrl: 'https://www.youtube.com/watch?v=' + encodeURIComponent(videoId) + (startAtSec > 0 ? ('&t=' + String(startAtSec) + 's') : ''),
+      embedUrl: 'https://www.youtube.com/embed/' + encodeURIComponent(videoId) + '?enablejsapi=1&playsinline=1&rel=0&modestbranding=1'
+    };
+  }
+
+  function praeNormalizePdfUrl(input){
+    var str = String(input || '').trim();
+    if (!str) return '';
+    var m = str.match(/https?:\\/\\/(?:drive|docs)\\.google\\.com\\/file\\/d\\/([^/]+)\\//);
+    if (m) return 'https://drive.google.com/file/d/' + m[1] + '/view?usp=drivesdk';
+    return str;
+  }
+
+  function praeChoosePdfViewer(input){
+    var url = String(input || '').trim();
+    if (!url) return '';
+    var m = url.match(/https?:\\/\\/(?:drive|docs)\\.google\\.com\\/file\\/d\\/([^/]+)\\//);
+    var file = m ? ('https://drive.google.com/uc?export=download&id=' + m[1]) : url;
+    return 'https://mozilla.github.io/pdf.js/web/viewer.html?file=' + encodeURIComponent(file) + '#page=1&zoom=page-width&toolbar=0&sidebar=0';
+  }
+
+  function praeResolveWorkMedia(work){
+    var w = work && typeof work === 'object' ? work : {};
+    var src = w.media && typeof w.media === 'object' ? w.media : {};
+    var kind = String(src.kind || 'score').trim().toLowerCase() === 'youtube' ? 'youtube' : 'score';
+    var audio = String(w.audioUrl || w.audio || '').trim();
+    var pdf = String(w.pdfUrl || w.pdf || '').trim();
+    var pageFollow = w.pageFollow || w.score || null;
+    var out = {
+      kind: kind,
+      audioUrl: audio || '',
+      pdfUrl: pdf || '',
+      pageFollow: pageFollow,
+      startAtSec: 0
+    };
+    if (kind === 'youtube') {
+      var yt = praeParseYouTube(src.youtubeUrl || src.url || w.youtubeUrl || w.videoUrl || '');
+      if (!yt) {
+        out.kind = 'score';
+        return out;
+      }
+      var explicitStart = Number(src.startAtSec);
+      out.youtube = yt;
+      out.youtubeUrl = yt.url;
+      out.youtubeWatchUrl = yt.watchUrl;
+      out.youtubeEmbedUrl = yt.embedUrl;
+      out.youtubeVideoId = yt.videoId;
+      out.startAtSec = Number.isFinite(explicitStart) && explicitStart >= 0 ? explicitStart : (yt.startAtSec || 0);
+    }
+    return out;
+  }
+
   function ensureAudioTags() {
     works.forEach(function(w){
-      var src = w.audioUrl || w.audio || '';
+      var media = praeResolveWorkMedia(w);
+      var src = media.audioUrl || '';
       if(!src) return;
       var id = w.audioId || ('wc-a' + String(w.id||'').trim());
       if(!id) return;
@@ -521,6 +696,204 @@ function renderScriptFromDb(db, opts = {}) {
     });
   }
 
+  function praePauseAllAudio(exceptId){
+    var keep = exceptId == null ? null : String(exceptId);
+    var audios = Array.prototype.slice.call(document.querySelectorAll('audio[id^="wc-a"]'));
+    audios.forEach(function(audio){
+      if (!audio) return;
+      var id = String(audio.id || '');
+      var workId = id.indexOf('wc-a') === 0 ? id.slice(4) : '';
+      if (keep != null && workId === keep) return;
+      try { if (!audio.paused) audio.pause(); } catch (_) {}
+    });
+  }
+
+  function praePrintedPageForTime(cfg, tSec){
+    if (!cfg || !Array.isArray(cfg.pageMap)) return 1;
+    var time = Number(tSec || 0) + Number(cfg.mediaOffsetSec || 0);
+    var current = (cfg.pageMap[0] && Number(cfg.pageMap[0].page)) || 1;
+    for (var i = 0; i < cfg.pageMap.length; i += 1) {
+      var row = cfg.pageMap[i] || {};
+      var at = typeof row.at === 'number' ? row.at : praeToSec(row.at);
+      if (time >= at) current = Number(row.page) || current;
+      else break;
+    }
+    return current < 1 ? 1 : current;
+  }
+
+  function praeComputePdfPage(cfg, tSec){
+    if (!cfg) return 1;
+    var printed = praePrintedPageForTime(cfg, tSec);
+    var base = Number(cfg.pdfStartPage) >= 1 ? Number(cfg.pdfStartPage) : 1;
+    var delta = Number.isFinite(Number(cfg.pdfDelta)) ? Number(cfg.pdfDelta) : 0;
+    return Math.max(1, base + (printed - 1) + delta);
+  }
+
+  function praeEmitPdfGoto(work, tSec){
+    if (!work) return null;
+    var cfg = work.pageFollow || work.score || null;
+    if (!cfg) return null;
+    var printed = praePrintedPageForTime(cfg, tSec);
+    var pdfPage = praeComputePdfPage(cfg, tSec);
+    var detail = {
+      slug: work.slug || null,
+      printedPage: printed,
+      pdfPage: pdfPage
+    };
+    try { window.dispatchEvent(new CustomEvent('wc:pdf-goto', { detail: detail })); } catch (_) {}
+    return detail;
+  }
+
+  var praeYouTubeApiPromise = null;
+  var praeYouTubeControllers = {};
+
+  function praeEnsureYouTubeApi(){
+    if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+    if (praeYouTubeApiPromise) return praeYouTubeApiPromise;
+    praeYouTubeApiPromise = new Promise(function(resolve, reject){
+      var settled = false;
+      var timeout = setTimeout(function(){
+        if (settled) return;
+        settled = true;
+        reject(new Error('YouTube API load timeout'));
+      }, 12000);
+      var prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = function(){
+        try { if (typeof prev === 'function') prev(); } catch (_) {}
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (window.YT && window.YT.Player) resolve(window.YT);
+        else reject(new Error('YouTube API unavailable'));
+      };
+      var existing = document.querySelector('script[src*="youtube.com/iframe_api"]');
+      if (!existing) {
+        var script = document.createElement('script');
+        script.src = 'https://www.youtube.com/iframe_api';
+        script.async = true;
+        script.onerror = function(){
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          reject(new Error('YouTube API failed to load'));
+        };
+        (document.head || document.body || document.documentElement).appendChild(script);
+      }
+    });
+    return praeYouTubeApiPromise;
+  }
+
+  function praeMountYouTubePlayer(frame, work, options){
+    var media = praeResolveWorkMedia(work);
+    if (!frame || !media || media.kind !== 'youtube' || !media.youtubeVideoId) {
+      return Promise.reject(new Error('youtube media unavailable'));
+    }
+    var opts = options || {};
+    var key = String(work.id || media.youtubeVideoId);
+    var existing = praeYouTubeControllers[key];
+    if (existing && existing.controller && existing.videoId === media.youtubeVideoId) {
+      return Promise.resolve(existing.controller);
+    }
+    if (existing && existing.controller && typeof existing.controller.destroy === 'function') {
+      try { existing.controller.destroy(); } catch (_) {}
+    }
+    return praeEnsureYouTubeApi().then(function(YT){
+      return new Promise(function(resolve, reject){
+        var ready = false;
+        frame.src = media.youtubeEmbedUrl + (media.youtubeEmbedUrl.indexOf('?') >= 0 ? '&' : '?') + 'start=' + encodeURIComponent(String(Math.max(0, Number(media.startAtSec || 0)))) + '&origin=' + encodeURIComponent(location.origin || '');
+        var state = -1;
+        var player = new YT.Player(frame, {
+          videoId: media.youtubeVideoId,
+          playerVars: {
+            autoplay: 0,
+            controls: 1,
+            rel: 0,
+            modestbranding: 1,
+            playsinline: 1,
+            start: Math.max(0, Number(media.startAtSec || 0))
+          },
+          events: {
+            onReady: function(){
+              ready = true;
+              var controller = {
+                kind: 'youtube',
+                videoId: media.youtubeVideoId,
+                play: function(){ try { player.playVideo(); } catch (_) {} },
+                pause: function(){ try { player.pauseVideo(); } catch (_) {} },
+                stop: function(){ try { player.stopVideo(); } catch (_) {} },
+                seekTo: function(sec){ try { player.seekTo(Math.max(0, Number(sec) || 0), true); } catch (_) {} },
+                getCurrentTime: function(){ try { return Number(player.getCurrentTime()) || 0; } catch (_) { return 0; } },
+                isPlaying: function(){ return state === 1; },
+                destroy: function(){ try { player.destroy(); } catch (_) {} }
+              };
+              praeYouTubeControllers[key] = { videoId: media.youtubeVideoId, controller: controller };
+              resolve(controller);
+            },
+            onStateChange: function(ev){
+              state = Number(ev && ev.data);
+            },
+            onError: function(){
+              var err = new Error('YouTube playback error');
+              if (typeof opts.onError === 'function') {
+                try { opts.onError(err); } catch (_) {}
+              }
+              if (!ready) reject(err);
+            }
+          }
+        });
+      });
+    });
+  }
+
+  function praeOpenYouTubeTab(work){
+    var media = praeResolveWorkMedia(work);
+    if (!media || media.kind !== 'youtube' || !media.youtubeWatchUrl) return false;
+    try {
+      window.open(media.youtubeWatchUrl, '_blank', 'noopener');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function praeAttachPageFollow(work, source){
+    if (!work || !source || !source.kind) return null;
+    var cfg = work.pageFollow || work.score || null;
+    if (!cfg) return null;
+    var lastPrinted = null;
+    var stopped = false;
+    var tick = function(){
+      if (stopped) return;
+      var t = 0;
+      if (source.kind === 'audio' && source.audio) t = Number(source.audio.currentTime || 0);
+      else if (source.kind === 'youtube' && source.controller && typeof source.controller.getCurrentTime === 'function') t = Number(source.controller.getCurrentTime() || 0);
+      var printed = praePrintedPageForTime(cfg, t);
+      if (printed === lastPrinted) return;
+      lastPrinted = printed;
+      praeEmitPdfGoto(work, t);
+    };
+    var interval = null;
+    if (source.kind === 'audio' && source.audio) {
+      source.audio.addEventListener('timeupdate', tick, { passive: true });
+      source.audio.addEventListener('seeking', tick, { passive: true });
+    } else if (source.kind === 'youtube' && source.controller) {
+      interval = setInterval(tick, 250);
+    }
+    tick();
+    return {
+      detach: function(){
+        if (stopped) return;
+        stopped = true;
+        if (source.kind === 'audio' && source.audio) {
+          try { source.audio.removeEventListener('timeupdate', tick); } catch (_) {}
+          try { source.audio.removeEventListener('seeking', tick); } catch (_) {}
+        }
+        if (interval) clearInterval(interval);
+      },
+      tick: tick
+    };
+  }
+
   var worksById = {};
   works.forEach(function(w){ worksById[w.id] = w; });
 
@@ -530,18 +903,23 @@ function renderScriptFromDb(db, opts = {}) {
   window.PRAE.pageFollowMaps = pageFollowMaps;
   window.PRAE.ensureAudioTags = ensureAudioTags;
   window.PRAE.pauseAllAudio = function(exceptId){
-    var keep = exceptId == null ? null : String(exceptId);
-    var audios = Array.prototype.slice.call(document.querySelectorAll('audio[id^="wc-a"]'));
-    audios.forEach(function(audio){
-      if (!audio) return;
-      var id = String(audio.id || '');
-      var workId = id.indexOf('wc-a') === 0 ? id.slice(4) : '';
-      if (keep != null && workId === keep) return;
-      try {
-        if (!audio.paused) audio.pause();
-      } catch (_) {}
-    });
+    return praePauseAllAudio(exceptId);
   };
+  window.PRAE.media = Object.assign({}, window.PRAE.media || {}, {
+    resolveWorkMedia: praeResolveWorkMedia,
+    parseYouTube: praeParseYouTube,
+    toSec: praeToSec,
+    normalizePdfUrl: praeNormalizePdfUrl,
+    choosePdfViewer: praeChoosePdfViewer,
+    pauseAllAudio: praePauseAllAudio,
+    emitPdfGoto: praeEmitPdfGoto,
+    printedPageForTime: praePrintedPageForTime,
+    computePdfPage: praeComputePdfPage,
+    ensureYouTubeApi: praeEnsureYouTubeApi,
+    mountYouTubePlayer: praeMountYouTubePlayer,
+    openYouTubeTab: praeOpenYouTubeTab,
+    attachPageFollow: praeAttachPageFollow
+  });
   window.PRAE.config = window.PRAE.config || {};
   window.PRAE.config.theme = data.config ? data.config.theme : ${JSON.stringify(opts.theme === 'light' ? 'light' : 'dark')};
   window.PRAE.config.site  = data.config ? data.config.site  : ${JSON.stringify(opts.site || {})};
@@ -1812,6 +2190,22 @@ const WORKS_SCHEMA = {
           ] },
           audio: { type: ['string','null'] },
           pdf:   { type: ['string','null'] },
+          media: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['kind'],
+            properties: {
+              kind: { type: 'string', enum: ['score', 'youtube'] },
+              youtubeUrl: { type: 'string', minLength: 1 },
+              startAtSec: { type: 'number', minimum: 0 }
+            },
+            allOf: [
+              {
+                if: { properties: { kind: { const: 'youtube' } } },
+                then: { required: ['youtubeUrl'] }
+              }
+            ]
+          },
           cover: { type: ['string','null'] },
           tags: {
             type: 'array',
@@ -2144,7 +2538,7 @@ function loadHistorySnapshot(filename) {
 
 // ---- Lightweight JSON "preview diff" (added/removed/modified works) ----
 function shallowWorkDiff(a, b) {
-  const fields = ['title','slug','one','oneliner','description','audio','pdf','cover'];
+  const fields = ['title','slug','one','oneliner','description','audio','pdf','cover','media'];
   const changed = [];
   for (const k of fields) if (String(a?.[k] ?? '') !== String(b?.[k] ?? '')) changed.push(k);
   if (JSON.stringify(a?.tags ?? []) !== JSON.stringify(b?.tags ?? [])) changed.push('tags');
@@ -2311,6 +2705,20 @@ function normalizeImportedWork(row) {
       pageMap: Array.isArray(row.pageMap) ? row.pageMap : parseMaybeJSON(row.pageMap) || []
     };
   }
+  const mediaJSON = parseMaybeJSON(row.media_json);
+  const mediaFromRow = mediaJSON && typeof mediaJSON === 'object'
+    ? mediaJSON
+    : {
+        kind: row.mediaKind || row.media_kind || row.kind || undefined,
+        youtubeUrl: row.youtubeUrl || row.youtube_url || row.videoUrl || row.video_url || '',
+        startAtSec: row.startAtSec ?? row.start_at_sec ?? undefined
+      };
+  const media = normalizeWorkMedia({
+    ...output,
+    media: mediaFromRow,
+    youtubeUrl: row.youtubeUrl || row.youtube_url || row.videoUrl || row.video_url || output.youtubeUrl
+  });
+  if (media) output.media = media;
   return output;
 }
 
@@ -5065,6 +5473,9 @@ program
         { type: 'input', name: 'slug',  message: 'Slug', initial: (ans)=> slugify(ans.title), validate: v => !!String(v).trim() || 'Required' },
         { type: 'input', name: 'oneliner', message: 'Oneliner (optional, one sentence)' },
         { type: 'input', name: 'description', message: 'Long description (Markdown, optional)' },
+        { type: 'input', name: 'mediaKind', message: 'Primary media kind (score|youtube)', initial: 'score', validate: v => /^(score|youtube)?$/i.test(String(v).trim()) ? true : 'Use score or youtube' },
+        { type: 'input', name: 'youtubeUrl', message: 'YouTube URL (required when media kind is youtube; optional otherwise)' },
+        { type: 'input', name: 'startAtSec', message: 'YouTube startAtSec (optional; numeric seconds)' },
         { type: 'input', name: 'audio', message: 'Audio URL (optional; leave blank if none)' },
         { type: 'input', name: 'pdf',   message: 'Score PDF URL (optional)' },
         { type: 'input', name: 'cover', message: 'Cover image URL (optional)' },
@@ -5127,6 +5538,14 @@ program
       const title = String(base.title || '').trim();
       const slugValue = (base.slug?.trim()) || slugify(title);
       const newId = nextId(db);
+      const media = normalizeWorkMedia({
+        media: {
+          kind: String(base.mediaKind || 'score').trim().toLowerCase(),
+          youtubeUrl: base.youtubeUrl?.trim() || '',
+          startAtSec: base.startAtSec
+        },
+        youtubeUrl: base.youtubeUrl?.trim() || ''
+      });
       const entrySource = {
         id: newId,
         slug: slugValue,
@@ -5138,6 +5557,7 @@ program
         cover: base.cover?.trim() || null,
         tags: parseTagsInput(base.tags),
         cues,
+        ...(media ? { media } : {}),
         ...(score ? { score } : {})
       };
       const { sanitized: narrativeSanitized, normalized: normalizedNarrative } = sanitizeNarrativeFields(entrySource);
@@ -5191,6 +5611,12 @@ program
       console.log('   ' + pc.dim(summary) + pc.gray(`   [order=${idx+1}]`));
       if (normalized.audio) console.log('   audio: ' + pc.gray(normalized.audio));
       if (normalized.pdf)   console.log('   pdf:   ' + pc.gray(normalized.pdf));
+      if (normalized.media?.kind === 'youtube') {
+        const startAt = Number.isFinite(Number(normalized.media.startAtSec)) ? Number(normalized.media.startAtSec) : 0;
+        console.log('   media: ' + pc.gray(`youtube${normalized.media.youtubeUrl ? ` (${normalized.media.youtubeUrl})` : ''}${startAt ? ` @${startAt}s` : ''}`));
+      } else if (normalized.media?.kind === 'score') {
+        console.log('   media: ' + pc.gray('score'));
+      }
       if (normalized.cover) console.log('   cover: ' + pc.gray(normalized.cover));
       if (Array.isArray(normalized.tags) && normalized.tags.length) {
         console.log('   tags:  ' + pc.gray(normalized.tags.join(', ')));
@@ -5261,6 +5687,9 @@ program
   .option('--description <str>', 'Set description (Markdown)')
   .option('--audio <url>', 'Set audio URL (or empty to clear)')
   .option('--pdf <url>',   'Set score PDF URL (or empty to clear)')
+  .option('--media-kind <kind>', 'Set primary media kind (score|youtube)')
+  .option('--youtube-url <url>', 'Set YouTube URL for youtube media kind')
+  .option('--start-at-sec <sec>', 'Set YouTube startAtSec (seconds, >= 0)')
   .option('--cover <url>', 'Set cover image URL (or empty to clear)')
   .option('--tags <list>', 'Set tags (comma-separated; empty to clear)')
   .option('--no-cues',     'Do not edit cues interactively')
@@ -5278,19 +5707,37 @@ program
     if ('description' in opts) work.description = opts.description;
     if ('audio' in opts) work.audio = (opts.audio === '' ? null : opts.audio);
     if ('pdf'   in opts) work.pdf   = (opts.pdf   === '' ? null : opts.pdf);
+    if ('mediaKind' in opts || 'youtubeUrl' in opts || 'startAtSec' in opts) {
+      const prev = work.media && typeof work.media === 'object' ? work.media : {};
+      const next = normalizeWorkMedia({
+        ...work,
+        media: {
+          kind: opts.mediaKind !== undefined ? opts.mediaKind : prev.kind || 'score',
+          youtubeUrl: opts.youtubeUrl !== undefined ? opts.youtubeUrl : prev.youtubeUrl || '',
+          startAtSec: opts.startAtSec !== undefined ? opts.startAtSec : prev.startAtSec
+        },
+        youtubeUrl: opts.youtubeUrl !== undefined ? opts.youtubeUrl : prev.youtubeUrl || work.youtubeUrl
+      });
+      if (next) work.media = next;
+      else delete work.media;
+    }
     if ('cover' in opts) work.cover = (opts.cover === '' ? null : opts.cover);
     if ('tags' in opts) work.tags = parseTagsInput(opts.tags);
     Object.assign(work, sanitizeNarrativeFields(work).sanitized);
 
     // If no flags changed anything, run wizard
     const changedViaFlags =
-      !!(opts.title || opts.slug || opts.one || opts.oneliner || 'description' in opts || 'audio' in opts || 'pdf' in opts || 'cover' in opts || 'tags' in opts);
+      !!(opts.title || opts.slug || opts.one || opts.oneliner || 'description' in opts || 'audio' in opts || 'pdf' in opts || 'mediaKind' in opts || 'youtubeUrl' in opts || 'startAtSec' in opts || 'cover' in opts || 'tags' in opts);
     if (!changedViaFlags) {
+      const existingMedia = work.media && typeof work.media === 'object' ? work.media : {};
       const base = await prompt([
         { type: 'input', name: 'title', message: 'Title', initial: work.title },
         { type: 'input', name: 'slug',  message: 'Slug',  initial: work.slug },
         { type: 'input', name: 'oneliner', message: 'Oneliner (optional, one sentence)', initial: work.oneliner || '' },
         { type: 'input', name: 'description', message: 'Long description (Markdown, optional)', initial: work.description || '' },
+        { type: 'input', name: 'mediaKind', message: 'Primary media kind (score|youtube)', initial: existingMedia.kind || 'score', validate: v => /^(score|youtube)?$/i.test(String(v).trim()) ? true : 'Use score or youtube' },
+        { type: 'input', name: 'youtubeUrl', message: 'YouTube URL (blank to clear)', initial: existingMedia.youtubeUrl || '' },
+        { type: 'input', name: 'startAtSec', message: 'YouTube startAtSec (seconds; blank to clear)', initial: existingMedia.startAtSec != null ? String(existingMedia.startAtSec) : '' },
         { type: 'input', name: 'audio', message: 'Audio URL (blank to clear)', initial: work.audio || '' },
         { type: 'input', name: 'pdf',   message: 'Score PDF URL (blank to clear)', initial: work.pdf || '' },
         { type: 'input', name: 'cover', message: 'Cover image URL (blank to clear)', initial: work.cover || '' },
@@ -5300,6 +5747,17 @@ program
       work.slug  = base.slug.trim();
       work.oneliner = base.oneliner;
       work.description = base.description;
+      const media = normalizeWorkMedia({
+        ...work,
+        media: {
+          kind: base.mediaKind,
+          youtubeUrl: base.youtubeUrl,
+          startAtSec: base.startAtSec
+        },
+        youtubeUrl: base.youtubeUrl
+      });
+      if (media) work.media = media;
+      else delete work.media;
       work.audio = base.audio.trim() || null;
       work.pdf   = base.pdf.trim()   || null;
       work.cover = base.cover.trim() || null;
@@ -5701,7 +6159,7 @@ program
     }
     if (fmt === 'csv') {
       // Stable columns; JSON-encode nested
-      const cols = ['id','slug','title','one','oneliner','description','audio','pdf','cover','tags_csv','cues_json','score_json'];
+      const cols = ['id','slug','title','one','oneliner','description','audio','pdf','cover','tags_csv','cues_json','score_json','media_json'];
       const lines = [];
       lines.push(cols.join(','));
       for (const w of db.works||[]) {
@@ -5719,6 +6177,7 @@ program
           (Array.isArray(view.tags) ? view.tags.join(', ') : '').replaceAll('"','""'),
           JSON.stringify(view.cues ?? []).replaceAll('"','""'),
           JSON.stringify(view.score ?? null).replaceAll('"','""'),
+          JSON.stringify(view.media ?? null).replaceAll('"','""'),
         ].map(v => `"${String(v)}"`);
         lines.push(row.join(','));
       }

@@ -94,6 +94,20 @@ const themeBtn  = document.getElementById('wc-theme-toggle');
     clone.audioId = clone.audioId || `wc-a${id}`;
     works[id] = normalizeWork(clone);
   });
+  const praeMedia = (window.PRAE && window.PRAE.media) ? window.PRAE.media : null;
+
+  function resolveWorkMedia(work){
+    if (praeMedia && typeof praeMedia.resolveWorkMedia === 'function') {
+      try { return praeMedia.resolveWorkMedia(work || {}); } catch (_) {}
+    }
+    return {
+      kind: 'score',
+      audioUrl: work?.audioUrl || work?.audio || '',
+      pdfUrl: work?.pdfUrl || work?.pdf || '',
+      pageFollow: work?.pageFollow || work?.score || null,
+      startAtSec: 0
+    };
+  }
 
   try {
     if (typeof window.PRAE?.ensureAudioTags === 'function') {
@@ -282,12 +296,18 @@ window.addEventListener('load', ()=>{ out.scrollTop = 0; }, { once:true });
     }
   }
 // ===== PageFollow engine =====
-let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
+let pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null, token:null, sourceKind:'audio' };
+let youtubeController = null;
+let youtubeWorkId = null;
+let youtubeWorkSlug = null;
 
 // printed → actual PDF page (1-based) for a given slug and time
 function computePdfPage(slug, tSec=0){
   const cfg = pageFollowMaps[slug];
   if(!cfg) return 1;
+  if (praeMedia && typeof praeMedia.computePdfPage === 'function') {
+    try { return praeMedia.computePdfPage(cfg, tSec); } catch (_) {}
+  }
   const printed = printedPageForTime(cfg, tSec);
   return (cfg.pdfStartPage || 1) + (printed - 1) + (cfg.pdfDelta ?? 0);
 }
@@ -297,6 +317,9 @@ function secFromMixed(v){
 }
 
 function printedPageForTime(cfg, tSec){
+  if (praeMedia && typeof praeMedia.printedPageForTime === 'function') {
+    try { return praeMedia.printedPageForTime(cfg, tSec); } catch (_) {}
+  }
   const T = (tSec || 0) + (cfg.mediaOffsetSec || 0);
   let current = cfg.pageMap[0]?.page ?? 1;
   for(const row of cfg.pageMap){
@@ -308,17 +331,29 @@ function printedPageForTime(cfg, tSec){
 }
 
 function detachPageFollow(){
+  if (pageFollow.token && typeof pageFollow.token.detach === 'function') {
+    try { pageFollow.token.detach(); } catch (_) {}
+  }
   if(pageFollow.audio && pageFollow._on){
     pageFollow.audio.removeEventListener('timeupdate', pageFollow._on);
     pageFollow.audio.removeEventListener('seeking', pageFollow._on);
   }
-  pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null };
+  pageFollow = { audio:null, slug:null, lastPrinted:null, _on:null, token:null, sourceKind:'audio' };
 }
 
 function attachPageFollow(slug, audio){
   detachPageFollow();
+  const work = Object.values(works).find(w => w.slug === slug) || null;
   const cfg = pageFollowMaps[slug];
   if(!cfg || !audio) return;
+  if (praeMedia && typeof praeMedia.attachPageFollow === 'function' && work) {
+    const token = praeMedia.attachPageFollow(work, { kind: 'audio', audio });
+    pageFollow = { audio, slug, lastPrinted:null, _on:null, token, sourceKind:'audio' };
+    if (token && typeof token.tick === 'function') {
+      try { token.tick(); } catch (_) {}
+    }
+    return;
+  }
 
   const onTick = ()=>{
     const printed = printedPageForTime(cfg, audio.currentTime || 0);
@@ -332,10 +367,29 @@ function attachPageFollow(slug, audio){
     }
   };
 
-  pageFollow = { audio, slug, lastPrinted:null, _on:onTick };
+  pageFollow = { audio, slug, lastPrinted:null, _on:onTick, token:null, sourceKind:'audio' };
   audio.addEventListener('timeupdate', onTick, { passive:true });
   audio.addEventListener('seeking', onTick, { passive:true });
   onTick(); // initial sync
+}
+
+function attachYouTubePageFollow(work, controller){
+  detachPageFollow();
+  if (!work || !controller) return;
+  if (praeMedia && typeof praeMedia.attachPageFollow === 'function') {
+    const token = praeMedia.attachPageFollow(work, { kind: 'youtube', controller });
+    pageFollow = { audio:null, slug: work.slug || null, lastPrinted:null, _on:null, token, sourceKind:'youtube' };
+    if (token && typeof token.tick === 'function') {
+      try { token.tick(); } catch (_) {}
+    }
+  }
+}
+
+function getPageFollowSeconds(){
+  if (pageFollow.sourceKind === 'youtube' && youtubeController && typeof youtubeController.getCurrentTime === 'function') {
+    try { return Number(youtubeController.getCurrentTime() || 0); } catch (_) { return 0; }
+  }
+  return Number(pageFollow.audio?.currentTime || 0);
 }
 
   /* ===== Commands ===== */
@@ -345,12 +399,12 @@ function attachPageFollow(slug, audio){
       'help                   Show this help',
       'list                   List the three works with actions',
       'open <n>               Print program note for work n',
-      'play <n> [mm:ss|s]     Play work n at time (defaults to first cue)',
+      'play <n> [mm:ss|s]     Play work n media at time (audio or YouTube)',
       'pause <n>              Pause work n',
       'stop <n>               Stop work n',
       'copy <n> [time]        Copy deep link (supports ?t=)',
       'goto <n> [time]        Jump to #work-n (supports ?t=)',
-      'pdf <n>                Open PDF for work n (1 & 3 only)',
+      'pdf <n>                Open score PDF for work n (if available)',
       'vol <0–100>            Set volume percent',
       'speed <0.5–2>          Set playback rate',
       'resume [n]             Resume last (or specific) work',
@@ -440,6 +494,10 @@ function attachPageFollow(slug, audio){
     if(!w){ return appendLine(`error: unknown work ${args[0]||''}`,'err',true); }
     const t = args[1] ? time(args[1]) : (w.cues[0]?.t ?? 0);
     if(t<0){ return appendLine(`error: invalid time "${args[1]||''}" (use mm:ss or seconds)`,'err',true); }
+    const media = resolveWorkMedia(w);
+    if (media.kind === 'youtube') {
+      return playYouTubeCmd(w, n, t, media);
+    }
 
     const a = $('#'+w.audioId);
     if(!a) return appendLine('error: audio element missing','err',true);
@@ -494,9 +552,51 @@ function attachPageFollow(slug, audio){
     appendLine(`playing [${n}] at ${formatTime(t)} ▷`,'',true);
   }
 
+  async function playYouTubeCmd(work, n, t, media){
+    if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
+      appendLine('warn: YouTube runtime unavailable; opening in new tab.','warn',true);
+      if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+        praeMedia.openYouTubeTab(work);
+      }
+      return;
+    }
+    showYouTubePane(work, media);
+    try {
+      const controller = await praeMedia.mountYouTubePlayer(pdfFrame, work, {
+        onError: () => {
+          appendLine('warn: YouTube player failed in embed; opening in new tab.','warn',true);
+          if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+            praeMedia.openYouTubeTab(work);
+          }
+        }
+      });
+      youtubeController = controller;
+      youtubeWorkId = n;
+      youtubeWorkSlug = work.slug || null;
+      if (typeof controller.seekTo === 'function') controller.seekTo(Number.isFinite(Number(t)) ? Number(t) : (media.startAtSec || 0));
+      if (typeof controller.play === 'function') controller.play();
+      state.last = { n, at: Number(t || media.startAtSec || 0) };
+      attachYouTubePageFollow(work, controller);
+      appendLine(`playing [${n}] at ${formatTime((Number(t)||0)|0)} ▷`,'',true);
+    } catch (_) {
+      appendLine('warn: YouTube embed blocked; opening in new tab and disabling sync.','warn',true);
+      if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+        praeMedia.openYouTubeTab(work);
+      }
+      detachPageFollow();
+    }
+  }
+
   function pauseCmd(nRaw){
     const n = parseInt(nRaw,10);
     const w = works[n]; if(!w) return appendLine(`error: unknown work ${nRaw}`,'err',true);
+    const media = resolveWorkMedia(w);
+    if (media.kind === 'youtube' && youtubeController && youtubeWorkId === n) {
+      try { youtubeController.pause(); } catch (_) {}
+      state.last = { n, at: getPageFollowSeconds() || 0 };
+      appendLine(`paused [${n}] at ${formatTime((state.last.at || 0)|0)} ❚❚`,'',true);
+      return;
+    }
     const a = $('#'+w.audioId);
     if(a && !a.paused){ a.pause(); state.last = { n, at: a.currentTime||0 }; hudUpdate(n,a); appendLine(`paused [${n}] at ${formatTime(a.currentTime|0)} ❚❚`,'',true); }
     else appendLine(`paused [${n}]`,'muted',true);
@@ -505,6 +605,14 @@ function attachPageFollow(slug, audio){
   function stopCmd(nRaw){
     const n = parseInt(nRaw,10);
     const w = works[n]; if(!w) return appendLine(`error: unknown work ${nRaw}`,'err',true);
+    const media = resolveWorkMedia(w);
+    if (media.kind === 'youtube' && youtubeController && youtubeWorkId === n) {
+      try { youtubeController.stop(); } catch (_) {}
+      state.last = { n, at: 0 };
+      detachPageFollow();
+      appendLine(`stopped [${n}] ⏹`,'',true);
+      return;
+    }
     const a = $('#'+w.audioId);
     if(a){ a.pause(); a.currentTime = 0; }
     state.last = { n, at: 0 };
@@ -532,7 +640,7 @@ detachPageFollow();
 
 function pdfCmd(nRaw){
   const n = parseInt(nRaw,10);
-  if(!nRaw){ return appendLine('error: pdf requires a work number (1 or 3)','err',true); }
+  if(!nRaw){ return appendLine('error: pdf requires a work number','err',true); }
   const w = works[n];
   if(!w){ return appendLine(`error: unknown work ${nRaw}`,'err',true); }
   if(!w.pdf){ return appendLine(`error: no PDF available for work ${n}`,'err',true); }
@@ -558,6 +666,7 @@ const pdfCloseB = worksConsole.querySelector('.wc-pdf-close');
 let pendingPdfGoto = null;
 let currentPdfSlug = null;
 let pdfViewerReady = false;
+let paneMode = 'pdf';
 
 // Listen for page-follow events from the audio side
  window.addEventListener('wc:pdf-goto', (e) => {
@@ -612,6 +721,7 @@ function gotoPdfPage(pageNum){
 
 
 function showPdfPane(rawUrl, title){
+  paneMode = 'pdf';
   const url = normalizePdfUrl(rawUrl);
   const src = choosePdfViewer(url);
   pdfTitle.textContent = String(title || 'Score');
@@ -626,13 +736,13 @@ function showPdfPane(rawUrl, title){
   worksConsole.dataset.pdfSlug = currentPdfSlug || '';
   if (wForUrl && pageFollow?.slug === wForUrl.slug){
     // Same work as the actively playing one → land on its *current* score page
-    initPage = computePdfPage(wForUrl.slug, pageFollow.audio?.currentTime || 0);
+    initPage = computePdfPage(wForUrl.slug, getPageFollowSeconds());
   } else if (wForUrl){
     // Different (or no) active audio → land on SCORE page 1 (printed p.1)
     initPage = computePdfPage(wForUrl.slug, 0);
   } else if (pageFollow?.slug){
     // Fallback
-    initPage = computePdfPage(pageFollow.slug, pageFollow.audio?.currentTime || 0);
+    initPage = computePdfPage(pageFollow.slug, getPageFollowSeconds());
   }
 
   // Strip any existing hash and boot the viewer already on the intended page
@@ -653,27 +763,60 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{
   focusInput();
   appendLine(`opening ${title}…`,'muted',true);
 // Force a page-follow tick so updated pdfStartPage/pdfDelta apply now
-  if (pageFollow && typeof pageFollow._on === 'function') {
+  if (pageFollow && pageFollow.token && typeof pageFollow.token.tick === 'function') {
+    try { pageFollow.token.tick(); } catch (_) {}
+  } else if (pageFollow && typeof pageFollow._on === 'function') {
     pageFollow.lastPrinted = null; // invalidate cache so next tick dispatches
     pageFollow._on();
   }
-// Keep title/subtitle left edge aligned to console column
+  // Keep title/subtitle left edge aligned to console column
+  kickAlign(8);
+}
+
+function showYouTubePane(work, media){
+  paneMode = 'youtube';
+  const title = work?.title || 'YouTube';
+  pdfTitle.textContent = String(title);
+  worksConsole.classList.add('has-pdf');
+  pdfPane.removeAttribute('inert');
+  pdfPane.setAttribute('aria-hidden', 'false');
+  pdfPane.classList.add('is-open');
+  currentPdfSlug = work?.slug || null;
+  worksConsole.dataset.pdfSlug = currentPdfSlug || '';
+  const embed = media?.youtubeEmbedUrl || media?.youtubeUrl || '';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    pdfViewerReady = false;
+    pdfFrame.src = embed || 'about:blank';
+  }));
+  focusInput();
+  appendLine(`opening ${title} (YouTube)…`,'muted',true);
   kickAlign(8);
 }
 
 function hidePdfPane(){
+  const closingMode = paneMode;
+  if (paneMode === 'youtube' && youtubeController && typeof youtubeController.pause === 'function') {
+    try { youtubeController.pause(); } catch (_) {}
+  }
   pdfPane.classList.remove('is-open');
 pdfPane.setAttribute('inert','');                  // a11y: make non-focusable
 pdfPane.setAttribute('aria-hidden', 'true');
 worksConsole.classList.remove('has-pdf');
 currentPdfSlug = null;
 delete worksConsole.dataset.pdfSlug;
+paneMode = 'pdf';
 
 // After the transform transition finishes, free the iframe
 const onEnd = (e)=>{
   if (e.propertyName !== 'transform') return;
   pdfPane.removeEventListener('transitionend', onEnd);
   pdfFrame.src = 'about:blank';
+  if (closingMode === 'youtube') {
+    detachPageFollow();
+    youtubeController = null;
+    youtubeWorkId = null;
+    youtubeWorkSlug = null;
+  }
   kickAlign(8);
   focusInput();
 };
@@ -790,6 +933,12 @@ new MutationObserver(()=> kickAlign(4))
 
 /* Reuse your previous helpers (keep or paste if you removed them) */
 function choosePdfViewer(url){
+  if (praeMedia && typeof praeMedia.choosePdfViewer === 'function') {
+    try {
+      const chosen = praeMedia.choosePdfViewer(url);
+      if (chosen) return chosen;
+    } catch (_) {}
+  }
   const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   if (m) {
     // Prefer PDF.js for page control:
@@ -810,6 +959,9 @@ function choosePdfViewer(url){
 
 
 function normalizePdfUrl(u){
+  if (praeMedia && typeof praeMedia.normalizePdfUrl === 'function') {
+    try { return praeMedia.normalizePdfUrl(u); } catch (_) {}
+  }
   if(!u) return '';
   const m = u.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   if(m) return `https://drive.google.com/file/d/${m[1]}/view?usp=drivesdk`;
@@ -1158,6 +1310,9 @@ function normalizePdfUrl(u){
   /* ===== Media helpers ===== */
 // Stop every <audio> on the page except the one we’re about to play
   function stopAllAudio(exceptEl){
+    if (youtubeController && typeof youtubeController.pause === 'function') {
+      try { youtubeController.pause(); } catch (_) {}
+    }
     const all = Array.from(document.querySelectorAll('audio'));
     for(const a of all){
       if(exceptEl && a === exceptEl) continue;
@@ -1165,17 +1320,27 @@ function normalizePdfUrl(u){
     }
   }
 function getActiveAudioInfo(){
+  if (youtubeController && youtubeWorkId != null && typeof youtubeController.isPlaying === 'function') {
+    try {
+      if (youtubeController.isPlaying()) {
+        return { n: youtubeWorkId, audio: null, source: 'youtube' };
+      }
+    } catch (_) {}
+  }
   for (const w of Object.values(works)){
     const a = document.getElementById(w.audioId);
     if (a && !a.paused && !a.ended){
-      return { n: w.id, audio: a };
+      return { n: w.id, audio: a, source: 'audio' };
     }
   }
-  return { n: null, audio: null };
+  return { n: null, audio: null, source: null };
 }
 
   function isGoogleDrive(u){ return /https?:\/\/(drive|docs)\.google\.com\/file\/d\//.test(u); }
   function normalizeSrc(u){
+    if (praeMedia && typeof praeMedia.resolveWorkMedia === 'function') {
+      // audio URLs can be pre-normalized by shared runtime; keep local Drive fallback below.
+    }
     if(!u) return '';
     // Convert "https://drive.google.com/file/d/<ID>/view" → "https://drive.google.com/uc?export=download&id=<ID>"
     const m = u.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
