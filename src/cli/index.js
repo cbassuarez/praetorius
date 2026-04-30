@@ -453,6 +453,67 @@ function normalizeWorkMedia(work = {}) {
   return { kind: 'score' };
 }
 
+function praeStripRuntimeText(value) {
+  if (value == null) return '';
+  const source = String(value)
+    .replace(/<\s*\/?\s*script[^>]*>/gi, ' ')
+    .replace(/<\s*\/?\s*style[^>]*>/gi, ' ')
+    .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
+    .replace(/\u0000/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return source;
+}
+
+function praeSanitizeRuntimeUrl(value) {
+  const safe = praeSafeUrl(value, { allowHttp: true });
+  return safe || '';
+}
+
+function praeSanitizeRuntimeWork(work) {
+  if (!praeIsObject(work)) return work;
+  const out = { ...work };
+  const textFields = ['title', 'subtitle', 'summary', 'one', 'oneliner', 'onelinerEffective', 'description', 'descriptionEffective', 'slug'];
+  for (const field of textFields) {
+    if (field in out && out[field] != null) {
+      const sanitized = praeStripRuntimeText(out[field]);
+      out[field] = sanitized || (field === 'slug' ? slugify(String(out.slug || 'work')) : '');
+    }
+  }
+  if ('audio' in out) out.audio = praeSanitizeRuntimeUrl(out.audio) || '';
+  if ('audioUrl' in out) out.audioUrl = praeSanitizeRuntimeUrl(out.audioUrl) || '';
+  if ('pdf' in out) out.pdf = praeSanitizeRuntimeUrl(out.pdf) || '';
+  if ('pdfUrl' in out) out.pdfUrl = praeSanitizeRuntimeUrl(out.pdfUrl) || '';
+  if ('cover' in out) out.cover = praeSanitizeRuntimeUrl(out.cover) || '';
+  if ('coverUrl' in out) out.coverUrl = praeSanitizeRuntimeUrl(out.coverUrl) || '';
+  if (Array.isArray(out.tags)) {
+    out.tags = out.tags.map((tag) => praeStripRuntimeText(tag)).filter(Boolean);
+  }
+  if (Array.isArray(out.openNote)) {
+    out.openNote = out.openNote.map((entry) => praeStripRuntimeText(entry)).filter(Boolean);
+  }
+  if (praeIsObject(out.media)) {
+    const media = { ...out.media };
+    if (media.kind === 'youtube') {
+      const yt = parseYouTubeUrlMeta(media.youtubeUrl || '');
+      if (yt) {
+        media.youtubeUrl = yt.url;
+        media.startAtSec = Number.isFinite(Number(media.startAtSec)) ? Math.max(0, Number(media.startAtSec)) : (yt.startAtSec || 0);
+      } else {
+        media.kind = 'score';
+        delete media.youtubeUrl;
+        delete media.startAtSec;
+      }
+    } else {
+      media.kind = 'score';
+      delete media.youtubeUrl;
+      delete media.startAtSec;
+    }
+    out.media = media;
+  }
+  return out;
+}
+
 function buildRuntimeWorks(rawWorks = []) {
   const works = Array.isArray(rawWorks) ? rawWorks : [];
   return works.map((item, idx) => {
@@ -502,7 +563,7 @@ function buildRuntimeWorks(rawWorks = []) {
     if (media) {
       work.media = media;
     }
-    return normalizeWork(work);
+    return praeSanitizeRuntimeWork(normalizeWork(work));
   });
 }
 
@@ -516,12 +577,40 @@ function buildPageFollowMaps(works = []) {
   return maps;
 }
 
+function praeSanitizeSiteConfig(site) {
+  const src = praeIsObject(site) ? site : {};
+  const out = { ...src };
+  const textFields = ['firstName', 'lastName', 'fullName', 'copyrightName', 'listLabel', 'subtitle'];
+  for (const field of textFields) {
+    if (field in out) out[field] = praeStripRuntimeText(out[field]);
+  }
+  if (praeIsObject(out.updated)) {
+    out.updated = {
+      mode: String(out.updated.mode || '').toLowerCase() === 'manual' ? 'manual' : 'auto',
+      value: praeStripRuntimeText(out.updated.value || '')
+    };
+  }
+  if (Array.isArray(out.links)) {
+    out.links = out.links.map((link) => {
+      if (!praeIsObject(link)) return null;
+      const href = praeSanitizeRuntimeUrl(link.href || '');
+      if (!href) return null;
+      return {
+        label: praeStripRuntimeText(link.label || link.title || '') || 'Link',
+        href,
+        external: link.external === true
+      };
+    }).filter(Boolean);
+  }
+  return out;
+}
+
 function createRuntimePayload(db, opts = {}) {
   const rawWorks = Array.isArray(opts.worksOverride) ? opts.worksOverride : (db.works || []);
   const works = buildRuntimeWorks(rawWorks);
   const pageFollowMaps = buildPageFollowMaps(works);
   const theme = opts.theme === 'light' ? 'light' : 'dark';
-  const site = opts.site || {};
+  const site = praeSanitizeSiteConfig(opts.site || {});
   const appearance = normalizeAppearance(opts.appearance || {}, { strict: false });
   const branding = normalizeBranding(opts.branding || {}, { strict: false });
   const warnings = Array.isArray(opts.warnings) ? opts.warnings.slice() : [];
@@ -1728,6 +1817,11 @@ const DEFAULT_BRANDING = Object.freeze({
 
 const DEFAULT_RUNTIME_MANIFEST_URL = 'https://cdn.praetorius.dev/runtime/channels/stable.json';
 const DEFAULT_RUNTIME_TELEMETRY_URL = 'https://cdn.praetorius.dev/runtime/events';
+const DEFAULT_RUNTIME_ALLOWED_ORIGINS = Object.freeze(['https://cdn.praetorius.dev']);
+const DEFAULT_RUNTIME_REQUIRED_MANIFEST_KEY_ID = 'official-stable-2026-q2';
+const DEFAULT_RUNTIME_MANIFEST_PUBLIC_KEYS = Object.freeze({
+  [DEFAULT_RUNTIME_REQUIRED_MANIFEST_KEY_ID]: 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5TMfrk2XJGW710lxUYrYuplwe3VqnFxfK88WhB/V587yni8fjA1ubx5Pp7I0lrn7kZhi3Gn0P3jHdLyBGjls3Q=='
+});
 const DEFAULT_RUNTIME_WEB_UPDATES = Object.freeze({
   enabled: false,
   channel: 'stable',
@@ -1736,6 +1830,9 @@ const DEFAULT_RUNTIME_WEB_UPDATES = Object.freeze({
   autoMajor: false,
   manifestUrl: DEFAULT_RUNTIME_MANIFEST_URL,
   telemetryUrl: DEFAULT_RUNTIME_TELEMETRY_URL,
+  allowOrigins: DEFAULT_RUNTIME_ALLOWED_ORIGINS,
+  manifestPublicKeys: DEFAULT_RUNTIME_MANIFEST_PUBLIC_KEYS,
+  requiredManifestKeyId: DEFAULT_RUNTIME_REQUIRED_MANIFEST_KEY_ID,
 });
 
 // Config schema (light) – theme + output flags
@@ -2349,11 +2446,80 @@ function praeIsObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function praeUniqueStrings(input, fallback = []) {
+  const values = Array.isArray(input) ? input : fallback;
+  const seen = new Set();
+  const out = [];
+  for (const entry of values) {
+    const value = String(entry || '').trim();
+    if (!value) continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function praeNormalizeManifestPublicKeys(input) {
+  const src = praeIsObject(input) ? input : {};
+  const out = {};
+  for (const [key, value] of Object.entries(src)) {
+    const keyId = String(key || '').trim();
+    const raw = String(value || '').trim();
+    if (!keyId || !raw) continue;
+    out[keyId] = raw;
+  }
+  if (!Object.keys(out).length) {
+    return { ...DEFAULT_RUNTIME_MANIFEST_PUBLIC_KEYS };
+  }
+  return out;
+}
+
+function praeNormalizeAllowedOrigins(input) {
+  const rawValues = praeUniqueStrings(input, DEFAULT_RUNTIME_ALLOWED_ORIGINS);
+  const out = [];
+  const seen = new Set();
+  for (const raw of rawValues) {
+    let normalized = '';
+    try {
+      const u = new URL(raw);
+      const protocol = String(u.protocol || '').toLowerCase();
+      if (protocol !== 'https:' && protocol !== 'http:') continue;
+      normalized = u.origin;
+    } catch (_) {
+      continue;
+    }
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out.length ? out : Array.from(DEFAULT_RUNTIME_ALLOWED_ORIGINS);
+}
+
 function praeNormalizeWebUpdateConfig(input) {
   const src = praeIsObject(input) ? input : {};
   const channel = String(src.channel || DEFAULT_RUNTIME_WEB_UPDATES.channel).trim().toLowerCase() || DEFAULT_RUNTIME_WEB_UPDATES.channel;
   const manifestUrl = String(src.manifestUrl || DEFAULT_RUNTIME_WEB_UPDATES.manifestUrl).trim() || DEFAULT_RUNTIME_WEB_UPDATES.manifestUrl;
   const telemetryUrl = String(src.telemetryUrl || DEFAULT_RUNTIME_WEB_UPDATES.telemetryUrl).trim() || DEFAULT_RUNTIME_WEB_UPDATES.telemetryUrl;
+  const allowOrigins = praeNormalizeAllowedOrigins(src.allowOrigins);
+  const manifestPublicKeys = praeNormalizeManifestPublicKeys(src.manifestPublicKeys);
+  const keyCandidates = [
+    src.requiredManifestKeyId,
+    src.manifestKeyId,
+    DEFAULT_RUNTIME_WEB_UPDATES.requiredManifestKeyId
+  ];
+  let requiredManifestKeyId = '';
+  for (const candidate of keyCandidates) {
+    const value = String(candidate || '').trim();
+    if (value) {
+      requiredManifestKeyId = value;
+      break;
+    }
+  }
+  if (!requiredManifestKeyId) {
+    const first = Object.keys(manifestPublicKeys)[0];
+    requiredManifestKeyId = first ? String(first) : '';
+  }
   return {
     enabled: src.enabled === true,
     channel,
@@ -2361,7 +2527,10 @@ function praeNormalizeWebUpdateConfig(input) {
     autoMinor: src.autoMinor === true,
     autoMajor: false,
     manifestUrl,
-    telemetryUrl
+    telemetryUrl,
+    allowOrigins,
+    manifestPublicKeys,
+    requiredManifestKeyId
   };
 }
 
@@ -2520,13 +2689,123 @@ function praeSha384Base64(content) {
   return crypto.createHash('sha384').update(content, 'utf8').digest('base64');
 }
 
+function praeSafeUrl(input, { allowOrigins = null, allowHttp = false } = {}) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (_) {
+    return null;
+  }
+  const protocol = String(parsed.protocol || '').toLowerCase();
+  const protocolAllowed = protocol === 'https:' || (allowHttp && protocol === 'http:');
+  if (!protocolAllowed) return null;
+  if (Array.isArray(allowOrigins) && allowOrigins.length) {
+    const normalizedAllowed = new Set(allowOrigins.map((origin) => {
+      try { return new URL(String(origin)).origin; } catch (_) { return String(origin || '').trim(); }
+    }).filter(Boolean));
+    if (!normalizedAllowed.has(parsed.origin)) return null;
+  }
+  return parsed.toString();
+}
+
+function praeStableCanonicalize(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => praeStableCanonicalize(item));
+  }
+  if (!praeIsObject(value)) return value;
+  const out = {};
+  for (const key of Object.keys(value).sort()) {
+    out[key] = praeStableCanonicalize(value[key]);
+  }
+  return out;
+}
+
+function praeStableStringify(value) {
+  return JSON.stringify(praeStableCanonicalize(value));
+}
+
+function praeManifestWithoutSignature(manifest) {
+  if (!praeIsObject(manifest)) return {};
+  const clone = JSON.parse(JSON.stringify(manifest));
+  delete clone.signature;
+  return clone;
+}
+
+function praeSignManifest(manifest, { keyId, privateKeyPem } = {}) {
+  const requiredKeyId = String(keyId || '').trim();
+  const privateKey = String(privateKeyPem || '').trim();
+  if (!requiredKeyId) throw new Error('missing keyId for manifest signing');
+  if (!privateKey) throw new Error('missing private key for manifest signing');
+  const body = praeManifestWithoutSignature(manifest);
+  const payload = praeStableStringify(body);
+  const sign = crypto.createSign('SHA256');
+  sign.update(payload);
+  sign.end();
+  const signature = sign.sign(privateKey).toString('base64');
+  return {
+    ...body,
+    signature: {
+      alg: 'ecdsa-p256-sha256',
+      keyId: requiredKeyId,
+      sig: signature
+    }
+  };
+}
+
+function praeVerifyManifestSignature(manifest, { publicKeys, requiredKeyId } = {}) {
+  if (!praeIsObject(manifest)) return { ok: false, reason: 'manifest-invalid' };
+  const signature = praeIsObject(manifest.signature) ? manifest.signature : null;
+  if (!signature) return { ok: false, reason: 'manifest-signature-missing' };
+  const keyId = String(signature.keyId || '').trim();
+  const alg = String(signature.alg || '').trim().toLowerCase();
+  const sig = String(signature.sig || '').trim();
+  if (!keyId || !sig) return { ok: false, reason: 'manifest-signature-invalid' };
+  if (alg && alg !== 'ecdsa-p256-sha256') return { ok: false, reason: 'manifest-signature-algorithm-unsupported' };
+  const keyRegistry = praeNormalizeManifestPublicKeys(publicKeys || DEFAULT_RUNTIME_MANIFEST_PUBLIC_KEYS);
+  const expectedKeyId = String(requiredKeyId || '').trim();
+  if (expectedKeyId && keyId !== expectedKeyId) return { ok: false, reason: 'manifest-signature-keyid-mismatch' };
+  const keyBase64 = String(keyRegistry[keyId] || '').trim();
+  if (!keyBase64) return { ok: false, reason: 'manifest-signature-key-missing' };
+  let keyObject;
+  try {
+    keyObject = crypto.createPublicKey({
+      key: Buffer.from(keyBase64, 'base64'),
+      type: 'spki',
+      format: 'der'
+    });
+  } catch (_) {
+    return { ok: false, reason: 'manifest-signature-key-invalid' };
+  }
+  const payload = praeStableStringify(praeManifestWithoutSignature(manifest));
+  const verify = crypto.createVerify('SHA256');
+  verify.update(payload);
+  verify.end();
+  const ok = verify.verify(keyObject, Buffer.from(sig, 'base64'));
+  if (!ok) return { ok: false, reason: 'manifest-signature-verify-failed' };
+  return { ok: true, reason: 'ok', keyId };
+}
+
+function praeReadManifestPrivateKeyFromEnv() {
+  const inline = String(process.env.PRAE_MANIFEST_SIGNING_PRIVATE_KEY_PEM || '').trim();
+  if (inline) return inline;
+  const file = String(process.env.PRAE_MANIFEST_SIGNING_PRIVATE_KEY_FILE || '').trim();
+  if (!file) return '';
+  try {
+    return fs.readFileSync(path.resolve(process.cwd(), file), 'utf8');
+  } catch (_) {
+    return '';
+  }
+}
+
 function praeBuildRuntimeManifestPreview(opts = {}) {
   const localRuntimeUrl = String(opts.localRuntimeUrl || './script.js');
   const localRuntimeCode = String(opts.localRuntimeCode || '');
   const version = String(opts.version || pkgJson.version || '0.0.0');
   const channel = String(opts.channel || 'stable');
   const integrity = `sha384-${praeSha384Base64(localRuntimeCode)}`;
-  return {
+  const manifest = {
     schemaVersion: 1,
     generatedAt: praeNowIso(),
     global: {
@@ -2546,12 +2825,23 @@ function praeBuildRuntimeManifestPreview(opts = {}) {
       }
     }
   };
+  const keyId = String(opts.manifestKeyId || DEFAULT_RUNTIME_REQUIRED_MANIFEST_KEY_ID).trim();
+  const privateKey = String(opts.manifestPrivateKeyPem || '').trim() || praeReadManifestPrivateKeyFromEnv();
+  if (privateKey && keyId) {
+    try {
+      return praeSignManifest(manifest, { keyId, privateKeyPem: privateKey });
+    } catch (_) {
+      return manifest;
+    }
+  }
+  return manifest;
 }
 
 function praeParseRuntimeManifest(input) {
   if (!praeIsObject(input)) return null;
   const global = praeIsObject(input.global) ? input.global : {};
   const channels = praeIsObject(input.channels) ? input.channels : {};
+  const signature = praeIsObject(input.signature) ? input.signature : null;
   return {
     schemaVersion: Number(input.schemaVersion || 1),
     generatedAt: String(input.generatedAt || ''),
@@ -2559,13 +2849,21 @@ function praeParseRuntimeManifest(input) {
       killSwitch: global.killSwitch === true,
       forcePinVersion: global.forcePinVersion == null ? null : String(global.forcePinVersion).trim()
     },
-    channels
+    channels,
+    signature
   };
 }
 
 function praeSelectRuntimeRelease(manifestRaw, policy, currentVersion) {
   const manifest = praeParseRuntimeManifest(manifestRaw);
   if (!manifest) return { kind: 'invalid-manifest' };
+  const verification = praeVerifyManifestSignature(manifestRaw, {
+    publicKeys: policy?.manifestPublicKeys,
+    requiredKeyId: policy?.requiredManifestKeyId
+  });
+  if (!verification.ok) {
+    return { kind: 'invalid-signature', reason: verification.reason };
+  }
   if (manifest.global.killSwitch) return { kind: 'kill-switch' };
   const current = String(currentVersion || '').trim();
   const channelKey = String(policy.channel || 'stable').trim().toLowerCase();
@@ -2578,9 +2876,9 @@ function praeSelectRuntimeRelease(manifestRaw, policy, currentVersion) {
     if (!key) return null;
     const entry = praeIsObject(versions[key]) ? versions[key] : null;
     if (!entry) return null;
-    const url = String(entry.url || '').trim();
+    const url = praeSafeUrl(entry.url, { allowOrigins: policy?.allowOrigins || DEFAULT_RUNTIME_ALLOWED_ORIGINS, allowHttp: true });
     const integrity = String(entry.integrity || '').trim();
-    if (!url || !integrity) return null;
+    if (!url || !integrity || !integrity.startsWith('sha384-')) return null;
     return { version: key, url, integrity };
   };
 
@@ -2609,6 +2907,9 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
   const currentVersion = String(opts.currentVersion || pkgJson.version || '0.0.0');
   const autoPatch = opts.autoPatch !== false;
   const autoMinor = opts.autoMinor === true;
+  const allowOrigins = praeNormalizeAllowedOrigins(opts.allowOrigins || DEFAULT_RUNTIME_ALLOWED_ORIGINS);
+  const manifestPublicKeys = praeNormalizeManifestPublicKeys(opts.manifestPublicKeys || DEFAULT_RUNTIME_MANIFEST_PUBLIC_KEYS);
+  const requiredManifestKeyId = String(opts.requiredManifestKeyId || DEFAULT_RUNTIME_REQUIRED_MANIFEST_KEY_ID).trim() || DEFAULT_RUNTIME_REQUIRED_MANIFEST_KEY_ID;
   const manifestPreview = opts.manifestPreview || null;
   return `(function(){
   var policy = {
@@ -2620,6 +2921,9 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
     telemetryUrl: ${JSON.stringify(telemetryUrl)},
     currentVersion: ${JSON.stringify(currentVersion)}
   };
+  var runtimeAllowedOrigins = ${JSON.stringify(allowOrigins)};
+  var manifestPublicKeys = ${JSON.stringify(manifestPublicKeys)};
+  var requiredManifestKeyId = ${JSON.stringify(requiredManifestKeyId)};
   var localRuntimeUrl = ${JSON.stringify(localRuntimeUrl)};
   var fallbackManifest = ${JSON.stringify(manifestPreview)};
   var storageKey = 'prae.runtime.lastKnownGood.' + policy.channel;
@@ -2649,6 +2953,122 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
     if (type === 'patch') return !!policy.autoPatch;
     if (type === 'minor') return !!policy.autoMinor;
     return false;
+  }
+  function normalizedOriginList(values){
+    if (!Array.isArray(values)) return [];
+    var out = [];
+    var seen = {};
+    for (var i = 0; i < values.length; i += 1) {
+      var raw = String(values[i] || '').trim();
+      if (!raw) continue;
+      try {
+        var parsed = new URL(raw);
+        var origin = parsed.origin;
+        if (!origin || seen[origin]) continue;
+        seen[origin] = true;
+        out.push(origin);
+      } catch (_) {}
+    }
+    return out;
+  }
+  var safeOrigins = normalizedOriginList(runtimeAllowedOrigins);
+  function safeUrl(input, options){
+    var opts = options && typeof options === 'object' ? options : {};
+    var allowRelative = opts.allowRelative === true;
+    var enforceOrigin = opts.enforceOrigin !== false;
+    var raw = String(input || '').trim();
+    if (!raw) return null;
+    var parsed = null;
+    if (allowRelative && /^\\.?\\//.test(raw)) {
+      try {
+        parsed = new URL(raw, location.href);
+      } catch (_) {
+        return null;
+      }
+    } else {
+      try {
+        parsed = new URL(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+    var protocol = String(parsed.protocol || '').toLowerCase();
+    if (protocol !== 'https:' && protocol !== 'http:') return null;
+    if (enforceOrigin && safeOrigins.length) {
+      if (safeOrigins.indexOf(parsed.origin) < 0) return null;
+    }
+    return parsed.toString();
+  }
+  function stableCanonicalize(value){
+    if (Array.isArray(value)) return value.map(stableCanonicalize);
+    if (!value || typeof value !== 'object') return value;
+    var keys = Object.keys(value).sort();
+    var out = {};
+    for (var i = 0; i < keys.length; i += 1) {
+      var key = keys[i];
+      out[key] = stableCanonicalize(value[key]);
+    }
+    return out;
+  }
+  function stableStringify(value){
+    return JSON.stringify(stableCanonicalize(value));
+  }
+  function manifestWithoutSignature(input){
+    if (!input || typeof input !== 'object') return {};
+    var clone = JSON.parse(JSON.stringify(input));
+    delete clone.signature;
+    return clone;
+  }
+  function base64Bytes(raw){
+    try {
+      var bin = atob(String(raw || ''));
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+  function importManifestPublicKey(keyBase64){
+    if (!window.crypto || !window.crypto.subtle) return Promise.reject(new Error('crypto-unavailable'));
+    var keyBytes = base64Bytes(keyBase64);
+    if (!keyBytes) return Promise.reject(new Error('manifest-key-invalid-base64'));
+    return crypto.subtle.importKey(
+      'spki',
+      keyBytes,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify']
+    );
+  }
+  function verifyManifestSignature(manifest){
+    if (!manifest || typeof manifest !== 'object') return Promise.resolve({ ok: false, reason: 'manifest-invalid' });
+    var sig = manifest.signature && typeof manifest.signature === 'object' ? manifest.signature : null;
+    if (!sig) return Promise.resolve({ ok: false, reason: 'manifest-signature-missing' });
+    var keyId = String(sig.keyId || '').trim();
+    var alg = String(sig.alg || '').trim().toLowerCase();
+    var signature = String(sig.sig || '').trim();
+    if (!keyId || !signature) return Promise.resolve({ ok: false, reason: 'manifest-signature-invalid' });
+    if (requiredManifestKeyId && keyId !== requiredManifestKeyId) return Promise.resolve({ ok: false, reason: 'manifest-signature-keyid-mismatch' });
+    if (alg && alg !== 'ecdsa-p256-sha256') return Promise.resolve({ ok: false, reason: 'manifest-signature-algorithm-unsupported' });
+    var keyBase64 = manifestPublicKeys[keyId];
+    if (!keyBase64) return Promise.resolve({ ok: false, reason: 'manifest-signature-key-missing' });
+    var payload = stableStringify(manifestWithoutSignature(manifest));
+    var payloadBytes = new TextEncoder().encode(payload);
+    var signatureBytes = base64Bytes(signature);
+    if (!signatureBytes) return Promise.resolve({ ok: false, reason: 'manifest-signature-invalid-base64' });
+    return importManifestPublicKey(keyBase64).then(function(key){
+      return crypto.subtle.verify(
+        { name: 'ECDSA', hash: { name: 'SHA-256' } },
+        key,
+        signatureBytes,
+        payloadBytes
+      ).then(function(ok){
+        return ok ? { ok: true, reason: 'ok', keyId: keyId } : { ok: false, reason: 'manifest-signature-verify-failed' };
+      });
+    }).catch(function(){
+      return { ok: false, reason: 'manifest-signature-key-import-failed' };
+    });
   }
   function emit(detail){
     var payload = Object.assign({ channel: policy.channel }, detail || {});
@@ -2691,12 +3111,14 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
     if (!input || typeof input !== 'object') return null;
     var global = input.global && typeof input.global === 'object' ? input.global : {};
     var channels = input.channels && typeof input.channels === 'object' ? input.channels : {};
+    var signature = input.signature && typeof input.signature === 'object' ? input.signature : null;
     return {
       global: {
         killSwitch: global.killSwitch === true,
         forcePinVersion: global.forcePinVersion == null ? null : String(global.forcePinVersion || '').trim()
       },
-      channels: channels
+      channels: channels,
+      signature: signature
     };
   }
   function resolveRelease(parsed, version){
@@ -2706,27 +3128,30 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
     var key = String(version || '').trim();
     if (!key || !versions[key] || typeof versions[key] !== 'object') return null;
     var entry = versions[key];
-    var url = String(entry.url || '').trim();
+    var url = safeUrl(entry.url, { allowRelative: false, enforceOrigin: true });
     var integrity = String(entry.integrity || '').trim();
-    if (!url || !integrity) return null;
+    if (!url || !integrity || integrity.indexOf('sha384-') !== 0) return null;
     return { version: key, url: url, integrity: integrity };
   }
   function selectRelease(manifest){
     var parsed = normalizedManifest(manifest);
     if (!parsed) return { kind: 'invalid-manifest' };
-    if (parsed.global.killSwitch) return { kind: 'kill-switch' };
-    var channel = parsed.channels[policy.channel];
-    if (!channel || typeof channel !== 'object') return { kind: 'missing-channel' };
-    if (parsed.global.forcePinVersion) {
-      var forced = resolveRelease(parsed, parsed.global.forcePinVersion);
-      return forced ? { kind:'force-pin', release: forced } : { kind:'force-pin-missing' };
-    }
-    var latest = resolveRelease(parsed, channel.latest);
-    if (!latest) return { kind: 'missing-latest' };
-    if (compareSemver(latest.version, policy.currentVersion) <= 0) return { kind: 'up-to-date', release: latest };
-    var delta = deltaType(policy.currentVersion, latest.version);
-    if (!canAutoApply(delta)) return { kind: 'blocked-by-policy', release: latest, delta: delta };
-    return { kind: 'eligible', release: latest, delta: delta };
+    return verifyManifestSignature(manifest).then(function(sigResult){
+      if (!sigResult.ok) return { kind: 'invalid-signature', reason: sigResult.reason };
+      if (parsed.global.killSwitch) return { kind: 'kill-switch' };
+      var channel = parsed.channels[policy.channel];
+      if (!channel || typeof channel !== 'object') return { kind: 'missing-channel' };
+      if (parsed.global.forcePinVersion) {
+        var forced = resolveRelease(parsed, parsed.global.forcePinVersion);
+        return forced ? { kind:'force-pin', release: forced } : { kind:'force-pin-missing' };
+      }
+      var latest = resolveRelease(parsed, channel.latest);
+      if (!latest) return { kind: 'missing-latest' };
+      if (compareSemver(latest.version, policy.currentVersion) <= 0) return { kind: 'up-to-date', release: latest };
+      var delta = deltaType(policy.currentVersion, latest.version);
+      if (!canAutoApply(delta)) return { kind: 'blocked-by-policy', release: latest, delta: delta };
+      return { kind: 'eligible', release: latest, delta: delta };
+    });
   }
   function rememberGood(version){
     if (!version) return;
@@ -2737,7 +3162,9 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
   }
   function loadRemoteRelease(release, meta){
     var details = meta && typeof meta === 'object' ? meta : {};
-    return fetch(release.url, { cache: 'no-store', mode: 'cors' })
+    var safeRuntimeUrl = safeUrl(release && release.url, { allowRelative: false, enforceOrigin: true });
+    if (!safeRuntimeUrl) return Promise.reject(new Error('runtime-url-disallowed'));
+    return fetch(safeRuntimeUrl, { cache: 'no-store', mode: 'cors' })
       .then(function(res){ if (!res || !res.ok) throw new Error('runtime-http-' + (res ? res.status : 'x')); return res.text(); })
       .then(function(text){
         return hashText(text).then(function(actual){
@@ -2780,8 +3207,9 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
     });
   }
   function fetchManifest(){
-    if (!window.fetch || !policy.manifestUrl) return Promise.resolve(fallbackManifest);
-    return fetch(policy.manifestUrl, { cache: 'no-store', mode: 'cors' })
+    var safeManifestUrl = safeUrl(policy.manifestUrl, { allowRelative: false, enforceOrigin: true });
+    if (!window.fetch || !safeManifestUrl) return Promise.resolve(fallbackManifest);
+    return fetch(safeManifestUrl, { cache: 'no-store', mode: 'cors' })
       .then(function(res){ if (!res || !res.ok) throw new Error('manifest-http-' + (res ? res.status : 'x')); return res.json(); })
       .catch(function(){ return fallbackManifest; });
   }
@@ -2795,7 +3223,7 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
     });
   }
   fetchManifest().then(function(manifest){
-    var selected = selectRelease(manifest);
+    return selectRelease(manifest).then(function(selected){
     if (selected.kind === 'kill-switch') return loadFallback('kill-switch');
     if (selected.kind === 'force-pin') {
       var forced = selected.release;
@@ -2817,6 +3245,7 @@ function praeBuildRuntimeLoaderScript(opts = {}) {
         return tryLastKnownGood(manifest, 'remote-failed')
           .catch(function(){ return loadFallback('remote-failed'); });
       });
+    });
   }).catch(function(){ return loadFallback('manifest-failed'); });
 })();`;
 }
@@ -3949,6 +4378,44 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function sanitizeHtmlUrl(input, { allowRelative = true } = {}) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  if (allowRelative && /^([./#]|[^a-zA-Z][^:]*)/.test(raw)) {
+    if (/^javascript:/i.test(raw)) return '';
+    if (/^data:/i.test(raw)) return '';
+    return raw;
+  }
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (_) {
+    return '';
+  }
+  const protocol = String(parsed.protocol || '').toLowerCase();
+  if (protocol === 'https:' || protocol === 'http:' || protocol === 'mailto:' || protocol === 'tel:') {
+    return parsed.toString();
+  }
+  return '';
+}
+
+function sanitizeHtmlFragment(input) {
+  let html = String(input || '');
+  if (!html) return '';
+  html = html
+    .replace(/<\s*(script|style|iframe|object|embed|meta|link)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    .replace(/<\s*(script|style|iframe|object|embed|meta|link)[^>]*\/?>/gi, '');
+  html = html.replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '');
+  html = html.replace(/\sstyle\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '');
+  html = html.replace(/\s(href|src)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi, (full, attr, _raw, dq, sq, bare) => {
+    const value = dq ?? sq ?? bare ?? '';
+    const safe = sanitizeHtmlUrl(value, { allowRelative: true });
+    if (!safe) return '';
+    return ` ${attr}="${escapeHtml(safe)}"`;
+  });
+  return html;
+}
+
 function serializeForScript(data) {
   return JSON.stringify(data).replace(/</g, '\\u003c');
 }
@@ -3986,6 +4453,12 @@ function renderWorksList(works, { linkMode = 'auto' } = {}) {
   if (!works.length) {
     return '<p>No works found yet. Run <code>prae add</code> to add repertoire.</p>';
   }
+  const safeHref = (input) => {
+    const raw = String(input || '').trim();
+    if (!raw) return '#';
+    if (/^javascript:/i.test(raw)) return '#';
+    return raw;
+  };
   const items = works.map((work) => {
     const view = normalizeWork(work);
     const slug = slugify(view.slug || view.title || 'work');
@@ -3995,9 +4468,9 @@ function renderWorksList(works, { linkMode = 'auto' } = {}) {
     const label = view.title || view.slug || 'Untitled';
     const summary = view.onelinerEffective || '';
     const anchor = linkMode === 'external' && work.href
-      ? `<a href="${work.href}" target="_blank" rel="noopener">${label}</a>`
-      : `<a href="${href}">${label}</a>`;
-    return `<li><h3>${anchor}</h3>${summary ? `<p>${summary}</p>` : ''}</li>`;
+      ? `<a href="${safeHref(work.href)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>`
+      : `<a href="${safeHref(href)}">${escapeHtml(label)}</a>`;
+    return `<li><h3>${anchor}</h3>${summary ? `<p>${escapeHtml(summary)}</p>` : ''}</li>`;
   }).join('');
   return `<div class="docs-works-list"><ul>${items}</ul></div>`;
 }
@@ -4035,6 +4508,39 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
     const renderer = new markedLib.Renderer();
     const headings = [];
     const headingCounts = new Map();
+    renderer.html = function rawHtmlRenderer(token) {
+      const raw = typeof token === 'string' ? token : (token?.text ?? '');
+      return escapeHtml(raw);
+    };
+    renderer.link = function linkRenderer(token) {
+      const hrefRaw = typeof token?.href === 'string' ? token.href : '';
+      const titleRaw = typeof token?.title === 'string' ? token.title : '';
+      const textRaw = this.parser && token?.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token?.text ?? '');
+      const href = sanitizeHtmlUrl(hrefRaw, { allowRelative: true });
+      if (!href) return textRaw;
+      const isExternal = /^https?:\/\//i.test(href);
+      const attrs = [
+        `href="${escapeHtml(href)}"`,
+        titleRaw ? `title="${escapeHtml(titleRaw)}"` : '',
+        isExternal ? 'target="_blank" rel="noopener noreferrer"' : ''
+      ].filter(Boolean).join(' ');
+      return `<a ${attrs}>${textRaw}</a>`;
+    };
+    renderer.image = function imageRenderer(token) {
+      const hrefRaw = typeof token?.href === 'string' ? token.href : '';
+      const altRaw = typeof token?.text === 'string' ? token.text : '';
+      const titleRaw = typeof token?.title === 'string' ? token.title : '';
+      const src = sanitizeHtmlUrl(hrefRaw, { allowRelative: true });
+      if (!src) return '';
+      const attrs = [
+        `src="${escapeHtml(src)}"`,
+        `alt="${escapeHtml(altRaw)}"`,
+        titleRaw ? `title="${escapeHtml(titleRaw)}"` : '',
+        'loading="lazy"',
+        'decoding="async"'
+      ].filter(Boolean).join(' ');
+      return `<img ${attrs}>`;
+    };
     renderer.heading = function headingRenderer(token) {
       const depth = Number.isFinite(token?.depth) ? token.depth : 2;
       const rawHtml = this.parser && token?.tokens ? this.parser.parseInline(token.tokens) : (token?.text ?? '');
@@ -4056,7 +4562,7 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
       mangle: false,
       headerIds: false
     });
-    const html = parser.parse(markdown || '');
+    const html = sanitizeHtmlFragment(parser.parse(markdown || ''));
     return { html, headings };
   };
 
@@ -4068,7 +4574,9 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
   const ensureString = (value, fallback = '') => {
     if (typeof value === 'string') {
       const trimmed = value.trim();
-      return trimmed.length ? trimmed : fallback;
+      if (!trimmed.length) return fallback;
+      const plain = htmlToPlainText(trimmed);
+      return plain.length ? plain : fallback;
     }
     return fallback;
   };
@@ -4144,7 +4652,7 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
     if (!Array.isArray(items)) return [];
     return items.map((item, idx) => {
       if (!item || typeof item !== 'object') return null;
-      const src = ensureString(item.src || item.url);
+      const src = sanitizeHtmlUrl(ensureString(item.src || item.url), { allowRelative: true });
       if (!src) {
         warnings.push(`Doc "${docId}" media module item ${idx + 1} is missing src.`);
         return null;
@@ -4181,12 +4689,12 @@ async function buildDocsPayload({ config, projectRoot, worksDb }) {
       }
 
       if (type === 'score') {
-        const pdf = ensureString(module.pdf);
+        const pdf = sanitizeHtmlUrl(ensureString(module.pdf), { allowRelative: true });
         if (!pdf) {
           warnings.push(`Doc "${docId}" ${keyBase} (score) is missing required "pdf".`);
           return;
         }
-        const audio = ensureString(module.audio);
+        const audio = sanitizeHtmlUrl(ensureString(module.audio), { allowRelative: true });
         const cues = Array.isArray(module.cues) ? module.cues.map((cue, cueIdx) => {
           if (!cue || typeof cue !== 'object') return null;
           const label = ensureString(cue.label, `Cue ${cueIdx + 1}`);
@@ -7075,10 +7583,26 @@ program
       const manifestUrl = String(webUpdates.manifestUrl || '').trim();
       if (!manifestUrl) {
         errors.push({ type: 'config', where: 'updates.web.manifestUrl', msg: 'must be a non-empty URL' });
+      } else if (!praeSafeUrl(manifestUrl, { allowHttp: true })) {
+        errors.push({ type: 'config', where: 'updates.web.manifestUrl', msg: 'must be a valid http(s) URL' });
       }
       const telemetryUrl = String(webUpdates.telemetryUrl || '').trim();
       if (!telemetryUrl) {
         errors.push({ type: 'config', where: 'updates.web.telemetryUrl', msg: 'must be a non-empty URL' });
+      } else if (!praeSafeUrl(telemetryUrl, { allowHttp: true })) {
+        errors.push({ type: 'config', where: 'updates.web.telemetryUrl', msg: 'must be a valid http(s) URL' });
+      }
+      const allowOrigins = Array.isArray(webUpdates.allowOrigins) ? webUpdates.allowOrigins : [];
+      if (!allowOrigins.length) {
+        errors.push({ type: 'config', where: 'updates.web.allowOrigins', msg: 'must include at least one allowed runtime origin' });
+      }
+      const keyId = String(webUpdates.requiredManifestKeyId || '').trim();
+      if (!keyId) {
+        errors.push({ type: 'config', where: 'updates.web.requiredManifestKeyId', msg: 'must be set to a trusted manifest signer key id' });
+      }
+      const keys = praeNormalizeManifestPublicKeys(webUpdates.manifestPublicKeys || {});
+      if (!keys[keyId]) {
+        errors.push({ type: 'config', where: 'updates.web.manifestPublicKeys', msg: `must include key "${keyId}"` });
       }
       if (webUpdates.autoMajor !== false) {
         errors.push({ type: 'config', where: 'updates.web.autoMajor', msg: 'auto major updates are not supported' });
@@ -7437,6 +7961,9 @@ program
           currentVersion: schemaVersion,
           autoPatch: webUpdatePolicy.autoPatch,
           autoMinor: webUpdatePolicy.autoMinor,
+          allowOrigins: webUpdatePolicy.allowOrigins,
+          manifestPublicKeys: webUpdatePolicy.manifestPublicKeys,
+          requiredManifestKeyId: webUpdatePolicy.requiredManifestKeyId,
           manifestPreview
         });
         const runtimeLoaderPath = path.join(outDir, runtimeLoaderFile);
@@ -7776,5 +8303,9 @@ if (process.env.PRAE_TEST_EXPORTS !== '1') {
     praeSelectRuntimeRelease,
     praeBuildRuntimeManifestPreview,
     praeBuildRuntimeLoaderScript,
+    praeSignManifest,
+    praeVerifyManifestSignature,
+    praeSafeUrl,
+    praeStableStringify,
   };
 }

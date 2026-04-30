@@ -303,6 +303,35 @@ If you see `GET http://localhost:5173/style.css 404` or similar, you’re pointi
 **PDF page-follow doesn’t work**
 Use **cdn-hosted links** URL with a proper `file=` parameter (not a Drive “preview” URL). Verify your `score` mapping is monotonic (i.e. times increasing; pages ≥ 1). 
 
+---
+
+## Runtime release control plane
+
+For opt-in web runtime auto-update, treat the channel manifest as privileged infrastructure.
+
+Key operations:
+
+* Generate a signing key pair:
+  * `npm run release:runtime:keygen -- <key-id>`
+* Promote a runtime version into a channel:
+  * `npm run release:runtime:promote -- --manifest ./manifests/stable.json --channel stable --version 0.2.12 --runtime-url https://cdn.praetorius.dev/runtime/0.2.12/script.js --runtime-file ./dist/script.js --key-id <key-id> --allow-origins https://cdn.praetorius.dev`
+* Verify manifest signature + URL/integrity policy:
+  * `npm run release:runtime:verify -- --manifest ./manifests/stable.json --required-key-id <key-id> --public-keys-json '{\"<key-id>\":\"<spki-base64>\"}' --allow-origins https://cdn.praetorius.dev`
+* Emergency rollback (force pin):
+  * `npm run release:runtime:rollback -- --manifest ./manifests/stable.json --version 0.2.11 --key-id <key-id>`
+* Emergency stop (kill switch):
+  * `npm run release:runtime:killswitch -- --manifest ./manifests/stable.json --enable true --key-id <key-id>`
+
+Required privileged env vars (or `--private-key-file`):
+
+* `PRAE_MANIFEST_SIGNING_PRIVATE_KEY_PEM`
+* `PRAE_MANIFEST_SIGNING_KEY_ID`
+
+Recommended governance:
+
+* Restrict who can run promote/rollback/kill-switch scripts.
+* Require CI verification before manifest promotion.
+* Keep signing private keys in a secrets manager only.
 
 ---
 

@@ -79,8 +79,121 @@ const PLACEHOLDER_DOC = HOMEPAGE_MISSING
 const moduleAudioMap = new Map();
 const stringWarnings = new Set();
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toPlainText(value) {
+  const text = String(value ?? '');
+  if (!text) return '';
+  const host = document.createElement('div');
+  host.innerHTML = text;
+  return host.textContent || '';
+}
+
+function sanitizeRuntimeUrl(input, { allowRelative = true } = {}) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  if (allowRelative && (/^([./#]|[^a-zA-Z][^:]*)/.test(raw))) {
+    if (/^javascript:/i.test(raw) || /^data:/i.test(raw)) return '';
+    return raw;
+  }
+  let parsed;
+  try {
+    parsed = new URL(raw, window.location.href);
+  } catch (_) {
+    return '';
+  }
+  const protocol = String(parsed.protocol || '').toLowerCase();
+  if (protocol === 'http:' || protocol === 'https:' || protocol === 'mailto:' || protocol === 'tel:') {
+    return parsed.toString();
+  }
+  return '';
+}
+
+function sanitizeHtmlFragment(input) {
+  const template = document.createElement('template');
+  template.innerHTML = String(input || '');
+  const blockedTags = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'META', 'LINK']);
+  const allowed = {
+    A: new Set(['href', 'title', 'target', 'rel']),
+    IMG: new Set(['src', 'alt', 'title', 'loading', 'decoding']),
+    P: new Set(['class']),
+    H1: new Set(['id', 'class']),
+    H2: new Set(['id', 'class']),
+    H3: new Set(['id', 'class']),
+    H4: new Set(['id', 'class']),
+    H5: new Set(['id', 'class']),
+    H6: new Set(['id', 'class']),
+    UL: new Set(['class']),
+    OL: new Set(['class']),
+    LI: new Set(['class']),
+    BLOCKQUOTE: new Set(['class']),
+    PRE: new Set(['class']),
+    CODE: new Set(['class']),
+    EM: new Set(['class']),
+    STRONG: new Set(['class']),
+    HR: new Set(['class']),
+    BR: new Set(['class']),
+    TABLE: new Set(['class']),
+    THEAD: new Set(['class']),
+    TBODY: new Set(['class']),
+    TR: new Set(['class']),
+    TH: new Set(['class']),
+    TD: new Set(['class']),
+    FIGURE: new Set(['class']),
+    FIGCAPTION: new Set(['class']),
+    DIV: new Set(['class']),
+    SPAN: new Set(['class']),
+  };
+
+  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_ELEMENT);
+  const toRemove = [];
+  while (walker.nextNode()) {
+    const el = walker.currentNode;
+    const tag = el.tagName;
+    if (blockedTags.has(tag)) {
+      toRemove.push(el);
+      continue;
+    }
+    const allowedAttrs = allowed[tag] || new Set(['class']);
+    const attrs = Array.from(el.attributes || []);
+    attrs.forEach((attr) => {
+      const name = String(attr.name || '').toLowerCase();
+      const value = String(attr.value || '');
+      if (name.startsWith('on') || name === 'style') {
+        el.removeAttribute(attr.name);
+        return;
+      }
+      if (!allowedAttrs.has(attr.name)) {
+        el.removeAttribute(attr.name);
+        return;
+      }
+      if (name === 'href' || name === 'src') {
+        const safe = sanitizeRuntimeUrl(value, { allowRelative: true });
+        if (!safe) el.removeAttribute(attr.name);
+        else el.setAttribute(attr.name, safe);
+      }
+      if (tag === 'A' && name === 'target') {
+        if (value !== '_blank') el.removeAttribute('target');
+        else el.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+  }
+  toRemove.forEach((node) => {
+    if (!node || !node.parentNode) return;
+    node.parentNode.removeChild(node);
+  });
+  return template.innerHTML;
+}
+
 function ensureString(value, key, fallback = '') {
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return toPlainText(value);
   if (value != null && key && !stringWarnings.has(key)) {
     console.warn(`[docs-reader] Ignoring non-string ${key}.`);
     stringWarnings.add(key);
@@ -89,7 +202,7 @@ function ensureString(value, key, fallback = '') {
 }
 
 function ensureHtml(value, key) {
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return sanitizeHtmlFragment(value);
   if (value != null && key && !stringWarnings.has(key)) {
     console.warn(`[docs-reader] Ignoring non-string ${key}.`);
     stringWarnings.add(key);
@@ -510,7 +623,7 @@ function renderNav(onNavigate) {
     toggle.className = 'dr-nav-group-toggle';
     toggle.setAttribute('aria-expanded', String(open));
     const title = ensureString(group.label, 'nav.group.label', 'Section');
-    toggle.innerHTML = `<span>${title}</span><span>${open ? '[-]' : '[+]'}</span>`;
+    toggle.innerHTML = `<span>${escapeHtml(title)}</span><span>${open ? '[-]' : '[+]'}</span>`;
 
     const list = document.createElement('ul');
     list.className = 'dr-nav-items';
@@ -536,7 +649,7 @@ function renderNav(onNavigate) {
       const snippet = ensureString(item.snippet, 'nav.item.snippet', '');
       const href = ensureString(item.href, 'nav.item.href', '');
       const docId = ensureString(item.docId || item.id, 'nav.item.docId', '');
-      link.innerHTML = `<span class="dr-nav-link-title">${label}</span>${snippet ? `<span class="dr-nav-link-snippet">${snippet}</span>` : ''}`;
+      link.innerHTML = `<span class="dr-nav-link-title">${escapeHtml(label)}</span>${snippet ? `<span class="dr-nav-link-snippet">${escapeHtml(snippet)}</span>` : ''}`;
       const status = item.meta && typeof item.meta === 'object' ? ensureString(item.meta.status, 'nav.item.meta.status', '') : '';
       if (status) {
         const statusNode = document.createElement('span');
@@ -573,7 +686,7 @@ function renderMediaModule(module) {
   const items = Array.isArray(module.items) ? module.items : [];
   items.forEach((item) => {
     if (!item || typeof item !== 'object') return;
-    const src = ensureString(item.src, 'module.media.item.src', '');
+    const src = sanitizeRuntimeUrl(ensureString(item.src, 'module.media.item.src', ''), { allowRelative: true });
     if (!src) return;
     const figure = document.createElement('figure');
     figure.className = 'dr-media-item';
@@ -692,10 +805,20 @@ function syncScoreToolsPane(activeScore) {
   pane.hidden = false;
   emptyNode.hidden = true;
   closeBtn.hidden = false;
+  const safePdf = sanitizeRuntimeUrl(activeScore.pdf, { allowRelative: true });
+  if (!safePdf) {
+    pane.hidden = true;
+    emptyNode.hidden = false;
+    closeBtn.hidden = true;
+    frame.removeAttribute('src');
+    open.removeAttribute('href');
+    title.textContent = 'Score';
+    return;
+  }
   const safePage = Number.isFinite(Number(activeScore.page)) && Number(activeScore.page) >= 1 ? Math.floor(Number(activeScore.page)) : 0;
   const hash = safePage ? `#page=${safePage}` : '';
-  frame.src = `${activeScore.pdf}${hash}`;
-  open.href = `${activeScore.pdf}${hash}`;
+  frame.src = `${safePdf}${hash}`;
+  open.href = `${safePdf}${hash}`;
   title.textContent = activeScore.title || 'Score';
 }
 
@@ -718,7 +841,7 @@ function renderScoreModule(module, doc, moduleIndex, state) {
 
   openBtn.addEventListener('click', () => {
     state.activeScore = {
-      pdf: ensureString(module.pdf, 'module.score.pdf', ''),
+      pdf: sanitizeRuntimeUrl(ensureString(module.pdf, 'module.score.pdf', ''), { allowRelative: true }),
       title: ensureString(module.title, 'module.score.title', 'Score'),
       page: 0,
       key: moduleKey
@@ -728,7 +851,7 @@ function renderScoreModule(module, doc, moduleIndex, state) {
 
   controls.appendChild(openBtn);
 
-  const audioSrc = ensureString(module.audio, 'module.score.audio', '');
+  const audioSrc = sanitizeRuntimeUrl(ensureString(module.audio, 'module.score.audio', ''), { allowRelative: true });
   let playBtn = null;
   let audio = null;
   if (audioSrc) {
@@ -795,7 +918,7 @@ function renderScoreModule(module, doc, moduleIndex, state) {
         }
         if (module.pageFollow !== false && cue && Number.isFinite(Number(cue.page)) && Number(cue.page) >= 1) {
           state.activeScore = {
-            pdf: ensureString(module.pdf, 'module.score.pdf', ''),
+            pdf: sanitizeRuntimeUrl(ensureString(module.pdf, 'module.score.pdf', ''), { allowRelative: true }),
             title: ensureString(module.title, 'module.score.title', 'Score'),
             page: Number(cue.page),
             key: moduleKey
@@ -823,7 +946,7 @@ function renderScoreModule(module, doc, moduleIndex, state) {
       const cue = cues[nextCue];
       if (cue && Number.isFinite(Number(cue.page)) && Number(cue.page) >= 1) {
         state.activeScore = {
-          pdf: ensureString(module.pdf, 'module.score.pdf', ''),
+          pdf: sanitizeRuntimeUrl(ensureString(module.pdf, 'module.score.pdf', ''), { allowRelative: true }),
           title: ensureString(module.title, 'module.score.title', 'Score'),
           page: Number(cue.page),
           key: moduleKey
@@ -1233,7 +1356,7 @@ ready(() => {
         button.type = 'button';
         button.className = 'dr-command-item';
         button.dataset.index = String(idx);
-        button.innerHTML = `<span class="dr-command-item-title">${result.title || 'Untitled'}</span><span class="dr-command-item-snippet">${result.snippet || ''}</span><span class="dr-command-item-meta">${result.kind === 'heading' ? 'Heading' : 'Page'} · ${result.docId || ''}</span>`;
+        button.innerHTML = `<span class="dr-command-item-title">${escapeHtml(result.title || 'Untitled')}</span><span class="dr-command-item-snippet">${escapeHtml(result.snippet || '')}</span><span class="dr-command-item-meta">${result.kind === 'heading' ? 'Heading' : 'Page'} · ${escapeHtml(result.docId || '')}</span>`;
         button.addEventListener('click', () => {
           const entry = state.commandResults[Number(button.dataset.index)];
           if (!entry) return;

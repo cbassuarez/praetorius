@@ -3,6 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
+import crypto from 'node:crypto';
 import { execa } from 'execa';
 import pkg from '../package.json' assert { type: 'json' };
 
@@ -86,6 +87,10 @@ describe('auto-update helper logic', () => {
   });
 
   it('applies manifest kill-switch, force-pin, and policy blocking rules', () => {
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const keyId = 'test-manifest-key';
+    const publicKeyBase64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' });
     const manifest = {
       schemaVersion: 1,
       generatedAt: '2026-04-29T00:00:00.000Z',
@@ -97,39 +102,45 @@ describe('auto-update helper logic', () => {
         stable: {
           latest: '1.2.4',
           versions: {
-            '1.2.3': { version: '1.2.3', url: 'https://cdn.example.com/1.2.3.js', integrity: 'sha384-a' },
-            '1.2.4': { version: '1.2.4', url: 'https://cdn.example.com/1.2.4.js', integrity: 'sha384-b' }
+            '1.2.3': { version: '1.2.3', url: 'https://cdn.praetorius.dev/1.2.3.js', integrity: 'sha384-a' },
+            '1.2.4': { version: '1.2.4', url: 'https://cdn.praetorius.dev/1.2.4.js', integrity: 'sha384-b' }
           }
         }
       }
     };
+    const signedManifest = helpers.praeSignManifest(manifest, { keyId, privateKeyPem });
 
     const policy = helpers.praeNormalizeWebUpdateConfig({
       enabled: true,
       channel: 'stable',
       autoPatch: true,
       autoMinor: false,
-      manifestUrl: 'https://cdn.example.com/manifest.json',
-      telemetryUrl: 'https://cdn.example.com/events'
+      manifestUrl: 'https://cdn.praetorius.dev/runtime/channels/stable.json',
+      telemetryUrl: 'https://cdn.praetorius.dev/runtime/events',
+      allowOrigins: ['https://cdn.praetorius.dev'],
+      requiredManifestKeyId: keyId,
+      manifestPublicKeys: {
+        [keyId]: publicKeyBase64
+      }
     });
 
-    const eligible = helpers.praeSelectRuntimeRelease(manifest, policy, '1.2.3');
+    const eligible = helpers.praeSelectRuntimeRelease(signedManifest, policy, '1.2.3');
     expect(eligible.kind).toBe('eligible');
     expect(eligible.delta).toBe('patch');
 
     const blocked = helpers.praeSelectRuntimeRelease(
-      {
+      helpers.praeSignManifest({
         ...manifest,
         channels: {
           stable: {
             latest: '1.3.0',
             versions: {
               ...manifest.channels.stable.versions,
-              '1.3.0': { version: '1.3.0', url: 'https://cdn.example.com/1.3.0.js', integrity: 'sha384-c' }
+              '1.3.0': { version: '1.3.0', url: 'https://cdn.praetorius.dev/1.3.0.js', integrity: 'sha384-c' }
             }
           }
         }
-      },
+      }, { keyId, privateKeyPem }),
       policy,
       '1.2.3'
     );
@@ -137,20 +148,20 @@ describe('auto-update helper logic', () => {
     expect(blocked.delta).toBe('minor');
 
     const killSwitch = helpers.praeSelectRuntimeRelease(
-      {
+      helpers.praeSignManifest({
         ...manifest,
         global: { ...manifest.global, killSwitch: true }
-      },
+      }, { keyId, privateKeyPem }),
       policy,
       '1.2.3'
     );
     expect(killSwitch.kind).toBe('kill-switch');
 
     const forcePin = helpers.praeSelectRuntimeRelease(
-      {
+      helpers.praeSignManifest({
         ...manifest,
         global: { ...manifest.global, forcePinVersion: '1.2.3' }
-      },
+      }, { keyId, privateKeyPem }),
       policy,
       '1.2.3'
     );

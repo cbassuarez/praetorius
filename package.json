@@ -40,6 +40,11 @@
     "test:web-parity": "node scripts/web-parity-matrix.mjs",
     "test:builder-smoke": "node scripts/builder-a11y-perf-smoke.mjs",
     "test:release-gate": "npm run test:cli-matrix && PRAE_STRICT_WEB_PARITY=1 npm run test:web-parity && PRAE_STRICT_BUILDER_SMOKE=1 npm run test:builder-smoke",
+    "release:runtime:keygen": "node scripts/release/runtime-keygen.mjs",
+    "release:runtime:promote": "node scripts/release/runtime-promote.mjs",
+    "release:runtime:rollback": "node scripts/release/runtime-rollback.mjs",
+    "release:runtime:killswitch": "node scripts/release/runtime-killswitch.mjs",
+    "release:runtime:verify": "node scripts/release/runtime-verify.mjs",
     "prepack": "node scripts/prepack-verify.mjs && chmod +x src/cli/index.js",
     "prepublishOnly": "npm run test && npm run test:release-gate && npm pack --dry-run",
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s"
