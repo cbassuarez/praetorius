@@ -177,6 +177,32 @@ ensureHudRoot();
       ? 'strict-origin-when-cross-origin'
       : 'no-referrer');
   }
+  function resolveScorePdfMode(work){
+    if (praeMedia && typeof praeMedia.resolveScorePdfMode === 'function') {
+      try { return praeMedia.resolveScorePdfMode(work || {}); } catch (_) {}
+    }
+    return 'interactive';
+  }
+  function applyPdfFramePolicy(frame, work, options = {}){
+    if (!frame) return 'interactive';
+    if (praeMedia && typeof praeMedia.applyPdfFramePolicy === 'function') {
+      try {
+        return praeMedia.applyPdfFramePolicy(frame, work || {}, options);
+      } catch (_) {}
+    }
+    const mode = options.mode === 'clean'
+      ? 'clean'
+      : (options.mode === 'interactive' ? 'interactive' : resolveScorePdfMode(work));
+    const clean = mode === 'clean';
+    frame.setAttribute('data-prae-score-pdf-mode', mode);
+    frame.style.pointerEvents = clean ? 'none' : '';
+    if (clean) frame.setAttribute('tabindex', '-1');
+    else frame.removeAttribute('tabindex');
+    if (options.container && typeof options.container.setAttribute === 'function') {
+      options.container.setAttribute('data-prae-score-pdf-mode', mode);
+    }
+    return mode;
+  }
   const site  = (PRAE.config && PRAE.config.site) || {};
   const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
   const prefersReducedMotion = typeof window.matchMedia === 'function'
@@ -385,7 +411,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
       <div class="actions">
         <button class="btn" type="button" data-act="open" data-id="${w.id}">${icon('eye')}<span>Open</span></button>
         <button class="btn" type="button" data-act="copy" data-id="${w.id}">${icon('link')}<span>Copy URL</span></button>
-        ${w.pdf ? `<button class="btn" type="button" data-act="pdf" data-id="${w.id}">${icon('document')}<span>PDF</span></button>` : ''}
+        ${getPdfSourceForWork(w) ? `<button class="btn" type="button" data-act="pdf" data-id="${w.id}">${icon('document')}<span>PDF</span></button>` : ''}
       </div>
       <div class="note" hidden></div>`;
     host.appendChild(el);
@@ -499,6 +525,11 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     };
   }
 
+  function getPdfSourceForWork(work){
+    const media = resolveWorkMedia(work || {});
+    return normalizePdfUrl(media.pdfUrl || work?.pdf || '');
+  }
+
   function ensureAudioFor(w){
     let a = document.getElementById('wc-a'+w.id);
     if (!a) {
@@ -604,8 +635,8 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     const meta = findWorkById(id);
     if (!meta) return;
     const w = meta.data;
-    if (!w.pdf) return;
-    const raw = normalizePdfUrl(w.pdf);
+    const raw = getPdfSourceForWork(w);
+    if (!raw) return;
     const src = choosePdfViewer(raw);
 // choosePdfViewer() always returns an absolute URL
     const abs = src;
@@ -632,6 +663,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     shell?.classList.add('has-pdf');
     if (pdfPane) pdfPane.removeAttribute('aria-hidden');
     setEmbedFrameMode(pdfFrame, 'pdf');
+    applyPdfFramePolicy(pdfFrame, w, { container: pdfPane });
     // Reset viewer (avoid stale hash race)
     const isPdfJs = /\/viewer\.html/i.test(abs);
     const base    = abs.split('#')[0];
@@ -657,8 +689,8 @@ pdfViewerReady = false;
     pdfPane.removeAttribute('aria-hidden');
     pdfViewerReady = false;
     setEmbedFrameMode(pdfFrame, 'youtube');
-    const src = media?.youtubeEmbedUrl || media?.youtubeUrl || 'about:blank';
-    pdfFrame.src = src;
+    applyPdfFramePolicy(pdfFrame, work, { mode: 'interactive', container: pdfPane });
+    pdfFrame.src = 'about:blank';
   }
 
   function getPageFollowSeconds(){
@@ -745,8 +777,12 @@ pdfViewerReady = false;
       if (chosen) return chosen;
     } catch (_) {}
   }
-  const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
-  const file = m ? `https://drive.google.com/uc?export=download&id=${m[1]}` : url;
+  let resolved = String(url || '').trim();
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(resolved) && !/^\/\//.test(resolved)) {
+    try { resolved = new URL(resolved, location.href).toString(); } catch (_) {}
+  }
+  const m = resolved.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+  const file = m ? `https://drive.google.com/uc?export=download&id=${m[1]}` : resolved;
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
 }
 

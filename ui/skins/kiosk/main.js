@@ -166,7 +166,6 @@ const state = {
     title: null,
     close: null,
     frame: null,
-    backdrop: null,
     viewerReady: false,
     pendingGoto: null,
     currentSlug: null,
@@ -394,6 +393,13 @@ function resolveWorkMedia(work) {
   };
 }
 
+function resolveScorePdfMode(work) {
+  if (praeMedia && typeof praeMedia.resolveScorePdfMode === 'function') {
+    try { return praeMedia.resolveScorePdfMode(work || {}); } catch (_) {}
+  }
+  return 'interactive';
+}
+
 function normalizePdfUrl(url) {
   if (praeMedia && typeof praeMedia.normalizePdfUrl === 'function') {
     try { return praeMedia.normalizePdfUrl(url); } catch (_) {}
@@ -411,9 +417,34 @@ function choosePdfViewer(url) {
       if (chosen) return chosen;
     } catch (_) {}
   }
-  const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
-  const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : url;
+  let resolved = String(url || '').trim();
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(resolved) && !/^\/\//.test(resolved)) {
+    try { resolved = new URL(resolved, location.href).toString(); } catch (_) {}
+  }
+  const match = resolved.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+  const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : resolved;
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
+}
+
+function applyPdfFramePolicy(frame, work, options = {}) {
+  if (!frame) return 'interactive';
+  if (praeMedia && typeof praeMedia.applyPdfFramePolicy === 'function') {
+    try {
+      return praeMedia.applyPdfFramePolicy(frame, work || {}, options);
+    } catch (_) {}
+  }
+  const mode = options.mode === 'clean'
+    ? 'clean'
+    : (options.mode === 'interactive' ? 'interactive' : resolveScorePdfMode(work));
+  const clean = mode === 'clean';
+  frame.setAttribute('data-prae-score-pdf-mode', mode);
+  frame.style.pointerEvents = clean ? 'none' : '';
+  if (clean) frame.setAttribute('tabindex', '-1');
+  else frame.removeAttribute('tabindex');
+  if (options.container && typeof options.container.setAttribute === 'function') {
+    options.container.setAttribute('data-prae-score-pdf-mode', mode);
+  }
+  return mode;
 }
 
 function ensureAudioFor(work) {
@@ -609,7 +640,7 @@ async function playYouTubeAt(work, id, t = 0, media = resolveWorkMedia(work)) {
     }
   } catch (_) {}
   pauseOthers(work.id);
-  const { pane, frame, title, backdrop } = state.pdf;
+  const { pane, frame, title } = state.pdf;
   if (!pane || !frame) {
     detachPageFollow();
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
@@ -620,15 +651,16 @@ async function playYouTubeAt(work, id, t = 0, media = resolveWorkMedia(work)) {
   }
   state.pdf.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.pdf.currentSlug = work.slug || null;
+  mountPdfPaneInDetail();
   pane.removeAttribute('hidden');
   pane.setAttribute('aria-hidden', 'false');
-  backdrop?.removeAttribute('hidden');
-  pane.classList.add('is-open');
+  state.detail.container?.classList.add('has-pdf');
   pane.focus?.({ preventScroll: true });
   if (title) title.textContent = String(work.title || 'YouTube');
   state.pdf.viewerReady = false;
   setEmbedFrameMode(frame, 'youtube');
-  frame.src = media.youtubeEmbedUrl || media.youtubeUrl || 'about:blank';
+  applyPdfFramePolicy(frame, work, { mode: 'interactive', container: pane });
+  frame.src = 'about:blank';
   try {
     const controller = await praeMedia.mountYouTubePlayer(frame, work, {
       onError: (err) => {
@@ -767,6 +799,15 @@ async function copyUrl(id) {
   }
 }
 
+function mountPdfPaneInDetail() {
+  const detail = state.detail.container;
+  const pane = state.pdf.pane;
+  if (!detail || !pane) return;
+  if (pane.parentElement !== detail) {
+    detail.prepend(pane);
+  }
+}
+
 function showDetail(id) {
   const record = findWorkById(id);
   if (!record) return;
@@ -778,6 +819,9 @@ function showDetail(id) {
   state.tiles.forEach((tile) => tile.classList.toggle('selected', Number(tile.dataset.workId) === Number(work.id)));
   const detail = state.detail.container;
   if (!detail) return;
+  if (state.pdf.pane && state.pdf.currentSlug && state.pdf.currentSlug !== (work.slug || null)) {
+    hidePdfPane({ restoreFocus: false });
+  }
   const cues = Array.isArray(work.cues) ? work.cues : [];
   const tags = normalizeTagList(work.tags).slice(0, 8);
   const cueHtml = cues.length
@@ -791,6 +835,10 @@ function showDetail(id) {
   const pdfUrl = normalizePdfUrl(media.pdfUrl || work.pdf || '');
   const pdfDisabled = !pdfUrl;
   const pdfLabel = pdfUrl ? 'Open Score' : 'Score unavailable';
+  const scoreMode = resolveScorePdfMode(work);
+  const cleanModeNote = scoreMode === 'clean'
+    ? '<p class="kiosk-detail-note">Clean mode: score viewer is locked; page changes follow cues/playback.</p>'
+    : '';
   const playLabel = media.kind === 'youtube' ? 'Play YouTube' : 'Play';
   const tagsHtml = tags.length
     ? `<div class="kiosk-tags">${tags.map((tag) => `<span class="kiosk-tag">${esc(tag)}</span>`).join('')}</div>`
@@ -813,9 +861,12 @@ function showDetail(id) {
       <button type="button" class="kiosk-btn" data-act="copy" data-id="${work.id}">${buttonMarkup('link', 'Copy URL')}</button>
       <button type="button" class="kiosk-btn" data-act="open-window" data-id="${work.id}">${buttonMarkup('arrowUpRight', 'Open in New Tab')}</button>
     </div>
+    ${cleanModeNote}
     <footer>
       <button type="button" class="kiosk-btn" data-act="back">${buttonMarkup('eye', 'Back to Works')}</button>
     </footer>`;
+  mountPdfPaneInDetail();
+  detail.classList.toggle('has-pdf', state.pdf.pane?.getAttribute('aria-hidden') === 'false');
   detail.removeAttribute('hidden');
   document.body.classList.add('kiosk-detail-open');
   const playBtn = detail.querySelector('[data-act="toggle-play"]');
@@ -835,7 +886,9 @@ function showDetail(id) {
 function hideDetail() {
   const detail = state.detail.container;
   if (!detail) return;
+  hidePdfPane({ restoreFocus: false });
   detail.setAttribute('hidden', '');
+  detail.classList.remove('has-pdf');
   document.body.classList.remove('kiosk-detail-open');
   state.detail.play = null;
   state.detail.progress = null;
@@ -1038,15 +1091,19 @@ function openPdfFor(id) {
   const meta = findWorkById(id);
   if (!meta) return;
   const work = meta.data;
+  if (state.selectedId !== work.id || state.detail.container?.hasAttribute('hidden')) {
+    showDetail(work.id);
+  }
   const media = resolveWorkMedia(work);
   const raw = normalizePdfUrl(media.pdfUrl || work.pdf || '');
   if (!raw) return;
   const viewerUrl = choosePdfViewer(raw);
-  const { pane, frame, title, backdrop } = state.pdf;
+  const { pane, frame, title } = state.pdf;
   if (!pane || !frame) {
     window.open(viewerUrl, '_blank', 'noopener');
     return;
   }
+  mountPdfPaneInDetail();
   state.pdf.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.pdf.currentSlug = work.slug || null;
   let initPage = 1;
@@ -1061,9 +1118,9 @@ function openPdfFor(id) {
     pane.removeAttribute('hidden');
     pane.setAttribute('aria-hidden', 'false');
   }
+  state.detail.container?.classList.add('has-pdf');
   setEmbedFrameMode(frame, 'pdf');
-  backdrop?.removeAttribute('hidden');
-  pane.classList.add('is-open');
+  applyPdfFramePolicy(frame, work, { container: pane });
   pane.focus?.({ preventScroll: true });
   if (title) title.textContent = String(work.title || 'Score');
   frame.src = 'about:blank';
@@ -1074,15 +1131,14 @@ function openPdfFor(id) {
   });
 }
 
-function hidePdfPane() {
-  const { pane, frame, backdrop } = state.pdf;
+function hidePdfPane({ restoreFocus = true } = {}) {
+  const { pane, frame } = state.pdf;
   if (state.youtube.controller && typeof state.youtube.controller.pause === 'function') {
     try { state.youtube.controller.pause(); } catch (_) {}
   }
   pane?.setAttribute('aria-hidden', 'true');
-  pane?.classList.remove('is-open');
   pane?.setAttribute('hidden', '');
-  backdrop?.setAttribute('hidden', '');
+  state.detail.container?.classList.remove('has-pdf');
   if (frame) frame.src = 'about:blank';
   state.pdf.currentSlug = null;
   state.pdf.viewerReady = false;
@@ -1092,7 +1148,7 @@ function hidePdfPane() {
   state.youtube.workSlug = null;
   const restore = state.pdf.restoreFocus;
   state.pdf.restoreFocus = null;
-  if (restore && typeof restore.focus === 'function') {
+  if (restoreFocus && restore && typeof restore.focus === 'function') {
     requestAnimationFrame(() => restore.focus());
   }
 }
@@ -1750,8 +1806,8 @@ function initPdfShell() {
   const title = document.querySelector('.kiosk-pdf-title');
   const close = document.querySelector('.kiosk-pdf-close');
   const frame = document.querySelector('.kiosk-pdf-frame');
-  const backdrop = document.querySelector('[data-pdf-backdrop]');
-  state.pdf = { ...state.pdf, pane, title, close, frame, backdrop, shell: document.querySelector('.kiosk-shell'), viewerReady: false };
+  state.pdf = { ...state.pdf, pane, title, close, frame, shell: document.querySelector('.kiosk-shell'), viewerReady: false };
+  mountPdfPaneInDetail();
   if (pane && !pane.hasAttribute('tabindex')) {
     pane.setAttribute('tabindex', '-1');
   }
@@ -1759,10 +1815,6 @@ function initPdfShell() {
     close.innerHTML = icon('xMark');
   }
   close?.addEventListener('click', () => {
-    hidePdfPane();
-    resetAttract();
-  });
-  backdrop?.addEventListener('click', () => {
     hidePdfPane();
     resetAttract();
   });

@@ -364,6 +364,14 @@ function coalesceUrl(work, primary, fallbacks = []) {
   return null;
 }
 
+function normalizeScorePdfMode(value, { allowInherit = false, fallback = 'interactive' } = {}) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (allowInherit && raw === 'inherit') return 'inherit';
+  if (raw === 'clean') return 'clean';
+  if (raw === 'interactive') return 'interactive';
+  return fallback;
+}
+
 function normalizePageFollowConfig(work) {
   const source = work.pageFollow || work.score || null;
   if (!source) return null;
@@ -377,6 +385,10 @@ function normalizePageFollowConfig(work) {
     mediaOffsetSec: Number.isFinite(Number(source.mediaOffsetSec)) ? Number(source.mediaOffsetSec) : 0,
     pageMap
   };
+  const pdfMode = normalizeScorePdfMode(source.pdfMode, { allowInherit: true, fallback: null });
+  if (pdfMode) {
+    cfg.pdfMode = pdfMode;
+  }
   if (Number.isFinite(Number(source.pdfDelta))) {
     cfg.pdfDelta = Number(source.pdfDelta);
   }
@@ -465,9 +477,15 @@ function praeStripRuntimeText(value) {
   return source;
 }
 
-function praeSanitizeRuntimeUrl(value) {
-  const safe = praeSafeUrl(value, { allowHttp: true });
-  return safe || '';
+function praeSanitizeRuntimeUrl(value, { allowRelative = true } = {}) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const safe = praeSafeUrl(raw, { allowHttp: true });
+  if (safe) return safe;
+  if (!allowRelative) return '';
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw);
+  if (hasScheme || /^\/\//.test(raw)) return '';
+  return raw;
 }
 
 function praeSanitizeRuntimeWork(work) {
@@ -613,6 +631,7 @@ function createRuntimePayload(db, opts = {}) {
   const site = praeSanitizeSiteConfig(opts.site || {});
   const appearance = normalizeAppearance(opts.appearance || {}, { strict: false });
   const branding = normalizeBranding(opts.branding || {}, { strict: false });
+  const presentation = normalizePresentationConfig(opts.presentation || {}, { strict: false });
   const warnings = Array.isArray(opts.warnings) ? opts.warnings.slice() : [];
   for (const work of works) {
     const workWarnings = collectWorkWarnings(work);
@@ -624,7 +643,7 @@ function createRuntimePayload(db, opts = {}) {
   return {
     works,
     pageFollowMaps,
-    config: { theme, site, appearance, branding },
+    config: { theme, site, appearance, branding, presentation },
     source: opts.source || 'user',
     seeded: !!opts.seeded,
     count: Number.isInteger(opts.count) ? opts.count : works.length,
@@ -639,6 +658,7 @@ function renderScriptFromDb(db, opts = {}) {
     worksOverride: opts.worksOverride,
     theme: opts.theme,
     appearance: opts.appearance,
+    presentation: opts.presentation,
     branding: opts.branding,
     site: opts.site,
     source: opts.source,
@@ -758,9 +778,57 @@ function renderScriptFromDb(db, opts = {}) {
   function praeChoosePdfViewer(input){
     var url = String(input || '').trim();
     if (!url) return '';
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^\/\//.test(url)) {
+      try { url = new URL(url, location.href).toString(); } catch (_) {}
+    }
     var m = url.match(/https?:\\/\\/(?:drive|docs)\\.google\\.com\\/file\\/d\\/([^/]+)\\//);
     var file = m ? ('https://drive.google.com/uc?export=download&id=' + m[1]) : url;
     return 'https://mozilla.github.io/pdf.js/web/viewer.html?file=' + encodeURIComponent(file) + '#page=1&zoom=page-width&toolbar=0&sidebar=0';
+  }
+
+  function praeNormalizeScorePdfMode(value, allowInherit){
+    var raw = String(value || '').trim().toLowerCase();
+    if (allowInherit && raw === 'inherit') return 'inherit';
+    if (raw === 'clean') return 'clean';
+    return 'interactive';
+  }
+
+  function praeResolveScorePdfMode(work, options){
+    var w = work && typeof work === 'object' ? work : {};
+    var score = w.pageFollow || w.score || null;
+    var cfg = options && options.config ? options.config : ((window.PRAE && window.PRAE.config) ? window.PRAE.config : {});
+    var projectDefault = praeNormalizeScorePdfMode(cfg && cfg.presentation ? cfg.presentation.scorePdfModeDefault : 'interactive', false);
+    var override = score && score.pdfMode != null
+      ? praeNormalizeScorePdfMode(score.pdfMode, true)
+      : 'inherit';
+    return override === 'inherit' ? projectDefault : override;
+  }
+
+  function praeApplyPdfFramePolicy(frame, work, options){
+    if (!frame) return 'interactive';
+    var opts = options || {};
+    var mode = opts.mode
+      ? praeNormalizeScorePdfMode(opts.mode, false)
+      : praeResolveScorePdfMode(work, opts);
+    var clean = mode === 'clean';
+    frame.setAttribute('data-prae-score-pdf-mode', mode);
+    if (clean) {
+      frame.setAttribute('tabindex', '-1');
+      frame.setAttribute('aria-disabled', 'true');
+      frame.style.pointerEvents = 'none';
+    } else {
+      frame.removeAttribute('tabindex');
+      frame.removeAttribute('aria-disabled');
+      frame.style.pointerEvents = '';
+    }
+    var container = opts.container;
+    if (container && typeof container.setAttribute === 'function') {
+      container.setAttribute('data-prae-score-pdf-mode', mode);
+      if (container.classList && typeof container.classList.toggle === 'function') {
+        container.classList.toggle('prae-score-pdf-clean', clean);
+      }
+    }
+    return mode;
   }
 
   function praeResolveWorkMedia(work){
@@ -1056,6 +1124,9 @@ function renderScriptFromDb(db, opts = {}) {
     normalizeCoverUrl: praeNormalizeCoverUrl,
     setEmbedFrameMode: praeSetEmbedFrameMode,
     choosePdfViewer: praeChoosePdfViewer,
+    normalizeScorePdfMode: praeNormalizeScorePdfMode,
+    resolveScorePdfMode: praeResolveScorePdfMode,
+    applyPdfFramePolicy: praeApplyPdfFramePolicy,
     pauseAllAudio: praePauseAllAudio,
     emitPdfGoto: praeEmitPdfGoto,
     printedPageForTime: praePrintedPageForTime,
@@ -1071,7 +1142,10 @@ function renderScriptFromDb(db, opts = {}) {
   window.PRAE.config.theme = data.config ? data.config.theme : ${JSON.stringify(opts.theme === 'light' ? 'light' : 'dark')};
   window.PRAE.config.site  = data.config ? data.config.site  : ${JSON.stringify(opts.site || {})};
   window.PRAE.config.appearance = data.config ? data.config.appearance : ${JSON.stringify(DEFAULT_APPEARANCE)};
+  window.PRAE.config.presentation = data.config ? data.config.presentation : ${JSON.stringify(DEFAULT_CONFIG.presentation)};
   window.PRAE.config.branding = data.config ? data.config.branding : ${JSON.stringify(DEFAULT_BRANDING)};
+  window.PRAE.config.presentation = window.PRAE.config.presentation || {};
+  window.PRAE.config.presentation.scorePdfModeDefault = praeNormalizeScorePdfMode(window.PRAE.config.presentation.scorePdfModeDefault, false);
   window.PRAE.warnings = Array.isArray(data.warnings) ? data.warnings : [];
 
   function praeNormalizeBranding(input){
@@ -1834,11 +1908,16 @@ const DEFAULT_RUNTIME_WEB_UPDATES = Object.freeze({
   manifestPublicKeys: DEFAULT_RUNTIME_MANIFEST_PUBLIC_KEYS,
   requiredManifestKeyId: DEFAULT_RUNTIME_REQUIRED_MANIFEST_KEY_ID,
 });
+const SCORE_PDF_MODES = Object.freeze(['interactive', 'clean']);
+const SCORE_PDF_MODE_WITH_INHERIT = Object.freeze(['inherit', ...SCORE_PDF_MODES]);
 
 // Config schema (light) – theme + output flags
 const DEFAULT_CONFIG = Object.freeze({
   theme: 'dark',
   output: { minify: false, embed: false },
+  presentation: {
+    scorePdfModeDefault: 'interactive'
+  },
   ui: {
     skin: 'console',          // 'console' (current), 'vite-breeze', 'cards-tabs', 'docs-reader', 'kiosk', 'typefolio', 'typescatter'
     allowUrlOverride: true,   // ?skin=vite-breeze in preview/index.html
@@ -2415,6 +2494,7 @@ const WORKS_SCHEMA = {
               pdfStartPage:   { type: 'integer', minimum: 1 },
               mediaOffsetSec: { type: 'integer' },                // can be negative
               pdfDelta:       { type: 'integer' },                // optional tweak your console supports
+              pdfMode:        { type: 'string', enum: SCORE_PDF_MODE_WITH_INHERIT },
               pageMap: {
                 type: 'array',
                 items: {
@@ -3293,6 +3373,7 @@ function normalizeScore(score) {
   const pdfStartPage   = Number(score.pdfStartPage) >= 1 ? Number(score.pdfStartPage) : 1;
   const mediaOffsetSec = Number.isFinite(Number(score.mediaOffsetSec)) ? Number(score.mediaOffsetSec) : 0;
   const pdfDelta       = (score.pdfDelta !== undefined && Number.isFinite(Number(score.pdfDelta))) ? Number(score.pdfDelta) : undefined;
+  const pdfMode        = normalizeScorePdfMode(score.pdfMode, { allowInherit: true, fallback: 'inherit' });
   const pageMap = Array.isArray(score.pageMap) ? score.pageMap.map((row)=> {
     const t = typeof row.at === 'number' ? row.at : parseTimeToSecStrict(row.at);
     return { at: Number(t), page: Number(row.page) };
@@ -3301,12 +3382,17 @@ function normalizeScore(score) {
   pageMap.sort((a,b)=> a.at - b.at);
   const out = { pdfStartPage, mediaOffsetSec, pageMap };
   if (pdfDelta !== undefined) out.pdfDelta = pdfDelta;
+  out.pdfMode = pdfMode;
   return out;
 }
 function validateScore(score) {
   const errors = [];
   if (!score) { errors.push('score missing'); return errors; }
   if (!(Number(score.pdfStartPage) >= 1)) errors.push('pdfStartPage must be ≥ 1');
+  const rawMode = score.pdfMode == null ? 'inherit' : String(score.pdfMode).trim().toLowerCase();
+  if (!SCORE_PDF_MODE_WITH_INHERIT.includes(rawMode)) {
+    errors.push('pdfMode must be one of inherit|interactive|clean');
+  }
   if (!Array.isArray(score.pageMap) || score.pageMap.length === 0) {
     errors.push('pageMap must be a non-empty array');
   } else {
@@ -3696,6 +3782,9 @@ function normalizeImportedWork(row) {
       pageMap: Array.isArray(row.pageMap) ? row.pageMap : parseMaybeJSON(row.pageMap) || []
     };
   }
+  if (output.score && row.score_pdf_mode != null && String(row.score_pdf_mode).trim()) {
+    output.score.pdfMode = String(row.score_pdf_mode).trim().toLowerCase();
+  }
   const mediaJSON = parseMaybeJSON(row.media_json);
   const mediaFromRow = mediaJSON && typeof mediaJSON === 'object'
     ? mediaJSON
@@ -3776,12 +3865,22 @@ async function lazyChokidar() {
   }
 }
 /* ------------------ Config I/O ------------------ */
+function normalizePresentationConfig(input = {}, { strict = false } = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  const scorePdfModeDefault = normalizeScorePdfMode(source.scorePdfModeDefault, { fallback: 'interactive' });
+  if (strict && !SCORE_PDF_MODES.includes(scorePdfModeDefault)) {
+    throw new Error(`presentation.scorePdfModeDefault must be one of: ${SCORE_PDF_MODES.join(', ')}`);
+  }
+  return { scorePdfModeDefault };
+}
+
 function loadConfig() {
   const raw = readJsonSafe(CONFIG_PATH, {});
   const theme = raw.theme === 'light' ? 'light' : 'dark';
   const out = raw.output || {};
   const updatesRaw = praeIsObject(raw.updates) ? raw.updates : {};
   const appearance = normalizeAppearance(raw.ui?.appearance || {}, { strict: false });
+  const presentation = normalizePresentationConfig(raw.presentation || {}, { strict: false });
   const hasBrandingConfig = !!(raw.ui && Object.prototype.hasOwnProperty.call(raw.ui, 'branding'));
   const legacyBadgeDisabled = raw.site?.showBadge === false;
   const branding = normalizeBranding(
@@ -3798,6 +3897,7 @@ function loadConfig() {
       minify: !!out.minify,
       embed: !!out.embed
     },
+    presentation,
     ui: {
       ...DEFAULT_CONFIG.ui,
       ...(raw.ui || {}),
@@ -3820,6 +3920,7 @@ function saveConfig(cfg) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const appearance = normalizeAppearance(cfg?.ui?.appearance || {}, { strict: false });
   const branding = normalizeBranding(cfg?.ui?.branding || {}, { strict: false });
+  const presentation = normalizePresentationConfig(cfg?.presentation || {}, { strict: false });
   const webUpdates = praeNormalizeWebUpdateConfig(cfg?.updates?.web || {});
   const normalized = {
     theme: (cfg.theme === 'light') ? 'light' : 'dark',
@@ -3827,6 +3928,7 @@ function saveConfig(cfg) {
       minify: !!cfg.output?.minify,
       embed:  !!cfg.output?.embed
     },
+    presentation,
     ui: {
       skin: String(cfg.ui?.skin || 'console'),
       allowUrlOverride: cfg.ui?.allowUrlOverride !== false,
@@ -4381,9 +4483,7 @@ function escapeHtml(value) {
 function sanitizeHtmlUrl(input, { allowRelative = true } = {}) {
   const raw = String(input || '').trim();
   if (!raw) return '';
-  if (allowRelative && /^([./#]|[^a-zA-Z][^:]*)/.test(raw)) {
-    if (/^javascript:/i.test(raw)) return '';
-    if (/^data:/i.test(raw)) return '';
+  if (allowRelative && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) && !/^\/\//.test(raw)) {
     return raw;
   }
   let parsed;
@@ -5690,6 +5790,7 @@ program
     const cfg = loadConfig();
     const s0  = cfg.site || DEFAULT_CONFIG.site;
     const b0 = normalizeBranding(cfg.ui?.branding || {}, { strict: false });
+    const p0 = normalizePresentationConfig(cfg.presentation || {}, { strict: false });
 
     const base = await prompt([
       { type:'input', name:'firstName', message:'First name', initial: s0.firstName },
@@ -5717,6 +5818,17 @@ program
       const d = await prompt([{ type:'input', name:'value', message:'Updated string (e.g., "Nov 7")', initial: s0.updated?.value || '' }]);
       updated.value = d.value || '';
     }
+
+    const presentationPrompt = await prompt({
+      type: 'select',
+      name: 'scorePdfModeDefault',
+      message: 'Default score PDF presentation mode',
+      choices: [
+        { name: 'interactive', message: 'Interactive (default): allow scroll/zoom/nav in score pane' },
+        { name: 'clean', message: 'Clean: lock score pane interactions; page-follow controls navigation' }
+      ],
+      initial: p0.scorePdfModeDefault === 'clean' ? 'clean' : 'interactive'
+    });
 
     const attributionPrompt = await prompt({
       type: 'confirm',
@@ -5755,6 +5867,10 @@ program
           attribution: { enabled: attributionPrompt.enabled !== false }
         }
       },
+      presentation: normalizePresentationConfig({
+        ...(cfg.presentation || {}),
+        scorePdfModeDefault: presentationPrompt.scorePdfModeDefault
+      }, { strict: false }),
       site: {
         ...s0,
         firstName: base.firstName.trim(),
@@ -6654,7 +6770,8 @@ program
   .command('add')
   .alias('wizard')
   .description('Interactive wizard: add one or more works to .prae/works.json (IDs are identities; array order is display order)')
-  .action(async () => {
+  .option('--score-pdf-mode <mode>', 'Default score PDF mode for wizard (inherit|interactive|clean)', 'inherit')
+  .action(async (opts) => {
     const db = loadDb();
     const ajv = new Ajv({ allErrors: true });
     const validate = ajv.compile(WORKS_SCHEMA);
@@ -6699,6 +6816,17 @@ program
           { type: 'input', name: 'pdfStartPage',   message: 'Printed p.1 equals PDF page (pdfStartPage)', initial: '1', validate: v => /^\d+$/.test(String(v).trim()) && parseInt(v,10)>=1 ? true : 'Enter an integer ≥ 1' },
           { type: 'input', name: 'mediaOffsetSec', message: 'Media offset seconds (can be negative, default 0)', initial: '0', validate: v => /^-?\d+$/.test(String(v).trim()) ? true : 'Enter an integer (e.g., 0, -30, 12)' },
         ]);
+        const sMode = await prompt({
+          type: 'select',
+          name: 'pdfMode',
+          message: 'Score PDF mode',
+          choices: [
+            { name: 'inherit', message: 'Inherit project default' },
+            { name: 'interactive', message: 'Interactive viewer' },
+            { name: 'clean', message: 'Clean locked viewer (no user interaction)' }
+          ],
+          initial: normalizeScorePdfMode(opts.scorePdfMode, { allowInherit: true, fallback: 'inherit' })
+        });
 
         const pageMap = [];
         let more = true;
@@ -6723,7 +6851,8 @@ program
         score = {
           pdfStartPage: parseInt(sBase.pdfStartPage,10),
           mediaOffsetSec: parseInt(sBase.mediaOffsetSec,10),
-          pageMap
+          pageMap,
+          pdfMode: normalizeScorePdfMode(sMode.pdfMode, { allowInherit: true, fallback: 'inherit' })
         };
         if (Number.isInteger(pdfDeltaVal)) score.pdfDelta = pdfDeltaVal;
       }
@@ -6883,6 +7012,7 @@ program
   .option('--media-kind <kind>', 'Set primary media kind (score|youtube)')
   .option('--youtube-url <url>', 'Set YouTube URL for youtube media kind')
   .option('--start-at-sec <sec>', 'Set YouTube startAtSec (seconds, >= 0)')
+  .option('--score-pdf-mode <mode>', 'Set score PDF mode (inherit|interactive|clean)')
   .option('--cover <url>', 'Set cover image URL (or empty to clear)')
   .option('--tags <list>', 'Set tags (comma-separated; empty to clear)')
   .option('--no-cues',     'Do not edit cues interactively')
@@ -6914,13 +7044,25 @@ program
       if (next) work.media = next;
       else delete work.media;
     }
+    if ('scorePdfMode' in opts && opts.scorePdfMode !== undefined) {
+      const desired = normalizeScorePdfMode(opts.scorePdfMode, { allowInherit: true, fallback: null });
+      if (!desired) {
+        console.log(pc.red('Invalid --score-pdf-mode. Use inherit, interactive, or clean.'));
+        process.exit(1);
+      }
+      if (!work.score) {
+        console.log(pc.yellow('No score mapping exists for this work yet; skipping --score-pdf-mode.'));
+      } else {
+        work.score = normalizeScore({ ...work.score, pdfMode: desired });
+      }
+    }
     if ('cover' in opts) work.cover = (opts.cover === '' ? null : normalizeCoverUrl(opts.cover));
     if ('tags' in opts) work.tags = parseTagsInput(opts.tags);
     Object.assign(work, sanitizeNarrativeFields(work).sanitized);
 
     // If no flags changed anything, run wizard
     const changedViaFlags =
-      !!(opts.title || opts.slug || opts.one || opts.oneliner || 'description' in opts || 'audio' in opts || 'pdf' in opts || 'mediaKind' in opts || 'youtubeUrl' in opts || 'startAtSec' in opts || 'cover' in opts || 'tags' in opts);
+      !!(opts.title || opts.slug || opts.one || opts.oneliner || 'description' in opts || 'audio' in opts || 'pdf' in opts || 'mediaKind' in opts || 'youtubeUrl' in opts || 'startAtSec' in opts || 'scorePdfMode' in opts || 'cover' in opts || 'tags' in opts);
     if (!changedViaFlags) {
       const existingMedia = work.media && typeof work.media === 'object' ? work.media : {};
       const base = await prompt([
@@ -7009,10 +7151,22 @@ program
           const cont = await prompt({ type: 'confirm', name: 'ok', message: 'Add another page mapping?', initial: false });
           more = cont.ok;
         }
+        const scoreMode = await prompt({
+          type: 'select',
+          name: 'pdfMode',
+          message: 'Score PDF mode',
+          choices: [
+            { name: 'inherit', message: 'Inherit project default' },
+            { name: 'interactive', message: 'Interactive viewer' },
+            { name: 'clean', message: 'Clean locked viewer (no user interaction)' }
+          ],
+          initial: normalizeScorePdfMode(s0.pdfMode, { allowInherit: true, fallback: 'inherit' })
+        });
         work.score = {
           pdfStartPage: parseInt(sBase.pdfStartPage,10),
           mediaOffsetSec: parseInt(sBase.mediaOffsetSec,10),
-          pageMap: pm
+          pageMap: pm,
+          pdfMode: normalizeScorePdfMode(scoreMode.pdfMode, { allowInherit: true, fallback: 'inherit' })
         };
       }
     }
@@ -7105,6 +7259,17 @@ scoreCmd
       { type: 'input', name: 'mediaOffsetSec', message: 'Media offset seconds (can be negative)', initial: String(work.score?.mediaOffsetSec ?? 0),
         validate: v => /^-?\d+$/.test(String(v).trim()) ? true : 'Enter integer (e.g., 0, -30, 12)' }
     ]);
+    const modeAns = await prompt({
+      type: 'select',
+      name: 'pdfMode',
+      message: 'Score PDF mode',
+      choices: [
+        { name: 'inherit', message: 'Inherit project default' },
+        { name: 'interactive', message: 'Interactive viewer' },
+        { name: 'clean', message: 'Clean locked viewer (no user interaction)' }
+      ],
+      initial: normalizeScorePdfMode(work.score?.pdfMode, { allowInherit: true, fallback: 'inherit' })
+    });
 
     // optional advanced delta (kept if you use it elsewhere)
     let pdfDelta;
@@ -7132,6 +7297,7 @@ scoreCmd
     const normalized = normalizeScore({
       pdfStartPage: Number(base.pdfStartPage),
       mediaOffsetSec: Number(base.mediaOffsetSec),
+      pdfMode: normalizeScorePdfMode(modeAns.pdfMode, { allowInherit: true, fallback: 'inherit' }),
       ...(pdfDelta !== undefined ? { pdfDelta } : {}),
       pageMap: rows
     });
@@ -7162,7 +7328,7 @@ scoreCmd
     if (!work.score) { console.log(pc.yellow('No score/page-follow mapping set.')); return; }
     const sc = normalizeScore(work.score);
     console.log(pc.bold(`#${work.id} ${work.title}`));
-    console.log(pc.gray(`pdfStartPage=${sc.pdfStartPage}, mediaOffsetSec=${sc.mediaOffsetSec}${sc.pdfDelta!==undefined?`, pdfDelta=${sc.pdfDelta}`:''}`));
+    console.log(pc.gray(`pdfStartPage=${sc.pdfStartPage}, mediaOffsetSec=${sc.mediaOffsetSec}, pdfMode=${sc.pdfMode || 'inherit'}${sc.pdfDelta!==undefined?`, pdfDelta=${sc.pdfDelta}`:''}`));
     printScorePreview(sc);
   });
 
@@ -7352,7 +7518,7 @@ program
     }
     if (fmt === 'csv') {
       // Stable columns; JSON-encode nested
-      const cols = ['id','slug','title','one','oneliner','description','audio','pdf','cover','tags_csv','cues_json','score_json','media_json'];
+      const cols = ['id','slug','title','one','oneliner','description','audio','pdf','cover','tags_csv','cues_json','score_json','score_pdf_mode','media_json'];
       const lines = [];
       lines.push(cols.join(','));
       for (const w of db.works||[]) {
@@ -7370,6 +7536,7 @@ program
           (Array.isArray(view.tags) ? view.tags.join(', ') : '').replaceAll('"','""'),
           JSON.stringify(view.cues ?? []).replaceAll('"','""'),
           JSON.stringify(view.score ?? null).replaceAll('"','""'),
+          String(view.score?.pdfMode ?? '').replaceAll('"','""'),
           JSON.stringify(view.media ?? null).replaceAll('"','""'),
         ].map(v => `"${String(v)}"`);
         lines.push(row.join(','));
@@ -7568,6 +7735,11 @@ program
       normalizeAppearance(cfg.ui?.appearance || {}, { strict: true });
     } catch (err) {
       errors.push({ type: 'config', where: 'ui.appearance', msg: err?.message || 'invalid appearance settings' });
+    }
+    try {
+      normalizePresentationConfig(cfg.presentation || {}, { strict: true });
+    } catch (err) {
+      errors.push({ type: 'config', where: 'presentation', msg: err?.message || 'invalid presentation settings' });
     }
     try {
       normalizeBranding(cfg.ui?.branding || {}, { strict: true });
@@ -7839,6 +8011,7 @@ program
         worksOverride: fallbackWorks,
         theme: cfg.theme,
         appearance: runtimeAppearance,
+        presentation: cfg.presentation,
         branding: effectiveBranding,
         site: cfg.site,
         source: dataSource,

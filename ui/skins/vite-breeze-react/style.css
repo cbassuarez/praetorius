@@ -580,6 +580,14 @@ button:focus-visible {
   align-items: center;
 }
 
+.vbx-pdf-note {
+  margin: 0;
+  padding: 0.25rem 0.75rem 0.35rem;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--vb-text-soft) 88%, transparent);
+}
+
 .vbx-pdf-title {
   flex: 1;
   min-width: 0;

@@ -126,6 +126,13 @@ function resolveWorkMedia(work) {
   };
 }
 
+function resolveScorePdfMode(work) {
+  if (praeMedia && typeof praeMedia.resolveScorePdfMode === 'function') {
+    try { return praeMedia.resolveScorePdfMode(work || {}); } catch (_) {}
+  }
+  return 'interactive';
+}
+
 function normalizePdfUrl(url) {
   if (praeMedia && typeof praeMedia.normalizePdfUrl === 'function') {
     try { return praeMedia.normalizePdfUrl(url); } catch (_) {}
@@ -146,7 +153,10 @@ function choosePdfViewer(url) {
       if (chosen) return chosen;
     } catch (_) {}
   }
-  const str = String(url || '');
+  let str = String(url || '').trim();
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(str) && !/^\/\//.test(str)) {
+    try { str = new URL(str, location.href).toString(); } catch (_) {}
+  }
   const match = str.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : str;
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
@@ -163,6 +173,27 @@ function setEmbedFrameMode(frame, mode) {
   frame.setAttribute('referrerpolicy', String(mode || '').toLowerCase() === 'youtube'
     ? 'strict-origin-when-cross-origin'
     : 'no-referrer');
+}
+
+function applyPdfFramePolicy(frame, work, options = {}) {
+  if (!frame) return 'interactive';
+  if (praeMedia && typeof praeMedia.applyPdfFramePolicy === 'function') {
+    try {
+      return praeMedia.applyPdfFramePolicy(frame, work || {}, options);
+    } catch (_) {}
+  }
+  const mode = options.mode === 'clean'
+    ? 'clean'
+    : (options.mode === 'interactive' ? 'interactive' : resolveScorePdfMode(work));
+  const clean = mode === 'clean';
+  frame.setAttribute('data-prae-score-pdf-mode', mode);
+  frame.style.pointerEvents = clean ? 'none' : '';
+  if (clean) frame.setAttribute('tabindex', '-1');
+  else frame.removeAttribute('tabindex');
+  if (options.container && typeof options.container.setAttribute === 'function') {
+    options.container.setAttribute('data-prae-score-pdf-mode', mode);
+  }
+  return mode;
 }
 
 const PDF_FIELD_CANDIDATES = [
@@ -472,7 +503,7 @@ async function playYouTubeAt(work, seconds = 0, media = resolveWorkMedia(work)) 
   } else {
     showNoPdfForWork(work, { announce: false });
   }
-  const frame = ensurePreviewFrame(work.slug || workKey(work) || `work-${work.id}`, work, media.youtubeEmbedUrl || media.youtubeUrl || 'about:blank', 'youtube');
+  const frame = ensurePreviewFrame(work.slug || workKey(work) || `work-${work.id}`, work, 'about:blank', 'youtube');
   if (!frame) {
     detachPageFollow();
     console.warn('YouTube preview frame unavailable; opening tab and disabling score-follow sync');
@@ -701,6 +732,10 @@ function ensurePreviewFrame(slug, work, viewerUrl, mode = 'pdf') {
   frame.dataset.slug = slug;
   frame.title = `${work.title || work.slug || 'Score'} (PDF)`;
   setEmbedFrameMode(frame, mode);
+  applyPdfFramePolicy(frame, work, {
+    mode: mode === 'youtube' ? 'interactive' : undefined,
+    container: state.pdf.root || null
+  });
   frame.removeAttribute('hidden');
   const currentSrc = frame.getAttribute('src') || '';
   if (currentSrc !== viewerUrl) {
@@ -729,7 +764,9 @@ function showPdfForWork(work, { openDrawer = false, announce = true } = {}) {
   }
   markPreviewEmpty(false);
   if (pdf.empty) pdf.empty.hidden = true;
-  setPreviewNote('');
+  setPreviewNote(resolveScorePdfMode(work) === 'clean'
+    ? 'Clean mode active: viewer is locked; page changes follow cues/playback.'
+    : '');
   setPreviewTitle(work.title || work.slug || 'Score');
   setPreviewLink(normalized, 'Open PDF');
   const slug = workKey(work) || `work-${work.id ?? Date.now()}`;

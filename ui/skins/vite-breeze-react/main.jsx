@@ -120,6 +120,14 @@ function choosePdfViewer(url) {
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
 }
 
+function resolveScorePdfMode(work) {
+  const media = window.PRAE && window.PRAE.media ? window.PRAE.media : null;
+  if (media && typeof media.resolveScorePdfMode === 'function') {
+    try { return media.resolveScorePdfMode(work || {}); } catch (_) {}
+  }
+  return 'interactive';
+}
+
 function IconBase({ children, className = 'vbx-icon' }) {
   return (
     <svg
@@ -264,7 +272,7 @@ function App() {
     playing: false
   });
   const [lastPlay, setLastPlay] = useState({ id: works[0]?.id ?? null, at: 0 });
-  const [pdf, setPdf] = useState({ open: false, slug: null, title: '', src: 'about:blank' });
+  const [pdf, setPdf] = useState({ open: false, slug: null, title: '', src: 'about:blank', mode: 'interactive' });
   const [flashById, setFlashById] = useState({});
   const [coverFailures, setCoverFailures] = useState({});
 
@@ -502,6 +510,7 @@ function App() {
     const raw = normalizePdfUrl(work.pdf);
     const viewer = choosePdfViewer(raw);
     const base = viewer.split('#')[0];
+    const mode = resolveScorePdfMode(work) === 'clean' ? 'clean' : 'interactive';
 
     let initPage = 1;
     const follow = pageFollowRef.current;
@@ -511,20 +520,21 @@ function App() {
       initPage = computePdfPage(pageFollowMaps[work.slug], 0);
     }
 
-    setPdf({ open: true, slug: work.slug || null, title: work.title || 'Score', src: 'about:blank' });
+    setPdf({ open: true, slug: work.slug || null, title: work.title || 'Score', src: 'about:blank', mode });
     requestAnimationFrame(() => {
       viewerReadyRef.current = false;
       setPdf({
         open: true,
         slug: work.slug || null,
         title: work.title || 'Score',
-        src: `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`
+        src: `${base}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`,
+        mode
       });
     });
   };
 
   const closePdfPane = () => {
-    setPdf({ open: false, slug: null, title: '', src: 'about:blank' });
+    setPdf({ open: false, slug: null, title: '', src: 'about:blank', mode: 'interactive' });
     viewerReadyRef.current = false;
     pendingPdfGotoRef.current = null;
   };
@@ -775,6 +785,9 @@ function App() {
                   <span>Close</span>
                 </button>
               </header>
+              {pdf.mode === 'clean' ? (
+                <p className="vbx-pdf-note">Clean mode: viewer is locked; page changes follow cues/playback.</p>
+              ) : null}
               <iframe
                 ref={frameRef}
                 className="vbx-pdf-frame"
@@ -782,6 +795,9 @@ function App() {
                 loading="lazy"
                 referrerPolicy="no-referrer"
                 allow="autoplay; fullscreen"
+                data-prae-score-pdf-mode={pdf.mode}
+                tabIndex={pdf.mode === 'clean' ? -1 : undefined}
+                style={pdf.mode === 'clean' ? { pointerEvents: 'none' } : undefined}
                 src={pdf.src}
               />
             </motion.aside>

@@ -83,4 +83,46 @@ describe('media import/export round-trip', () => {
       startAtSec: 17
     });
   });
+
+  it('preserves score_pdf_mode across csv export/import', async () => {
+    const source = await setupProject({
+      version: 1,
+      works: [
+        {
+          id: 1,
+          slug: 'score-clean',
+          title: 'Score Clean',
+          oneliner: 'Score clean mode export/import',
+          pdf: 'https://example.com/score.pdf',
+          score: {
+            pdfStartPage: 1,
+            mediaOffsetSec: 0,
+            pdfMode: 'clean',
+            pageMap: [{ at: 0, page: 1 }]
+          },
+          cues: []
+        }
+      ]
+    });
+
+    const exported = await execa('node', [CLI, 'export', '--format', 'csv'], {
+      cwd: source,
+      env: { FORCE_COLOR: '0' }
+    });
+    expect(exported.stdout).toContain('score_pdf_mode');
+    expect(exported.stdout).toContain('"clean"');
+
+    const csvPath = path.join(source, 'works-score-mode.csv');
+    await fs.writeFile(csvPath, `${exported.stdout}\n`, 'utf8');
+
+    const target = await setupProject({ version: 1, works: [] });
+    await execa('node', [CLI, 'import', csvPath, '--assume-new-id', '--assume-new-slug'], {
+      cwd: target,
+      env: { FORCE_COLOR: '0' }
+    });
+
+    const imported = JSON.parse(await fs.readFile(path.join(target, '.prae', 'works.json'), 'utf8'));
+    expect(imported.works).toHaveLength(1);
+    expect(imported.works[0].score?.pdfMode).toBe('clean');
+  });
 });

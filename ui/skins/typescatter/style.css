@@ -170,6 +170,9 @@ body {
   min-height: calc(100vh - var(--ts-footer-h));
   position: relative;
   padding: 0 clamp(1.75rem, 5vw, 3.25rem);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.75rem;
 }
 
 .ts-field {
@@ -509,15 +512,27 @@ body {
 }
 
 .ts-pdfpane {
-  position: fixed;
-  inset: clamp(2rem, 5vw, 4rem);
   background: var(--ts-bg);
   color: var(--ts-ink);
   border: 1px solid var(--ts-line);
   box-shadow: 0 28px 60px color-mix(in srgb, var(--prae-border-strong, #5f7897) 34%, transparent);
-  z-index: 90;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  min-height: 0;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity var(--ts-transition), transform var(--ts-transition), max-height var(--ts-transition);
+}
+
+.ts-main.has-pdf .ts-pdfpane {
+  max-height: clamp(260px, 44vh, 640px);
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .ts-pdfbar {
@@ -546,15 +561,9 @@ body {
 .ts-pdf-frame {
   flex: 1;
   width: 100%;
+  min-height: clamp(220px, 36vh, 560px);
   border: none;
   background: #000;
-}
-
-.ts-pdf-backdrop {
-  position: fixed;
-  inset: 0;
-  background: color-mix(in srgb, var(--ts-bg) 62%, transparent);
-  z-index: 80;
 }
 
 @media (max-width: 900px) {

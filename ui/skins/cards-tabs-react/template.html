@@ -37,6 +37,14 @@
       </section>
 
       <aside class="ct-column ct-column-right" aria-label="Inspector">
+        <aside class="ct-pdfpane vb-pdfpane" aria-label="Score Preview" aria-hidden="true" role="region">
+          <header class="ct-pdfbar">
+            <div class="ct-pdf-title vb-pdf-title" aria-live="polite"></div>
+            <button type="button" class="ct-pdf-close vb-pdf-close" aria-label="Close PDF"></button>
+          </header>
+          <iframe class="ct-pdf-frame vb-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+        </aside>
+
         <section id="ct-tabs" class="ct-tabs" aria-label="Work details">
           <div class="ct-tablist" role="tablist" aria-label="Work detail tabs">
             <button type="button" class="ct-tab" id="ct-tab-details" role="tab" data-tab="details" aria-selected="true" aria-controls="ct-panel-details" tabindex="0">Details</button>
@@ -56,15 +64,6 @@
         <aside id="ct-action-rail" class="ct-action-rail" aria-label="Action rail"></aside>
       </aside>
     </div>
-
-    <div class="ct-backdrop" data-pdf-backdrop hidden></div>
-    <aside class="ct-pdfpane vb-pdfpane" aria-label="Score PDF" aria-hidden="true" role="dialog" aria-modal="true">
-      <header class="ct-pdfbar">
-        <div class="ct-pdf-title vb-pdf-title" aria-live="polite"></div>
-        <button type="button" class="ct-pdf-close vb-pdf-close" aria-label="Close PDF"></button>
-      </header>
-      <iframe class="ct-pdf-frame vb-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
-    </aside>
   </main>
 
   <footer id="prae-footer" class="ct-footer" role="contentinfo"></footer>

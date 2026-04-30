@@ -109,6 +109,13 @@ function resolveWorkMedia(work) {
   };
 }
 
+function resolveScorePdfMode(work) {
+  if (praeMedia && typeof praeMedia.resolveScorePdfMode === 'function') {
+    try { return praeMedia.resolveScorePdfMode(work || {}); } catch (_) {}
+  }
+  return 'interactive';
+}
+
 function normalizePdfUrl(url) {
   if (praeMedia && typeof praeMedia.normalizePdfUrl === 'function') {
     try { return praeMedia.normalizePdfUrl(url); } catch (_) {}
@@ -126,8 +133,12 @@ function choosePdfViewer(url) {
       if (chosen) return chosen;
     } catch (_) {}
   }
-  const match = String(url).match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
-  const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : url;
+  let resolved = String(url || '').trim();
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(resolved) && !/^\/\//.test(resolved)) {
+    try { resolved = new URL(resolved, location.href).toString(); } catch (_) {}
+  }
+  const match = resolved.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+  const file = match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : resolved;
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
 }
 
@@ -142,6 +153,27 @@ function setEmbedFrameMode(frame, mode) {
   frame.setAttribute('referrerpolicy', String(mode || '').toLowerCase() === 'youtube'
     ? 'strict-origin-when-cross-origin'
     : 'no-referrer');
+}
+
+function applyPdfFramePolicy(frame, work, options = {}) {
+  if (!frame) return 'interactive';
+  if (praeMedia && typeof praeMedia.applyPdfFramePolicy === 'function') {
+    try {
+      return praeMedia.applyPdfFramePolicy(frame, work || {}, options);
+    } catch (_) {}
+  }
+  const mode = options.mode === 'clean'
+    ? 'clean'
+    : (options.mode === 'interactive' ? 'interactive' : resolveScorePdfMode(work));
+  const clean = mode === 'clean';
+  frame.setAttribute('data-prae-score-pdf-mode', mode);
+  frame.style.pointerEvents = clean ? 'none' : '';
+  if (clean) frame.setAttribute('tabindex', '-1');
+  else frame.removeAttribute('tabindex');
+  if (options.container && typeof options.container.setAttribute === 'function') {
+    options.container.setAttribute('data-prae-score-pdf-mode', mode);
+  }
+  return mode;
 }
 
 function createSeededRandom(seed) {
@@ -188,6 +220,7 @@ const COLLISION_PADDING = 24;
 const MAX_ROTATION = 2; // degrees
 
 const state = {
+  main: null,
   field: null,
   worksById: new Map(),
   items: [],
@@ -217,7 +250,6 @@ const state = {
     frame: null,
     title: null,
     close: null,
-    backdrop: null,
     viewerReady: false,
     pendingGoto: null,
     currentSlug: null,
@@ -345,25 +377,8 @@ function markPlaying(workId, playing) {
 
 function ensurePdfDom() {
   if (state.pdf.pane) return state.pdf;
-  let pane = document.querySelector('.ts-pdfpane');
-  let backdrop = document.querySelector('.ts-pdf-backdrop');
-  if (!pane) {
-    backdrop = document.createElement('div');
-    backdrop.className = 'ts-pdf-backdrop';
-    backdrop.setAttribute('hidden', '');
-    pane = document.createElement('aside');
-    pane.className = 'ts-pdfpane';
-    pane.setAttribute('aria-hidden', 'true');
-    pane.setAttribute('tabindex', '-1');
-    pane.setAttribute('hidden', '');
-    pane.innerHTML = `
-      <header class="ts-pdfbar">
-        <p class="ts-pdf-title" aria-live="polite"></p>
-        <button type="button" class="ts-pdf-close" aria-label="Close score">close</button>
-      </header>
-      <iframe class="ts-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>`;
-    document.body.append(backdrop, pane);
-  }
+  const pane = document.querySelector('.ts-pdfpane');
+  if (!pane) return state.pdf;
   const frame = pane.querySelector('.ts-pdf-frame');
   const title = pane.querySelector('.ts-pdf-title');
   const close = pane.querySelector('.ts-pdf-close');
@@ -374,20 +389,15 @@ function ensurePdfDom() {
       hidePdfPane();
     });
   }
-  if (backdrop && !backdrop.dataset.bound) {
-    backdrop.dataset.bound = '1';
-    backdrop.addEventListener('click', hidePdfPane);
-  }
   state.pdf.pane = pane;
   state.pdf.frame = frame;
   state.pdf.title = title;
   state.pdf.close = close;
-  state.pdf.backdrop = backdrop;
   return state.pdf;
 }
 
 function hidePdfPane() {
-  const { pane, backdrop, restoreFocus } = state.pdf;
+  const { pane, restoreFocus } = state.pdf;
   if (state.youtube.controller && typeof state.youtube.controller.pause === 'function') {
     try { state.youtube.controller.pause(); } catch (_) {}
   }
@@ -395,10 +405,11 @@ function hidePdfPane() {
     pane.setAttribute('hidden', '');
     pane.setAttribute('aria-hidden', 'true');
   }
-  backdrop?.setAttribute('hidden', '');
-  document.body.classList.remove('ts-pdf-open');
-  document.body.classList.remove('ts-reader-open');
+  state.main?.classList.remove('has-pdf');
   detachPageFollow();
+  state.pdf.currentSlug = null;
+  state.pdf.viewerReady = false;
+  state.pdf.pendingGoto = null;
   state.youtube.controller = null;
   state.youtube.workId = null;
   state.youtube.workSlug = null;
@@ -531,7 +542,7 @@ function openPdfFor(id) {
   const raw = normalizePdfUrl(media.pdfUrl || work.pdf || '');
   if (!raw) return;
   const viewerUrl = choosePdfViewer(raw);
-  const { pane, frame, title, backdrop } = ensurePdfDom();
+  const { pane, frame, title } = ensurePdfDom();
   if (!pane || !frame) {
     window.open(viewerUrl, '_blank', 'noopener');
     return;
@@ -541,9 +552,7 @@ function openPdfFor(id) {
   pane.removeAttribute('hidden');
   pane.setAttribute('aria-hidden', 'false');
   pane.focus?.({ preventScroll: true });
-  backdrop?.removeAttribute('hidden');
-  document.body.classList.add('ts-pdf-open');
-  document.body.classList.add('ts-reader-open');
+  state.main?.classList.add('has-pdf');
   let initPage = 1;
   try {
     if (state.pdf.followSlug && state.pdf.followSlug === state.pdf.currentSlug) {
@@ -554,6 +563,7 @@ function openPdfFor(id) {
   } catch (_) {}
   if (title) title.textContent = `${work.title || work.slug || 'Work'} — score`;
   setEmbedFrameMode(frame, 'pdf');
+  applyPdfFramePolicy(frame, work, { container: pane });
   frame.src = `${viewerUrl.split('#')[0]}#page=${Math.max(1, initPage)}&zoom=page-width&toolbar=0&sidebar=0`;
   frame.addEventListener('load', () => { state.pdf.viewerReady = true; }, { once: true });
   if (state.pdf.currentSlug && state.pdf.followSlug !== state.pdf.currentSlug && media.kind !== 'youtube') {
@@ -574,7 +584,7 @@ async function playYouTubeAt(work, atSeconds = 0, media = resolveWorkMedia(work)
     return false;
   }
   pauseAllExcept(work.id);
-  const { pane, frame, title, backdrop } = ensurePdfDom();
+  const { pane, frame, title } = ensurePdfDom();
   if (!pane || !frame) {
     detachPageFollow();
     console.warn('YouTube viewer unavailable; opening tab and disabling score-follow sync');
@@ -588,13 +598,12 @@ async function playYouTubeAt(work, atSeconds = 0, media = resolveWorkMedia(work)
   pane.removeAttribute('hidden');
   pane.setAttribute('aria-hidden', 'false');
   pane.focus?.({ preventScroll: true });
-  backdrop?.removeAttribute('hidden');
-  document.body.classList.add('ts-pdf-open');
-  document.body.classList.add('ts-reader-open');
+  state.main?.classList.add('has-pdf');
   if (title) title.textContent = `${work.title || work.slug || 'Work'} — YouTube`;
   state.pdf.viewerReady = false;
   setEmbedFrameMode(frame, 'youtube');
-  frame.src = media.youtubeEmbedUrl || media.youtubeUrl || 'about:blank';
+  applyPdfFramePolicy(frame, work, { mode: 'interactive', container: pane });
+  frame.src = 'about:blank';
   try {
     const controller = await praeMedia.mountYouTubePlayer(frame, work, {
       onError: (err) => {
@@ -1210,6 +1219,9 @@ function updateFooterControls() {
 function updateFooterPlaybackState() {
   const work = state.activeWorkId != null ? findWorkById(state.activeWorkId)?.data : null;
   const media = resolveWorkMedia(work);
+  const cleanHint = work && resolveScorePdfMode(work) === 'clean'
+    ? ' Clean mode score lock active.'
+    : '';
   const audio = work ? document.getElementById('wc-a' + work.id) : null;
   const playing = (work && media.kind === 'youtube' && state.youtube.controller && state.youtube.workId === work.id
     && typeof state.youtube.controller.isPlaying === 'function' && state.youtube.controller.isPlaying())
@@ -1223,14 +1235,14 @@ function updateFooterPlaybackState() {
       state.footer.live.textContent = 'Controls unavailable.';
     } else if (media.kind === 'youtube') {
       state.footer.live.textContent = playing
-        ? `${work.title || work.slug || 'Work'} YouTube playing.`
-        : `${work.title || work.slug || 'Work'} YouTube ready.`;
+        ? `${work.title || work.slug || 'Work'} YouTube playing.${cleanHint}`
+        : `${work.title || work.slug || 'Work'} YouTube ready.${cleanHint}`;
     } else if (!normalizeSrc(media.audioUrl || getAudioSourceFor(work))) {
-      state.footer.live.textContent = `${work.title || work.slug || 'Work'} selected. Audio unavailable.`;
+      state.footer.live.textContent = `${work.title || work.slug || 'Work'} selected. Audio unavailable.${cleanHint}`;
     } else if (playing) {
-      state.footer.live.textContent = `${work.title || work.slug || 'Work'} playing.`;
+      state.footer.live.textContent = `${work.title || work.slug || 'Work'} playing.${cleanHint}`;
     } else {
-      state.footer.live.textContent = `${work.title || work.slug || 'Work'} ready.`;
+      state.footer.live.textContent = `${work.title || work.slug || 'Work'} ready.${cleanHint}`;
     }
   }
 }
@@ -1308,6 +1320,9 @@ function handleDocumentClick(event) {
 
 function handleKeydown(event) {
   if (event.key === 'Escape') {
+    if (state.pdf.pane?.getAttribute('aria-hidden') === 'false') {
+      hidePdfPane();
+    }
     closeCuePopover();
     clearSelection({ announce: true });
   }
@@ -1376,6 +1391,7 @@ function setupFooter() {
 function init() {
   document.documentElement.dataset.skin = 'typescatter';
   state.reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  state.main = document.querySelector('.ts-main');
   state.field = document.getElementById('ts-field');
   state.ariaLive = document.querySelector('[data-live]');
   setupFooter();

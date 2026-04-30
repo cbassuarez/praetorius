@@ -10,6 +10,8 @@ export const APPEARANCE_PALETTES = Object.freeze([
 
 export const CURSOR_PRESETS = Object.freeze(['system', 'block-square', 'ring', 'prism-diamond']);
 export const EFFECT_PRESETS = Object.freeze(['minimal', 'balanced-neo', 'high-drama']);
+export const SCORE_PDF_MODES = Object.freeze(['interactive', 'clean']);
+export const SCORE_PDF_MODE_WITH_INHERIT = Object.freeze(['inherit', ...SCORE_PDF_MODES]);
 
 export const BUILTIN_SKINS = Object.freeze([
   'console',
@@ -38,6 +40,9 @@ const DEFAULT_BRANDING = Object.freeze({ attribution: { enabled: true } });
 const DEFAULT_CONFIG = Object.freeze({
   theme: 'dark',
   output: { minify: false, embed: false },
+  presentation: {
+    scorePdfModeDefault: 'interactive',
+  },
   ui: {
     skin: 'console',
     appearance: DEFAULT_APPEARANCE,
@@ -213,6 +218,14 @@ function parseCueLines(input) {
     });
 }
 
+function normalizeScorePdfMode(value, { allowInherit = false, fallback = 'interactive' } = {}) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (allowInherit && raw === 'inherit') return 'inherit';
+  if (raw === 'clean') return 'clean';
+  if (raw === 'interactive') return 'interactive';
+  return fallback;
+}
+
 function normalizeScore(input) {
   if (!input || typeof input !== 'object') return null;
   const pageMapRaw = Array.isArray(input.pageMap) ? input.pageMap : parseScoreMapLines(input.pageMap);
@@ -228,6 +241,7 @@ function normalizeScore(input) {
   return {
     pdfStartPage: Math.max(1, Number(input.pdfStartPage) || 1),
     mediaOffsetSec: Number.isFinite(Number(input.mediaOffsetSec)) ? Number(input.mediaOffsetSec) : 0,
+    pdfMode: normalizeScorePdfMode(input.pdfMode, { allowInherit: true, fallback: 'inherit' }),
     ...(Number.isFinite(Number(input.pdfDelta)) ? { pdfDelta: Number(input.pdfDelta) } : {}),
     pageMap,
   };
@@ -414,6 +428,12 @@ function validateProjectState(state) {
         }
       }
     }
+    if (work.score && typeof work.score === 'object') {
+      const mode = work.score.pdfMode == null ? 'inherit' : String(work.score.pdfMode).trim().toLowerCase();
+      if (!SCORE_PDF_MODE_WITH_INHERIT.includes(mode)) {
+        errors.push(`invalid score.pdfMode for id ${id}`);
+      }
+    }
   }
 
   return errors;
@@ -480,7 +500,7 @@ function parseCsv(text) {
 }
 
 function toCsv(works) {
-  const cols = ['id', 'slug', 'title', 'one', 'oneliner', 'description', 'audio', 'pdf', 'cover', 'tags_csv', 'cues_json', 'score_json', 'media_json'];
+  const cols = ['id', 'slug', 'title', 'one', 'oneliner', 'description', 'audio', 'pdf', 'cover', 'tags_csv', 'cues_json', 'score_json', 'score_pdf_mode', 'media_json'];
   const lines = [cols.join(',')];
   for (const rawWork of works) {
     const work = normalizeWork(rawWork);
@@ -497,6 +517,7 @@ function toCsv(works) {
       Array.isArray(work.tags) ? work.tags.join(', ') : '',
       JSON.stringify(work.cues || []),
       JSON.stringify(work.score || null),
+      String(work.score?.pdfMode || ''),
       JSON.stringify(work.media || null),
     ].map(csvEscape);
     lines.push(row.join(','));
@@ -527,6 +548,13 @@ function normalizeBranding(input) {
   const source = input && typeof input === 'object' ? input : {};
   const attr = source.attribution && typeof source.attribution === 'object' ? source.attribution : {};
   return { attribution: { enabled: attr.enabled !== false } };
+}
+
+function normalizePresentation(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    scorePdfModeDefault: normalizeScorePdfMode(source.scorePdfModeDefault, { fallback: 'interactive' }),
+  };
 }
 
 function parseGenerateArgs(argv, state) {
@@ -755,6 +783,7 @@ function buildGenerateArtifacts(state, argv) {
         appearance,
         branding,
       },
+      presentation: normalizePresentation(state.config.presentation || {}),
       site: state.config.site,
     },
     works: (state.worksDb.works || []).map((work) => normalizeWork(work)),
@@ -858,6 +887,7 @@ function ensureProjectShape(input) {
     ...deepClone(DEFAULT_CONFIG.ui),
     ...(base.config?.ui || {}),
   };
+  config.presentation = normalizePresentation(base.config?.presentation || config.presentation);
   config.ui.appearance = normalizeAppearance(base.config?.ui?.appearance || config.ui.appearance);
   config.ui.branding = normalizeBranding(base.config?.ui?.branding || config.ui.branding);
   config.site = {
@@ -984,6 +1014,12 @@ function mergeProjectPatch(state, payload) {
     };
     state.config.ui.appearance = normalizeAppearance(state.config.ui.appearance);
     state.config.ui.branding = normalizeBranding(state.config.ui.branding);
+  }
+  if (payload.presentation) {
+    state.config.presentation = normalizePresentation({
+      ...(state.config.presentation || {}),
+      ...payload.presentation,
+    });
   }
   if (payload.theme) {
     state.config.theme = String(payload.theme) === 'light' ? 'light' : 'dark';
@@ -1162,7 +1198,13 @@ export function runFolioCommand(inputState, argvInput) {
           cover: row.cover,
           tags: row.tags_csv,
           cues: row.cues_json ? JSON.parse(row.cues_json || '[]') : [],
-          score: row.score_json ? JSON.parse(row.score_json || 'null') : null,
+          score: (() => {
+            const parsed = row.score_json ? JSON.parse(row.score_json || 'null') : null;
+            if (parsed && row.score_pdf_mode != null && String(row.score_pdf_mode).trim()) {
+              parsed.pdfMode = String(row.score_pdf_mode).trim().toLowerCase();
+            }
+            return parsed;
+          })(),
           media: parseMaybeJson(row.media_json),
           mediaKind: row.mediaKind || row.media_kind || row.kind || '',
           youtubeUrl: row.youtubeUrl || row.youtube_url || row.videoUrl || row.video_url || '',

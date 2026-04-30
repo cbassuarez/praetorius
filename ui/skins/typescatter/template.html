@@ -18,6 +18,13 @@
 
   <main class="ts-main" role="main">
     <section id="ts-field" class="ts-field" aria-label="Typescatter works"></section>
+    <aside class="ts-pdfpane" aria-label="Score Preview" aria-hidden="true" hidden>
+      <header class="ts-pdfbar">
+        <p class="ts-pdf-title" aria-live="polite"></p>
+        <button type="button" class="ts-pdf-close" aria-label="Close score">close</button>
+      </header>
+      <iframe class="ts-pdf-frame" title="Score PDF" loading="lazy" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    </aside>
   </main>
 
   <footer id="ts-footer" class="ts-footer" role="contentinfo">

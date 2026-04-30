@@ -109,6 +109,39 @@ const themeBtn  = document.getElementById('wc-theme-toggle');
     };
   }
 
+  function getWorkPdfUrl(work){
+    const media = resolveWorkMedia(work || {});
+    return normalizePdfUrl(media.pdfUrl || work?.pdf || '');
+  }
+
+  function resolveScorePdfMode(work){
+    if (praeMedia && typeof praeMedia.resolveScorePdfMode === 'function') {
+      try { return praeMedia.resolveScorePdfMode(work || {}); } catch (_) {}
+    }
+    return 'interactive';
+  }
+
+  function applyPdfFramePolicy(frame, work, options = {}){
+    if (!frame) return 'interactive';
+    if (praeMedia && typeof praeMedia.applyPdfFramePolicy === 'function') {
+      try {
+        return praeMedia.applyPdfFramePolicy(frame, work || {}, options);
+      } catch (_) {}
+    }
+    const mode = options.mode === 'clean'
+      ? 'clean'
+      : (options.mode === 'interactive' ? 'interactive' : resolveScorePdfMode(work));
+    const clean = mode === 'clean';
+    frame.setAttribute('data-prae-score-pdf-mode', mode);
+    frame.style.pointerEvents = clean ? 'none' : '';
+    if (clean) frame.setAttribute('tabindex', '-1');
+    else frame.removeAttribute('tabindex');
+    if (options.container && typeof options.container.setAttribute === 'function') {
+      options.container.setAttribute('data-prae-score-pdf-mode', mode);
+    }
+    return mode;
+  }
+
   try {
     if (typeof window.PRAE?.ensureAudioTags === 'function') {
       window.PRAE.ensureAudioTags();
@@ -431,7 +464,7 @@ function getPageFollowSeconds(){
         btn(`open ${w.id}`,'Open'),
         ...createPlayButtons(w, workIndex),
         btn(`copy ${w.id}`,'Copy URL'),
-        ...(w.pdf ? [btn(`pdf ${w.id}`,'PDF')] : [])
+        ...(getWorkPdfUrl(w) ? [btn(`pdf ${w.id}`,'PDF')] : [])
       ], workIndex);
       row.appendChild(block([...summaryNodes, actions], workIndex));
       return row;
@@ -483,7 +516,7 @@ function getPageFollowSeconds(){
     const acts = actRow([
       ...createPlayButtons(w, w.id),
       btn(`copy ${w.id}`,'Copy URL'),
-      ...(w.pdf ? [btn(`pdf ${w.id}`,'PDF')] : [])
+      ...(getWorkPdfUrl(w) ? [btn(`pdf ${w.id}`,'PDF')] : [])
     ], w.id);
     out.appendChild(acts); reveal(acts); scrollBottom();
   }
@@ -646,8 +679,9 @@ function pdfCmd(nRaw){
   if(!nRaw){ return appendLine('error: pdf requires a work number','err',true); }
   const w = works[n];
   if(!w){ return appendLine(`error: unknown work ${nRaw}`,'err',true); }
-  if(!w.pdf){ return appendLine(`error: no PDF available for work ${n}`,'err',true); }
-  showPdfPane(w.pdf, w.title || `Work ${n}`);
+  const pdfUrl = getWorkPdfUrl(w);
+  if(!pdfUrl){ return appendLine(`error: no PDF available for work ${n}`,'err',true); }
+  showPdfPane(pdfUrl, w.title || `Work ${n}`);
 // If audio was already playing:
   //  • same work → do not restart
   //  • different work → switch to this work’s audio
@@ -746,7 +780,8 @@ function showPdfPane(rawUrl, title){
   // Decide the initial target page BEFORE loading the viewer
   // Prefer the work we’re opening; only use page-follow position if it’s the *same* work.
   let initPage = 1;
-  const wForUrl = Object.values(works).find(w => w.pdf === rawUrl);
+  const wForUrl = Object.values(works).find((w) => getWorkPdfUrl(w) === url);
+  applyPdfFramePolicy(pdfFrame, wForUrl || null, { container: pdfPane });
 // Track which work’s PDF is (about to be) loaded
   currentPdfSlug = wForUrl ? wForUrl.slug : null;
   worksConsole.dataset.pdfSlug = currentPdfSlug || '';
@@ -792,6 +827,7 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{
 function showYouTubePane(work, media){
   paneMode = 'youtube';
   setEmbedFrameMode(pdfFrame, 'youtube');
+  applyPdfFramePolicy(pdfFrame, work || null, { mode: 'interactive', container: pdfPane });
   const title = work?.title || 'YouTube';
   pdfTitle.textContent = String(title);
   worksConsole.classList.add('has-pdf');
@@ -800,10 +836,9 @@ function showYouTubePane(work, media){
   pdfPane.classList.add('is-open');
   currentPdfSlug = work?.slug || null;
   worksConsole.dataset.pdfSlug = currentPdfSlug || '';
-  const embed = media?.youtubeEmbedUrl || media?.youtubeUrl || '';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     pdfViewerReady = false;
-    pdfFrame.src = embed || 'about:blank';
+    pdfFrame.src = 'about:blank';
   }));
   focusInput();
   appendLine(`opening ${title} (YouTube)…`,'muted',true);
@@ -845,9 +880,10 @@ function syncPdfPaneForWork(n){
 const w = works[n];
   if (!w) return;
   const isOpen = worksConsole.classList.contains('has-pdf');
-  if (!w.pdf){ hidePdfPane(); return; }
+  const pdfUrl = getWorkPdfUrl(w);
+  if (!pdfUrl){ hidePdfPane(); return; }
   const same = isOpen && currentPdfSlug === w.slug;
-  if (!same){ showPdfPane(w.pdf, w.title || `Work ${n}`); }
+  if (!same){ showPdfPane(pdfUrl, w.title || `Work ${n}`); }
   // else: keep current viewer; page-follow will drive page via wc:pdf-goto
 }
 
@@ -956,22 +992,26 @@ function choosePdfViewer(url){
       if (chosen) return chosen;
     } catch (_) {}
   }
-  const m = url.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
+  let resolved = String(url || '').trim();
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(resolved) && !/^\/\//.test(resolved)) {
+    try { resolved = new URL(resolved, location.href).toString(); } catch (_) {}
+  }
+  const m = resolved.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
   if (m) {
     // Prefer PDF.js for page control:
     const direct = `https://drive.google.com/uc?export=download&id=${m[1]}`;
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(direct)}#page=1&zoom=page-width&toolbar=0`;
 
   }
-  const sameOrigin = url.startsWith(location.origin);
-  const corsLikely = /^https?:\/\/([^\/]*\.)?(jsdelivr\.net|unpkg\.com|githubusercontent\.com|cloudflare-ipfs\.com|stagedevices\.com|dexdsl\.org|cbassuarez\.com)\//i.test(url);
+  const sameOrigin = resolved.startsWith(location.origin);
+  const corsLikely = /^https?:\/\/([^\/]*\.)?(jsdelivr\.net|unpkg\.com|githubusercontent\.com|cloudflare-ipfs\.com|stagedevices\.com|dexdsl\.org|cbassuarez\.com)\//i.test(resolved);
   if (sameOrigin || corsLikely){
-   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(url)}#page=1&zoom=page-width&toolbar=0`;
+   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(resolved)}#page=1&zoom=page-width&toolbar=0`;
 
 
 
   }
-  return `${url}#toolbar=1&view=FitH`;
+  return `${resolved}#toolbar=1&view=FitH`;
 }
 
 

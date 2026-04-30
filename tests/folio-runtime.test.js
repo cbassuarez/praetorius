@@ -99,6 +99,62 @@ describe('folio runtime command engine', () => {
     });
   });
 
+  test('supports score pdf mode defaults + per-work overrides in config and csv import/export', () => {
+    let state = createDefaultProjectState();
+
+    const configSet = runFolioCommand(state, [
+      'config',
+      '--payload',
+      JSON.stringify({ presentation: { scorePdfModeDefault: 'clean' } }),
+    ]);
+    expect(configSet.ok).toBe(true);
+    state = configSet.state;
+    expect(state.config.presentation.scorePdfModeDefault).toBe('clean');
+
+    const add = runFolioCommand(state, [
+      'add',
+      '--payload',
+      JSON.stringify({
+        title: 'Clean Score Inherit',
+        slug: 'clean-score-inherit',
+        oneliner: 'Score mode check',
+        pdf: 'https://example.com/score.pdf',
+        score: {
+          pdfStartPage: 1,
+          mediaOffsetSec: 0,
+          pdfMode: 'inherit',
+          pageMap: [{ at: '0:00', page: 1 }],
+        },
+      }),
+    ]);
+    expect(add.ok).toBe(true);
+    state = add.state;
+    const work = state.worksDb.works.find((entry) => entry.slug === 'clean-score-inherit');
+    expect(work?.score?.pdfMode).toBe('inherit');
+
+    const exported = runFolioCommand(state, ['export', '--format', 'csv']);
+    expect(exported.ok).toBe(true);
+    expect(exported.exportText).toContain('score_pdf_mode');
+    expect(exported.exportText).toContain('"inherit"');
+
+    const csv = [
+      'id,slug,title,oneliner,pdf,score_json,score_pdf_mode,media_json,cues_json',
+      '77,csv-clean,CSV Clean,CSV score mode,https://example.com/clean.pdf,"{""pdfStartPage"":1,""mediaOffsetSec"":0,""pageMap"":[{""at"":0,""page"":1}]}","clean","null","[]"',
+    ].join('\n');
+    const imported = runFolioCommand(state, [
+      'import',
+      '--format',
+      'csv',
+      '--payload',
+      csv,
+      '--assume-new-id',
+      '--assume-new-slug',
+    ]);
+    expect(imported.ok).toBe(true);
+    const importedWork = imported.state.worksDb.works.find((entry) => entry.slug === 'csv-clean');
+    expect(importedWork?.score?.pdfMode).toBe('clean');
+  });
+
   test('generate emits metadata markers and runtime fallback rules', () => {
     let state = createDefaultProjectState();
 

@@ -122,6 +122,7 @@ const themeForm = reactive({
   cursor: 'system',
   hoverEffect: 'balanced-neo',
   buttonEffect: 'balanced-neo',
+  scorePdfModeDefault: 'interactive',
 });
 
 const generateForm = reactive({
@@ -146,6 +147,7 @@ const workDraft = reactive({
   tags: '',
   cues: [{ label: '@0:00', time: '0:00' }],
   scoreEnabled: false,
+  scorePdfMode: 'inherit',
   scorePdfStartPage: 1,
   scoreMediaOffsetSec: 0,
   scoreRows: [{ at: '0:00', page: 1 }],
@@ -502,6 +504,9 @@ function normalizeWorkDraftPayload() {
     payload.score = {
       pdfStartPage: Number(workDraft.scorePdfStartPage) || 1,
       mediaOffsetSec: Number(workDraft.scoreMediaOffsetSec) || 0,
+      pdfMode: ['inherit', 'interactive', 'clean'].includes(String(workDraft.scorePdfMode || '').toLowerCase())
+        ? String(workDraft.scorePdfMode).toLowerCase()
+        : 'inherit',
       pageMap: (Array.isArray(workDraft.scoreRows) ? workDraft.scoreRows : [])
         .map((row) => ({
           at: String(row?.at || '').trim() || '0:00',
@@ -667,6 +672,7 @@ function resetWorkDraft() {
   workDraft.tags = '';
   workDraft.cues = [{ label: '@0:00', time: '0:00' }];
   workDraft.scoreEnabled = false;
+  workDraft.scorePdfMode = 'inherit';
   workDraft.scorePdfStartPage = 1;
   workDraft.scoreMediaOffsetSec = 0;
   workDraft.scoreRows = [{ at: '0:00', page: 1 }];
@@ -691,6 +697,9 @@ function pickWork(work) {
   workDraft.tags = Array.isArray(work.tags) ? work.tags.join(', ') : '';
   workDraft.cues = toCueRows(work.cues);
   workDraft.scoreEnabled = !!work.score;
+  workDraft.scorePdfMode = ['inherit', 'interactive', 'clean'].includes(String(work.score?.pdfMode || '').toLowerCase())
+    ? String(work.score?.pdfMode || '').toLowerCase()
+    : 'inherit';
   workDraft.scorePdfStartPage = Number(work.score?.pdfStartPage || 1);
   workDraft.scoreMediaOffsetSec = Number(work.score?.mediaOffsetSec || 0);
   workDraft.scoreRows = toScoreRows(work.score);
@@ -731,6 +740,9 @@ function syncFormsFromState() {
   themeForm.cursor = cfg.ui?.appearance?.cursor?.preset || 'system';
   themeForm.hoverEffect = cfg.ui?.appearance?.effects?.hover || 'balanced-neo';
   themeForm.buttonEffect = cfg.ui?.appearance?.effects?.button || 'balanced-neo';
+  themeForm.scorePdfModeDefault = String(cfg.presentation?.scorePdfModeDefault || 'interactive').toLowerCase() === 'clean'
+    ? 'clean'
+    : 'interactive';
   if (themeForm.uiRuntime !== 'react' && themeForm.uiRuntime !== 'vanilla') {
     themeForm.uiRuntime = 'react';
   }
@@ -834,6 +846,9 @@ async function applyThemeTab(options = {}) {
   const notify = options.notify !== false;
   const payload = {
     theme: themeForm.theme,
+    presentation: {
+      scorePdfModeDefault: themeForm.scorePdfModeDefault === 'clean' ? 'clean' : 'interactive',
+    },
     ui: {
       skin: themeForm.skin,
       appearance: {
@@ -893,6 +908,9 @@ async function addScoreForSelected() {
   const payload = {
     pdfStartPage: Number(workDraft.scorePdfStartPage) || 1,
     mediaOffsetSec: Number(workDraft.scoreMediaOffsetSec) || 0,
+    pdfMode: ['inherit', 'interactive', 'clean'].includes(String(workDraft.scorePdfMode || '').toLowerCase())
+      ? String(workDraft.scorePdfMode).toLowerCase()
+      : 'inherit',
     pageMap: (Array.isArray(workDraft.scoreRows) ? workDraft.scoreRows : []).map((row) => ({
       at: String(row?.at || '').trim() || '0:00',
       page: Math.max(1, Number(row?.page) || 1),
@@ -1871,6 +1889,14 @@ onBeforeUnmount(() => {
                 </p>
                 <div class="fb-field-grid">
                   <label>
+                    Score PDF mode
+                    <select v-model="workDraft.scorePdfMode">
+                      <option value="inherit">inherit project default</option>
+                      <option value="interactive">interactive</option>
+                      <option value="clean">clean (locked)</option>
+                    </select>
+                  </label>
+                  <label>
                     PDF start page
                     <input v-model.number="workDraft.scorePdfStartPage" type="number" min="1" />
                   </label>
@@ -1883,6 +1909,9 @@ onBeforeUnmount(() => {
                     <input v-model="workDraft.scorePdfDelta" type="number" />
                   </label>
                 </div>
+                <p v-if="workDraft.scoreEnabled && workDraft.scorePdfMode === 'clean'" class="fb-note fb-note--warning">
+                  Viewer is locked; page changes come from cues/page-follow only.
+                </p>
                 <section class="fb-collection">
                   <div class="fb-collection__head">
                     <h3>Score Map</h3>
@@ -2056,6 +2085,13 @@ onBeforeUnmount(() => {
                 <option v-for="effect in EFFECT_PRESETS" :key="effect" :value="effect">{{ effect }}</option>
               </select>
             </label>
+            <label>
+              Score PDF default
+              <select v-model="themeForm.scorePdfModeDefault">
+                <option value="interactive">interactive</option>
+                <option value="clean">clean (locked)</option>
+              </select>
+            </label>
 	            <label v-if="isMonoOnePalette" class="fb-mono-color-field">
 	              Mono color
 	              <div class="fb-mono-color-control" :style="{ '--fb-mono-color': monoColorHex }">
@@ -2065,8 +2101,9 @@ onBeforeUnmount(() => {
 	              </div>
 	            </label>
 	          </div>
+	          <p class="fb-note">Score PDF default applies to works set to <strong>inherit</strong>. Clean mode locks viewer interaction and uses page-follow only.</p>
 	          <div class="fb-actions">
-	            <button class="fb-btn fb-btn--accent" :disabled="busy" type="button" @click="applyThemeTab">Apply Theme</button>
+	            <button class="fb-btn fb-btn--accent" :disabled="busy" type="button" @click="applyThemeTab">Apply Theme + Presentation</button>
 	            <button class="fb-btn" :disabled="busy" type="button" @click="runDoctor">Run Doctor</button>
           </div>
         </article>

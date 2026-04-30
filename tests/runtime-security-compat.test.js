@@ -167,5 +167,7 @@ describe('runtime security hardening + compatibility', () => {
     expect(runtimeScript).toContain('window.PRAE.works = works;');
     expect(runtimeScript).toContain('window.PRAE.media = Object.assign');
     expect(runtimeScript).toContain('window.PRAE.pauseAllAudio = function(exceptId)');
+    expect(runtimeScript).toContain('resolveScorePdfMode');
+    expect(runtimeScript).toContain('applyPdfFramePolicy');
   });
 });
