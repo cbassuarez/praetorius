@@ -5,8 +5,11 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
+import { spawn, spawnSync } from 'node:child_process';
 import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
@@ -1723,6 +1726,18 @@ const DEFAULT_BRANDING = Object.freeze({
   attribution: { enabled: true }
 });
 
+const DEFAULT_RUNTIME_MANIFEST_URL = 'https://cdn.praetorius.dev/runtime/channels/stable.json';
+const DEFAULT_RUNTIME_TELEMETRY_URL = 'https://cdn.praetorius.dev/runtime/events';
+const DEFAULT_RUNTIME_WEB_UPDATES = Object.freeze({
+  enabled: false,
+  channel: 'stable',
+  autoPatch: true,
+  autoMinor: false,
+  autoMajor: false,
+  manifestUrl: DEFAULT_RUNTIME_MANIFEST_URL,
+  telemetryUrl: DEFAULT_RUNTIME_TELEMETRY_URL,
+});
+
 // Config schema (light) – theme + output flags
 const DEFAULT_CONFIG = Object.freeze({
   theme: 'dark',
@@ -1746,6 +1761,22 @@ const DEFAULT_CONFIG = Object.freeze({
       { label:'Projects', href:'#', external:false },
       { label:'Contact',  href:'#', external:false }
     ]
+  },
+  updates: {
+    web: DEFAULT_RUNTIME_WEB_UPDATES
+  },
+});
+
+const DEFAULT_USER_UPDATE_CONFIG = Object.freeze({
+  version: 1,
+  cli: {
+    autoPatch: true,
+    autoMinor: false,
+    autoMajor: false
+  },
+  state: {
+    lastAutoApplyAttemptVersion: '',
+    lastAutoApplyAt: ''
   }
 });
 
@@ -2313,6 +2344,482 @@ const __dirname  = path.dirname(__filename);
 const PKG_ROOT   = path.resolve(__dirname, '../../'); // package root (for <pkg>/ui fallback)
 
 function cwdRel(p) { return path.relative(process.cwd(), p) || '.'; }
+
+function praeIsObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function praeNormalizeWebUpdateConfig(input) {
+  const src = praeIsObject(input) ? input : {};
+  const channel = String(src.channel || DEFAULT_RUNTIME_WEB_UPDATES.channel).trim().toLowerCase() || DEFAULT_RUNTIME_WEB_UPDATES.channel;
+  const manifestUrl = String(src.manifestUrl || DEFAULT_RUNTIME_WEB_UPDATES.manifestUrl).trim() || DEFAULT_RUNTIME_WEB_UPDATES.manifestUrl;
+  const telemetryUrl = String(src.telemetryUrl || DEFAULT_RUNTIME_WEB_UPDATES.telemetryUrl).trim() || DEFAULT_RUNTIME_WEB_UPDATES.telemetryUrl;
+  return {
+    enabled: src.enabled === true,
+    channel,
+    autoPatch: src.autoPatch !== false,
+    autoMinor: src.autoMinor === true,
+    autoMajor: false,
+    manifestUrl,
+    telemetryUrl
+  };
+}
+
+function praeNormalizeCliUpdatePolicy(input) {
+  const src = praeIsObject(input) ? input : {};
+  return {
+    autoPatch: src.autoPatch !== false,
+    autoMinor: src.autoMinor === true,
+    autoMajor: false
+  };
+}
+
+function praeGetUserConfigDir() {
+  const home = os.homedir() || process.env.HOME || process.cwd();
+  if (process.platform === 'win32') {
+    return path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Praetorius');
+  }
+  if (process.platform === 'darwin') {
+    const xdg = process.env.XDG_CONFIG_HOME;
+    if (xdg && String(xdg).trim()) return path.join(String(xdg).trim(), 'praetorius');
+    return path.join(home, 'Library', 'Application Support', 'praetorius');
+  }
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'praetorius');
+}
+
+const USER_UPDATE_CONFIG_PATH = path.join(praeGetUserConfigDir(), 'updates.json');
+
+function praeNormalizeUserUpdateConfig(raw) {
+  const src = praeIsObject(raw) ? raw : {};
+  const cli = praeNormalizeCliUpdatePolicy(src.cli);
+  const state = praeIsObject(src.state) ? src.state : {};
+  return {
+    version: 1,
+    cli,
+    state: {
+      lastAutoApplyAttemptVersion: String(state.lastAutoApplyAttemptVersion || ''),
+      lastAutoApplyAt: String(state.lastAutoApplyAt || '')
+    }
+  };
+}
+
+function loadUserUpdateConfig() {
+  const raw = readJsonSafe(USER_UPDATE_CONFIG_PATH, null);
+  return praeNormalizeUserUpdateConfig(raw || DEFAULT_USER_UPDATE_CONFIG);
+}
+
+function saveUserUpdateConfig(cfg) {
+  fs.mkdirSync(path.dirname(USER_UPDATE_CONFIG_PATH), { recursive: true });
+  const normalized = praeNormalizeUserUpdateConfig(cfg || DEFAULT_USER_UPDATE_CONFIG);
+  atomicWriteFile(USER_UPDATE_CONFIG_PATH, JSON.stringify(normalized, null, 2));
+}
+
+function praeNowIso() {
+  return new Date().toISOString();
+}
+
+function praeParseSemver(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    raw: `${Number(match[1])}.${Number(match[2])}.${Number(match[3])}`
+  };
+}
+
+function praeCompareSemver(aRaw, bRaw) {
+  const a = praeParseSemver(aRaw);
+  const b = praeParseSemver(bRaw);
+  if (!a || !b) return 0;
+  if (a.major !== b.major) return a.major > b.major ? 1 : -1;
+  if (a.minor !== b.minor) return a.minor > b.minor ? 1 : -1;
+  if (a.patch !== b.patch) return a.patch > b.patch ? 1 : -1;
+  return 0;
+}
+
+function praeVersionDeltaType(current, next) {
+  const a = praeParseSemver(current);
+  const b = praeParseSemver(next);
+  if (!a || !b) return null;
+  if (b.major !== a.major) return 'major';
+  if (b.minor !== a.minor) return 'minor';
+  if (b.patch !== a.patch) return 'patch';
+  return 'latest';
+}
+
+function praeIsUpdateEligible(type, policy) {
+  if (!type) return false;
+  if (type === 'major') return false;
+  if (type === 'minor') return !!policy.autoMinor;
+  if (type === 'patch') return !!policy.autoPatch;
+  return false;
+}
+
+function praeResolveNpmBinary() {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
+function praeRunNpmUpdateSync(packageName, targetVersion = 'latest') {
+  if (process.env.PRAE_UPDATE_DRY_RUN === '1') {
+    return { ok: true, code: 0, dryRun: true };
+  }
+  const bin = praeResolveNpmBinary();
+  const spec = `${packageName}@${targetVersion || 'latest'}`;
+  const result = spawnSync(bin, ['install', '-g', spec], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  return {
+    ok: result.status === 0,
+    code: Number(result.status || 0),
+    error: result.error || null
+  };
+}
+
+function praeLaunchNpmUpdateBackground(packageName, targetVersion = 'latest') {
+  if (process.env.PRAE_UPDATE_DRY_RUN === '1') return true;
+  const bin = praeResolveNpmBinary();
+  const spec = `${packageName}@${targetVersion || 'latest'}`;
+  const child = spawn(bin, ['install', '-g', spec], {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  });
+  child.unref();
+  return true;
+}
+
+function praeParseToggle(raw, fallback) {
+  if (raw == null) return fallback;
+  const value = String(raw).trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes', 'y', 'enable', 'enabled'].includes(value)) return true;
+  if (['0', 'false', 'off', 'no', 'n', 'disable', 'disabled'].includes(value)) return false;
+  return fallback;
+}
+
+function praeRecordAutoApplyAttempt(version) {
+  const cfg = loadUserUpdateConfig();
+  cfg.state.lastAutoApplyAttemptVersion = String(version || '');
+  cfg.state.lastAutoApplyAt = praeNowIso();
+  saveUserUpdateConfig(cfg);
+}
+
+function praeShouldAttemptAutoApply(updateInfo, policy, state) {
+  if (!updateInfo || !updateInfo.latest || !updateInfo.current) return false;
+  const type = String(updateInfo.type || praeVersionDeltaType(updateInfo.current, updateInfo.latest) || '').toLowerCase();
+  if (!praeIsUpdateEligible(type, policy)) return false;
+  if (praeCompareSemver(updateInfo.latest, updateInfo.current) <= 0) return false;
+  if (String(state.lastAutoApplyAttemptVersion || '') === String(updateInfo.latest || '')) return false;
+  return true;
+}
+
+function praeSha384Base64(content) {
+  return crypto.createHash('sha384').update(content, 'utf8').digest('base64');
+}
+
+function praeBuildRuntimeManifestPreview(opts = {}) {
+  const localRuntimeUrl = String(opts.localRuntimeUrl || './script.js');
+  const localRuntimeCode = String(opts.localRuntimeCode || '');
+  const version = String(opts.version || pkgJson.version || '0.0.0');
+  const channel = String(opts.channel || 'stable');
+  const integrity = `sha384-${praeSha384Base64(localRuntimeCode)}`;
+  return {
+    schemaVersion: 1,
+    generatedAt: praeNowIso(),
+    global: {
+      killSwitch: false,
+      forcePinVersion: null
+    },
+    channels: {
+      [channel]: {
+        latest: version,
+        versions: {
+          [version]: {
+            version,
+            url: localRuntimeUrl,
+            integrity
+          }
+        }
+      }
+    }
+  };
+}
+
+function praeParseRuntimeManifest(input) {
+  if (!praeIsObject(input)) return null;
+  const global = praeIsObject(input.global) ? input.global : {};
+  const channels = praeIsObject(input.channels) ? input.channels : {};
+  return {
+    schemaVersion: Number(input.schemaVersion || 1),
+    generatedAt: String(input.generatedAt || ''),
+    global: {
+      killSwitch: global.killSwitch === true,
+      forcePinVersion: global.forcePinVersion == null ? null : String(global.forcePinVersion).trim()
+    },
+    channels
+  };
+}
+
+function praeSelectRuntimeRelease(manifestRaw, policy, currentVersion) {
+  const manifest = praeParseRuntimeManifest(manifestRaw);
+  if (!manifest) return { kind: 'invalid-manifest' };
+  if (manifest.global.killSwitch) return { kind: 'kill-switch' };
+  const current = String(currentVersion || '').trim();
+  const channelKey = String(policy.channel || 'stable').trim().toLowerCase();
+  const channel = praeIsObject(manifest.channels[channelKey]) ? manifest.channels[channelKey] : null;
+  if (!channel) return { kind: 'missing-channel' };
+  const versions = praeIsObject(channel.versions) ? channel.versions : {};
+
+  const resolveVersion = (version) => {
+    const key = String(version || '').trim();
+    if (!key) return null;
+    const entry = praeIsObject(versions[key]) ? versions[key] : null;
+    if (!entry) return null;
+    const url = String(entry.url || '').trim();
+    const integrity = String(entry.integrity || '').trim();
+    if (!url || !integrity) return null;
+    return { version: key, url, integrity };
+  };
+
+  if (manifest.global.forcePinVersion) {
+    const forced = resolveVersion(manifest.global.forcePinVersion);
+    if (forced) return { kind: 'force-pin', release: forced };
+    return { kind: 'force-pin-missing' };
+  }
+
+  const latest = resolveVersion(channel.latest);
+  if (!latest) return { kind: 'missing-latest' };
+  const cmp = praeCompareSemver(latest.version, current);
+  if (cmp <= 0) return { kind: 'up-to-date', release: latest };
+  const delta = praeVersionDeltaType(current, latest.version);
+  if (!praeIsUpdateEligible(delta, policy)) {
+    return { kind: 'blocked-by-policy', release: latest, delta };
+  }
+  return { kind: 'eligible', release: latest, delta };
+}
+
+function praeBuildRuntimeLoaderScript(opts = {}) {
+  const localRuntimeUrl = String(opts.localRuntimeUrl || './script.js');
+  const manifestUrl = String(opts.manifestUrl || DEFAULT_RUNTIME_MANIFEST_URL);
+  const telemetryUrl = String(opts.telemetryUrl || DEFAULT_RUNTIME_TELEMETRY_URL);
+  const channel = String(opts.channel || 'stable').toLowerCase();
+  const currentVersion = String(opts.currentVersion || pkgJson.version || '0.0.0');
+  const autoPatch = opts.autoPatch !== false;
+  const autoMinor = opts.autoMinor === true;
+  const manifestPreview = opts.manifestPreview || null;
+  return `(function(){
+  var policy = {
+    channel: ${JSON.stringify(channel)},
+    autoPatch: ${autoPatch ? 'true' : 'false'},
+    autoMinor: ${autoMinor ? 'true' : 'false'},
+    autoMajor: false,
+    manifestUrl: ${JSON.stringify(manifestUrl)},
+    telemetryUrl: ${JSON.stringify(telemetryUrl)},
+    currentVersion: ${JSON.stringify(currentVersion)}
+  };
+  var localRuntimeUrl = ${JSON.stringify(localRuntimeUrl)};
+  var fallbackManifest = ${JSON.stringify(manifestPreview)};
+  var storageKey = 'prae.runtime.lastKnownGood.' + policy.channel;
+  function parseSemver(value){
+    var raw = String(value || '').trim();
+    var m = raw.match(/^v?(\\d+)\\.(\\d+)\\.(\\d+)/);
+    if (!m) return null;
+    return { major:Number(m[1]), minor:Number(m[2]), patch:Number(m[3]), raw:Number(m[1])+'.'+Number(m[2])+'.'+Number(m[3]) };
+  }
+  function compareSemver(aRaw,bRaw){
+    var a = parseSemver(aRaw); var b = parseSemver(bRaw);
+    if (!a || !b) return 0;
+    if (a.major !== b.major) return a.major > b.major ? 1 : -1;
+    if (a.minor !== b.minor) return a.minor > b.minor ? 1 : -1;
+    if (a.patch !== b.patch) return a.patch > b.patch ? 1 : -1;
+    return 0;
+  }
+  function deltaType(current,next){
+    var a = parseSemver(current); var b = parseSemver(next);
+    if (!a || !b) return null;
+    if (b.major !== a.major) return 'major';
+    if (b.minor !== a.minor) return 'minor';
+    if (b.patch !== a.patch) return 'patch';
+    return 'latest';
+  }
+  function canAutoApply(type){
+    if (type === 'patch') return !!policy.autoPatch;
+    if (type === 'minor') return !!policy.autoMinor;
+    return false;
+  }
+  function emit(detail){
+    var payload = Object.assign({ channel: policy.channel }, detail || {});
+    try { window.dispatchEvent(new CustomEvent('prae:update-runtime', { detail: payload })); } catch (_) {}
+    if (!policy.telemetryUrl) return;
+    try {
+      var body = JSON.stringify(payload);
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(policy.telemetryUrl, body);
+      } else if (window.fetch) {
+        fetch(policy.telemetryUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: true, mode: 'cors' }).catch(function(){});
+      }
+    } catch (_) {}
+  }
+  function loadScript(src, integrity){
+    return new Promise(function(resolve, reject){
+      var s = document.createElement('script');
+      s.src = src;
+      s.defer = true;
+      s.crossOrigin = 'anonymous';
+      if (integrity) s.integrity = integrity;
+      s.onload = function(){ resolve(src); };
+      s.onerror = function(){ reject(new Error('script-load-failed')); };
+      (document.head || document.body || document.documentElement).appendChild(s);
+    });
+  }
+  function hashText(text){
+    if (!window.crypto || !window.crypto.subtle || typeof TextEncoder !== 'function') {
+      return Promise.reject(new Error('crypto-unavailable'));
+    }
+    var enc = new TextEncoder();
+    return crypto.subtle.digest('SHA-384', enc.encode(text)).then(function(buf){
+      var bytes = new Uint8Array(buf);
+      var bin = '';
+      for (var i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+      return 'sha384-' + btoa(bin);
+    });
+  }
+  function normalizedManifest(input){
+    if (!input || typeof input !== 'object') return null;
+    var global = input.global && typeof input.global === 'object' ? input.global : {};
+    var channels = input.channels && typeof input.channels === 'object' ? input.channels : {};
+    return {
+      global: {
+        killSwitch: global.killSwitch === true,
+        forcePinVersion: global.forcePinVersion == null ? null : String(global.forcePinVersion || '').trim()
+      },
+      channels: channels
+    };
+  }
+  function resolveRelease(parsed, version){
+    if (!parsed || !parsed.channels || !parsed.channels[policy.channel]) return null;
+    var channel = parsed.channels[policy.channel];
+    var versions = channel.versions && typeof channel.versions === 'object' ? channel.versions : {};
+    var key = String(version || '').trim();
+    if (!key || !versions[key] || typeof versions[key] !== 'object') return null;
+    var entry = versions[key];
+    var url = String(entry.url || '').trim();
+    var integrity = String(entry.integrity || '').trim();
+    if (!url || !integrity) return null;
+    return { version: key, url: url, integrity: integrity };
+  }
+  function selectRelease(manifest){
+    var parsed = normalizedManifest(manifest);
+    if (!parsed) return { kind: 'invalid-manifest' };
+    if (parsed.global.killSwitch) return { kind: 'kill-switch' };
+    var channel = parsed.channels[policy.channel];
+    if (!channel || typeof channel !== 'object') return { kind: 'missing-channel' };
+    if (parsed.global.forcePinVersion) {
+      var forced = resolveRelease(parsed, parsed.global.forcePinVersion);
+      return forced ? { kind:'force-pin', release: forced } : { kind:'force-pin-missing' };
+    }
+    var latest = resolveRelease(parsed, channel.latest);
+    if (!latest) return { kind: 'missing-latest' };
+    if (compareSemver(latest.version, policy.currentVersion) <= 0) return { kind: 'up-to-date', release: latest };
+    var delta = deltaType(policy.currentVersion, latest.version);
+    if (!canAutoApply(delta)) return { kind: 'blocked-by-policy', release: latest, delta: delta };
+    return { kind: 'eligible', release: latest, delta: delta };
+  }
+  function rememberGood(version){
+    if (!version) return;
+    try { localStorage.setItem(storageKey, String(version)); } catch (_) {}
+  }
+  function readGood(){
+    try { return String(localStorage.getItem(storageKey) || '').trim(); } catch (_) { return ''; }
+  }
+  function loadRemoteRelease(release, meta){
+    var details = meta && typeof meta === 'object' ? meta : {};
+    return fetch(release.url, { cache: 'no-store', mode: 'cors' })
+      .then(function(res){ if (!res || !res.ok) throw new Error('runtime-http-' + (res ? res.status : 'x')); return res.text(); })
+      .then(function(text){
+        return hashText(text).then(function(actual){
+          if (actual !== release.integrity) throw new Error('integrity-mismatch');
+          var blob = new Blob([text], { type: 'text/javascript' });
+          var blobUrl = URL.createObjectURL(blob);
+          return loadScript(blobUrl).then(function(){
+            rememberGood(release.version);
+            emit({
+              status: String(details.status || 'loaded-remote'),
+              runtimeVersion: release.version,
+              source: String(details.source || 'remote'),
+              delta: details.delta || null,
+              reason: details.reason || null
+            });
+            setTimeout(function(){ try { URL.revokeObjectURL(blobUrl); } catch (_) {} }, 0);
+          });
+        });
+      });
+  }
+  function tryLastKnownGood(manifest, reason){
+    var saved = readGood();
+    if (!saved || compareSemver(saved, policy.currentVersion) <= 0) {
+      return Promise.reject(new Error('last-known-good-unavailable'));
+    }
+    var parsed = normalizedManifest(manifest);
+    var savedRelease = resolveRelease(parsed, saved);
+    if (!savedRelease) return Promise.reject(new Error('last-known-good-missing'));
+    emit({
+      status: 'last-known-good-attempt',
+      runtimeVersion: savedRelease.version,
+      reason: String(reason || 'last-known-good')
+    });
+    var delta = deltaType(policy.currentVersion, savedRelease.version);
+    return loadRemoteRelease(savedRelease, {
+      source: 'last-known-good',
+      status: 'loaded-last-known-good',
+      delta: delta,
+      reason: String(reason || 'last-known-good')
+    });
+  }
+  function fetchManifest(){
+    if (!window.fetch || !policy.manifestUrl) return Promise.resolve(fallbackManifest);
+    return fetch(policy.manifestUrl, { cache: 'no-store', mode: 'cors' })
+      .then(function(res){ if (!res || !res.ok) throw new Error('manifest-http-' + (res ? res.status : 'x')); return res.json(); })
+      .catch(function(){ return fallbackManifest; });
+  }
+  function loadFallback(reason){
+    emit({ status: 'fallback', reason: String(reason || 'unknown'), runtimeVersion: policy.currentVersion });
+    return loadScript(localRuntimeUrl).then(function(){
+      rememberGood(policy.currentVersion);
+      emit({ status: 'loaded-fallback', runtimeVersion: policy.currentVersion });
+    }).catch(function(){
+      emit({ status: 'fatal', reason: 'fallback-load-failed' });
+    });
+  }
+  fetchManifest().then(function(manifest){
+    var selected = selectRelease(manifest);
+    if (selected.kind === 'kill-switch') return loadFallback('kill-switch');
+    if (selected.kind === 'force-pin') {
+      var forced = selected.release;
+      return loadRemoteRelease(forced, { source: 'remote', status: 'loaded-force-pin' })
+        .catch(function(){
+          return tryLastKnownGood(manifest, 'force-pin-failed')
+            .catch(function(){ return loadFallback('force-pin-failed'); });
+        });
+    }
+    if (selected.kind !== 'eligible') {
+      return tryLastKnownGood(manifest, selected.kind).catch(function(){
+        return loadFallback(selected.kind);
+      });
+    }
+    var release = selected.release;
+    return loadRemoteRelease(release, { source: 'remote', status: 'loaded-remote', delta: selected.delta })
+      .catch(function(err){
+        emit({ status: 'remote-failed', reason: String(err && err.message ? err.message : 'remote-failed'), targetVersion: release.version });
+        return tryLastKnownGood(manifest, 'remote-failed')
+          .catch(function(){ return loadFallback('remote-failed'); });
+      });
+  }).catch(function(){ return loadFallback('manifest-failed'); });
+})();`;
+}
 function slugify(s) {
   return (s||'').toLowerCase()
     .replace(/[“”"]/g,'')
@@ -2844,6 +3351,7 @@ function loadConfig() {
   const raw = readJsonSafe(CONFIG_PATH, {});
   const theme = raw.theme === 'light' ? 'light' : 'dark';
   const out = raw.output || {};
+  const updatesRaw = praeIsObject(raw.updates) ? raw.updates : {};
   const appearance = normalizeAppearance(raw.ui?.appearance || {}, { strict: false });
   const hasBrandingConfig = !!(raw.ui && Object.prototype.hasOwnProperty.call(raw.ui, 'branding'));
   const legacyBadgeDisabled = raw.site?.showBadge === false;
@@ -2873,13 +3381,17 @@ function loadConfig() {
       ...(raw.site || {}),
       updated: { ...DEFAULT_CONFIG.site.updated, ...(raw.site?.updated || {}) },
       links: Array.isArray(raw.site?.links) ? raw.site.links : DEFAULT_CONFIG.site.links
-    }
+    },
+    updates: {
+      web: praeNormalizeWebUpdateConfig(updatesRaw.web)
+    },
   };
 }
 function saveConfig(cfg) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const appearance = normalizeAppearance(cfg?.ui?.appearance || {}, { strict: false });
   const branding = normalizeBranding(cfg?.ui?.branding || {}, { strict: false });
+  const webUpdates = praeNormalizeWebUpdateConfig(cfg?.updates?.web || {});
   const normalized = {
     theme: (cfg.theme === 'light') ? 'light' : 'dark',
     output: {
@@ -2906,7 +3418,10 @@ function saveConfig(cfg) {
       links: (Array.isArray(cfg.site?.links) ? cfg.site.links : []).map(l => ({
         label: String(l.label || ''), href: String(l.href || ''), external: !!l.external
       }))
-    }
+    },
+    updates: {
+      web: webUpdates
+    },
   };
 
   atomicWriteFile(CONFIG_PATH, JSON.stringify(normalized, null, 2));
@@ -4264,12 +4779,97 @@ program
   .description('Praetorius — portfolio-first SPA generator. Works list drives UI.')
   .version(pkgJson.version || '0.0.0');
 
-// Non-blocking update hint (industry standard)
+function praeShouldDisableUpdateInfra() {
+  if (process.env.PRAE_DISABLE_UPDATE_CHECK === '1') return true;
+  if (process.env.PRAE_TEST === '1') return true;
+  if (process.env.PRAE_TEST_EXPORTS === '1') return true;
+  if (process.env.NODE_ENV === 'test') return true;
+  if (process.env.VITEST === 'true' || process.env.VITEST === '1') return true;
+  return false;
+}
+
+function praeReadUpdateInfoOverride() {
+  const raw = String(process.env.PRAE_UPDATE_INFO_JSON || '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const current = String(parsed.current || pkgJson.version || '0.0.0');
+    const latest = String(parsed.latest || current);
+    const type = String(parsed.type || praeVersionDeltaType(current, latest) || 'latest').toLowerCase();
+    return { current, latest, type };
+  } catch (_) {
+    return null;
+  }
+}
+
+const cliUpdateNotifier = (() => {
+  if (praeShouldDisableUpdateInfra()) return null;
+  try {
+    return updateNotifier({
+      pkg: { name: pkgJson.name || 'praetorius', version: pkgJson.version || '0.0.0' },
+      updateCheckInterval: 1000 * 60 * 60 * 12
+    });
+  } catch (_) {
+    return null;
+  }
+})();
+
+function praeShouldRunStartupAutoApply() {
+  if (praeShouldDisableUpdateInfra()) return false;
+  const cmd = String(process.argv[2] || '').trim().toLowerCase();
+  if (!cmd) return true;
+  if (cmd === 'update') return false;
+  if (cmd === '--help' || cmd === '-h' || cmd === 'help' || cmd === '--version' || cmd === '-v') return false;
+  return true;
+}
+
+async function praeResolveUpdateInfo(notifier) {
+  const override = praeReadUpdateInfoOverride();
+  if (override && override.latest && override.current) return override;
+  if (!notifier) return null;
+  if (notifier.update && notifier.update.latest && notifier.update.current) {
+    return notifier.update;
+  }
+  if (typeof notifier.fetchInfo === 'function') {
+    try {
+      const fetched = await Promise.resolve(notifier.fetchInfo());
+      if (fetched && fetched.latest && fetched.current) return fetched;
+    } catch (_) {}
+  }
+  return notifier.update || null;
+}
+
+async function praeRunStartupAutoApply(notifier) {
+  if (!praeShouldRunStartupAutoApply()) return;
+  try {
+    const policyCfg = loadUserUpdateConfig();
+    const policy = praeNormalizeCliUpdatePolicy(policyCfg.cli || {});
+    const state = policyCfg.state || {};
+    const info = await praeResolveUpdateInfo(notifier);
+    if (!info) return;
+    const canAttempt = praeShouldAttemptAutoApply(info, policy, state);
+    if (!canAttempt) return;
+    praeRecordAutoApplyAttempt(info.latest);
+    try {
+      praeLaunchNpmUpdateBackground(pkgJson.name || 'praetorius', info.latest);
+      console.log(pc.gray(`update: auto-applying ${info.type} release ${info.current} -> ${info.latest} in background`));
+    } catch (err) {
+      console.log(pc.yellow(`update: auto-apply failed, keeping current version (${err?.message || String(err)})`));
+    }
+  } catch (_) {}
+}
+
+// Non-blocking update hint + auto-apply gate
 try {
-  updateNotifier({
-    pkg: { name: pkgJson.name || 'praetorius', version: pkgJson.version || '0.0.0' }
-  }).notify();
-} catch {}
+  if (cliUpdateNotifier) {
+    cliUpdateNotifier.notify({
+      message: 'Update available {currentVersion} → {latestVersion}. Run `{updateCommand}` or `prae update apply`.',
+      isGlobal: true
+    });
+  }
+} catch (_) {}
+void praeRunStartupAutoApply(cliUpdateNotifier);
 
 // Rich, example-driven help footer
 program.addHelpText('after', `
@@ -4488,6 +5088,7 @@ program
   .option('-o, --out <dir>', 'output directory', 'prae-out')
   .option('--dry-run', 'print actions without writing files', false)
   .option('-f, --force', 'overwrite if files exist', false)
+  .option('-y, --yes', 'accept defaults without prompts', false)
     .option('--wizard', 'run site wizard after seeding', false)
   .action(async function (opts) {
     const command = this;
@@ -4499,6 +5100,26 @@ program
     console.log(pc.gray('Target: ')+pc.cyan(cwdRel(outDir)));
     console.log(pc.gray('Mode:  ')+pc.cyan(dry ? 'dry-run' : 'write'));
     console.log(pc.gray('Force: ')+pc.cyan(force ? 'on' : 'off'));
+    console.log('');
+    let enableWebRuntimeUpdates = true;
+    if (!opts.yes && process.stdin.isTTY && process.stdout.isTTY) {
+      try {
+        const ans = await prompt({
+          type: 'confirm',
+          name: 'enabled',
+          initial: true,
+          message: 'Enable web runtime auto-update for this project (recommended)?'
+        });
+        enableWebRuntimeUpdates = ans?.enabled !== false;
+      } catch (_) {
+        enableWebRuntimeUpdates = true;
+      }
+    }
+    if (opts.yes) {
+      console.log(pc.gray('Web runtime auto-update: ') + pc.cyan('enabled (default, --yes)'));
+    } else {
+      console.log(pc.gray('Web runtime auto-update: ') + pc.cyan(enableWebRuntimeUpdates ? 'enabled' : 'disabled'));
+    }
     console.log('');
 
     const files = [
@@ -4527,7 +5148,16 @@ program
       console.log(pc.green('write ') + pc.dim(cwdRel(DB_PATH)));
     }
     if (!dry && !fs.existsSync(CONFIG_PATH)) {
-      saveConfig(DEFAULT_CONFIG);
+      const seededConfig = {
+        ...DEFAULT_CONFIG,
+        updates: {
+          web: {
+            ...DEFAULT_RUNTIME_WEB_UPDATES,
+            enabled: !!enableWebRuntimeUpdates
+          }
+        }
+      };
+      saveConfig(seededConfig);
       console.log(pc.green('write ') + pc.dim(cwdRel(CONFIG_PATH)));
     }
     // optionally run the site wizard
@@ -6243,6 +6873,151 @@ program
     process.exit(1);
   });
 
+/* ------------------ update ------------------ */
+async function praeHandleUpdateStatus({ json = false } = {}) {
+  const policyCfg = loadUserUpdateConfig();
+  const policy = praeNormalizeCliUpdatePolicy(policyCfg.cli || {});
+  const info = await praeResolveUpdateInfo(cliUpdateNotifier);
+  const current = String(pkgJson.version || '0.0.0');
+  const latest = info && info.latest ? String(info.latest) : current;
+  const type = info && info.type ? String(info.type) : (praeVersionDeltaType(current, latest) || 'latest');
+  const updateAvailable = praeCompareSemver(latest, current) > 0;
+  const eligible = updateAvailable ? praeIsUpdateEligible(type, policy) : false;
+  const payload = {
+    current,
+    latest,
+    type,
+    updateAvailable,
+    eligible,
+    policy,
+    userConfigPath: USER_UPDATE_CONFIG_PATH,
+    state: policyCfg.state || {}
+  };
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  console.log(pc.bold('Praetorius update status'));
+  console.log(pc.gray('Current: ') + pc.cyan(current));
+  console.log(pc.gray('Latest:  ') + pc.cyan(latest));
+  console.log(pc.gray('Delta:   ') + pc.cyan(type));
+  console.log(pc.gray('Policy:  ') + pc.cyan(`patch=${policy.autoPatch ? 'on' : 'off'}, minor=${policy.autoMinor ? 'on' : 'off'}, major=manual`));
+  console.log(pc.gray('Config:  ') + pc.cyan(USER_UPDATE_CONFIG_PATH));
+  if (payload.state.lastAutoApplyAttemptVersion) {
+    console.log(pc.gray('Last auto-apply attempt: ') + pc.cyan(`${payload.state.lastAutoApplyAttemptVersion} @ ${payload.state.lastAutoApplyAt || 'unknown time'}`));
+  }
+  if (updateAvailable) {
+    const status = eligible ? pc.green('eligible for auto-apply') : pc.yellow('not eligible for auto-apply');
+    console.log(pc.gray('Result:  ') + status);
+  } else {
+    console.log(pc.gray('Result:  ') + pc.green('up-to-date'));
+  }
+}
+
+const updateCmd = program
+  .command('update')
+  .description('Manage Praetorius CLI update policy and apply updates')
+  .action(async () => {
+    await praeHandleUpdateStatus({ json: false });
+  });
+
+updateCmd
+  .command('status')
+  .description('Show update policy, available release, and eligibility')
+  .option('--json', 'machine-readable status output', false)
+  .action(async (opts) => {
+    await praeHandleUpdateStatus({ json: !!opts.json });
+  });
+
+updateCmd
+  .command('config')
+  .description('View or edit user-level CLI auto-update policy')
+  .option('--auto-patch <on|off>', 'toggle automatic patch update application')
+  .option('--auto-minor <on|off>', 'toggle automatic minor update application')
+  .option('--json', 'print config as JSON', false)
+  .action((opts) => {
+    const cfg = loadUserUpdateConfig();
+    const next = {
+      ...cfg,
+      cli: {
+        ...praeNormalizeCliUpdatePolicy(cfg.cli || {}),
+      }
+    };
+    let touched = false;
+    if (opts.autoPatch != null) {
+      next.cli.autoPatch = praeParseToggle(opts.autoPatch, next.cli.autoPatch);
+      touched = true;
+    }
+    if (opts.autoMinor != null) {
+      next.cli.autoMinor = praeParseToggle(opts.autoMinor, next.cli.autoMinor);
+      touched = true;
+    }
+    next.cli.autoMajor = false;
+    if (touched) {
+      saveUserUpdateConfig(next);
+    }
+    const out = touched ? next : cfg;
+    if (opts.json) {
+      console.log(JSON.stringify({
+        path: USER_UPDATE_CONFIG_PATH,
+        policy: praeNormalizeCliUpdatePolicy(out.cli || {}),
+        state: out.state || {}
+      }, null, 2));
+      return;
+    }
+    console.log(pc.bold('Praetorius update policy'));
+    console.log(pc.gray('Path:   ') + pc.cyan(USER_UPDATE_CONFIG_PATH));
+    console.log(pc.gray('Patch:  ') + pc.cyan(out.cli.autoPatch ? 'on' : 'off'));
+    console.log(pc.gray('Minor:  ') + pc.cyan(out.cli.autoMinor ? 'on' : 'off'));
+    console.log(pc.gray('Major:  ') + pc.cyan('manual only'));
+    if (touched) {
+      console.log(pc.green('saved user update policy'));
+    }
+  });
+
+updateCmd
+  .command('apply')
+  .description('Apply available update now (major updates require --major)')
+  .option('--patch', 'apply only if update is patch level', false)
+  .option('--minor', 'apply only if update is minor level', false)
+  .option('--major', 'allow applying a major update', false)
+  .action(async (opts) => {
+    const info = await praeResolveUpdateInfo(cliUpdateNotifier);
+    if (!info || !info.latest || !info.current) {
+      console.log(pc.gray('No update metadata available right now.'));
+      return;
+    }
+    const current = String(info.current || pkgJson.version || '0.0.0');
+    const latest = String(info.latest || current);
+    if (praeCompareSemver(latest, current) <= 0) {
+      console.log(pc.green(`Already up-to-date (${current}).`));
+      return;
+    }
+    const delta = String(info.type || praeVersionDeltaType(current, latest) || '').toLowerCase();
+    const allowMajor = !!opts.major;
+    if (delta === 'major' && !allowMajor) {
+      console.log(pc.yellow(`Major update ${current} -> ${latest} is available.`));
+      console.log(pc.gray('Re-run with ') + pc.cyan('prae update apply --major') + pc.gray(' to apply manually.'));
+      return;
+    }
+    if (opts.patch && delta !== 'patch') {
+      console.log(pc.yellow(`Update is ${delta || 'unknown'}, not patch; skipping.`));
+      return;
+    }
+    if (opts.minor && !(delta === 'minor' || delta === 'patch')) {
+      console.log(pc.yellow(`Update is ${delta || 'unknown'}, not minor/patch; skipping.`));
+      return;
+    }
+    console.log(pc.gray(`Applying update ${current} -> ${latest} ...`));
+    const run = praeRunNpmUpdateSync(pkgJson.name || 'praetorius', latest);
+    if (!run.ok) {
+      console.log(pc.red('Update failed; keeping current version.'));
+      process.exitCode = 1;
+      return;
+    }
+    console.log(pc.green(`Updated to ${latest}.`));
+  });
+
 /* ------------------ doctor ------------------ */
 program
   .command('doctor')
@@ -6290,6 +7065,26 @@ program
       normalizeBranding(cfg.ui?.branding || {}, { strict: true });
     } catch (err) {
       errors.push({ type: 'config', where: 'ui.branding', msg: err?.message || 'invalid branding settings' });
+    }
+    try {
+      const webUpdates = praeNormalizeWebUpdateConfig(cfg.updates?.web || {});
+      const channel = String(webUpdates.channel || '').trim();
+      if (!channel) {
+        errors.push({ type: 'config', where: 'updates.web.channel', msg: 'must be a non-empty channel key' });
+      }
+      const manifestUrl = String(webUpdates.manifestUrl || '').trim();
+      if (!manifestUrl) {
+        errors.push({ type: 'config', where: 'updates.web.manifestUrl', msg: 'must be a non-empty URL' });
+      }
+      const telemetryUrl = String(webUpdates.telemetryUrl || '').trim();
+      if (!telemetryUrl) {
+        errors.push({ type: 'config', where: 'updates.web.telemetryUrl', msg: 'must be a non-empty URL' });
+      }
+      if (webUpdates.autoMajor !== false) {
+        errors.push({ type: 'config', where: 'updates.web.autoMajor', msg: 'auto major updates are not supported' });
+      }
+    } catch (err) {
+      errors.push({ type: 'config', where: 'updates.web', msg: err?.message || 'invalid update settings' });
     }
 
     const dbOk = errors.length === 0;
@@ -6407,6 +7202,7 @@ program
       fs.mkdirSync(outDir, { recursive: true });
 
       const cfg = loadConfig();
+      const webUpdatePolicy = praeNormalizeWebUpdateConfig(cfg.updates?.web || {});
       let effectiveAppearance;
       let effectiveBranding;
       try {
@@ -6612,7 +7408,7 @@ program
         return true;
       }
       const jsFile  = opts.js || 'script.js';
-     const cssWant = opts.css !== false;
+      const cssWant = opts.css !== false;
       const cssFile = (typeof opts.css === 'string') ? opts.css : 'styles.css';
       const jsPath = path.join(outDir, jsFile);
       atomicWriteFile(jsPath, js);
@@ -6621,6 +7417,35 @@ program
         const cssPath = path.join(outDir, cssFile);
         atomicWriteFile(cssPath, css);
         console.log(pc.green('write ') + pc.dim(cwdRel(cssPath)));
+      }
+      const runtimeLoaderFile = 'runtime-loader.js';
+      const runtimeManifestPreviewFile = 'runtime-manifest.preview.json';
+      let runtimeLoaderEnabled = false;
+      let runtimeLoaderWired = false;
+      if (webUpdatePolicy.enabled) {
+        const manifestPreview = praeBuildRuntimeManifestPreview({
+          localRuntimeUrl: `./${jsFile}`,
+          localRuntimeCode: js,
+          version: schemaVersion,
+          channel: webUpdatePolicy.channel
+        });
+        const loaderScript = praeBuildRuntimeLoaderScript({
+          localRuntimeUrl: `./${jsFile}`,
+          manifestUrl: webUpdatePolicy.manifestUrl,
+          telemetryUrl: webUpdatePolicy.telemetryUrl,
+          channel: webUpdatePolicy.channel,
+          currentVersion: schemaVersion,
+          autoPatch: webUpdatePolicy.autoPatch,
+          autoMinor: webUpdatePolicy.autoMinor,
+          manifestPreview
+        });
+        const runtimeLoaderPath = path.join(outDir, runtimeLoaderFile);
+        const runtimeManifestPreviewPath = path.join(outDir, runtimeManifestPreviewFile);
+        atomicWriteFile(runtimeLoaderPath, loaderScript);
+        atomicWriteFile(runtimeManifestPreviewPath, JSON.stringify(manifestPreview, null, 2));
+        runtimeLoaderEnabled = true;
+        console.log(pc.green('write ') + pc.dim(cwdRel(runtimeLoaderPath)));
+        console.log(pc.green('write ') + pc.dim(cwdRel(runtimeManifestPreviewPath)));
       }
 
       // -------- UI bundle (template.html + main.js + style.css) ----------
@@ -6808,7 +7633,14 @@ program
           ];
           if (haveStyle) injParts.push(`<link rel="stylesheet" href="./${appCssFileName}">`);
           injParts.push(`<script id="prae-data" data-source="${runtimePayload.source}" data-count="${runtimePayload.count}">window.__PRAE_DATA__ = ${serializeForScript(runtimePayload)};</script>`);
-          injParts.push(`<script src="./${jsFile}" defer></script>`);
+          if (runtimeLoaderEnabled) {
+            injParts.push(
+              `<script src="./${runtimeLoaderFile}" defer data-prae-runtime-loader="1" data-prae-runtime-channel="${escapeHtml(webUpdatePolicy.channel)}" data-prae-auto-patch="${webUpdatePolicy.autoPatch ? 'on' : 'off'}" data-prae-auto-minor="${webUpdatePolicy.autoMinor ? 'on' : 'off'}"></script>`
+            );
+            runtimeLoaderWired = true;
+          } else {
+            injParts.push(`<script src="./${jsFile}" defer></script>`);
+          }
           if (docsData) {
             injParts.push(`<script id="prae-docs-data" type="application/json">${serializeForScript(docsData)}</script>`);
           }
@@ -6831,8 +7663,15 @@ program
           );
         }
       }
-        console.log(pc.gray(`Using data: source=${runtimePayload.source}, count=${runtimePayload.count}`));
-        console.log(pc.bold(`Generated ${chosenSkin} (${appliedUiRuntime}) to ${cwdRel(outDir)} (works: ${worksCount}, seeded: ${seedWasApplied ? 'yes' : 'no'})`));
+      if (runtimeLoaderWired) {
+        console.log(pc.gray(`Web runtime auto-update: channel=${webUpdatePolicy.channel}, patch=${webUpdatePolicy.autoPatch ? 'on' : 'off'}, minor=${webUpdatePolicy.autoMinor ? 'on' : 'off'}, major=manual`));
+      } else if (runtimeLoaderEnabled) {
+        console.log(pc.gray('Web runtime auto-update configured, but no HTML UI entrypoint was emitted to wire the loader automatically.'));
+      } else {
+        console.log(pc.gray('Web runtime auto-update: disabled (pinned local runtime only).'));
+      }
+      console.log(pc.gray(`Using data: source=${runtimePayload.source}, count=${runtimePayload.count}`));
+      console.log(pc.bold(`Generated ${chosenSkin} (${appliedUiRuntime}) to ${cwdRel(outDir)} (works: ${worksCount}, seeded: ${seedWasApplied ? 'yes' : 'no'})`));
       return true; // end buildOnce success
     }; // <-- end buildOnce
 
@@ -6927,5 +7766,15 @@ if (process.env.PRAE_TEST_EXPORTS !== '1') {
   globalThis.__PRAE_TEST__ = {
     parseTimeToSecStrict, normalizeScore, validateScore,
     migrateDb, renderScriptFromDb, secToHuman,
+    praeParseSemver,
+    praeCompareSemver,
+    praeVersionDeltaType,
+    praeIsUpdateEligible,
+    praeNormalizeCliUpdatePolicy,
+    praeNormalizeWebUpdateConfig,
+    praeParseRuntimeManifest,
+    praeSelectRuntimeRelease,
+    praeBuildRuntimeManifestPreview,
+    praeBuildRuntimeLoaderScript,
   };
 }
