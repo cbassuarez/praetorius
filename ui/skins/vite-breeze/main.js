@@ -165,6 +165,18 @@ ensureHudRoot();
     ? PRAE_DATA.works
     : (Array.isArray(PRAE.works) ? PRAE.works : []);
   const praeMedia = PRAE && PRAE.media ? PRAE.media : null;
+  function setEmbedFrameMode(frame, mode){
+    if (!frame || typeof frame.setAttribute !== 'function') return;
+    if (praeMedia && typeof praeMedia.setEmbedFrameMode === 'function') {
+      try {
+        praeMedia.setEmbedFrameMode(frame, mode);
+        return;
+      } catch (_) {}
+    }
+    frame.setAttribute('referrerpolicy', String(mode || '').toLowerCase() === 'youtube'
+      ? 'strict-origin-when-cross-origin'
+      : 'no-referrer');
+  }
   const site  = (PRAE.config && PRAE.config.site) || {};
   const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
   const prefersReducedMotion = typeof window.matchMedia === 'function'
@@ -351,9 +363,9 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
                   </button></li>`;
         }).join('')}</ul>`
       : '';
-    const coverUrl = String(w.cover || w.coverUrl || '').trim();
+    const coverUrl = normalizeCoverUrl(w);
     const coverHtml = coverUrl
-      ? `<figure class="work-cover"><img src="${esc(coverUrl)}" alt="" loading="lazy"></figure>`
+      ? `<figure class="work-cover"><img src="${esc(coverUrl)}" alt="" loading="lazy" onerror="this.style.display='none';var fb=this.nextElementSibling;if(fb)fb.hidden=false;"><span class="work-cover-fallback" hidden>Cover unavailable</span></figure>`
       : `<div class="work-cover work-cover-fallback" aria-hidden="true"></div>`;
     const tagHtml = tags.length
       ? `<ul class="work-tags">${tags.map((tag) => `<li class="work-tag">${esc(tag)}</li>`).join('')}</ul>`
@@ -502,7 +514,8 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
 
   async function playYouTubeAt(work, id, t, media){
     if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
-      flash(null, 'YouTube runtime unavailable');
+      flash(null, 'YouTube runtime unavailable; opening tab and disabling sync');
+      detachPageFollow();
       if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
         praeMedia.openYouTubeTab(work);
       }
@@ -514,7 +527,10 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     showYouTubePane(work, media);
     try {
       const controller = await praeMedia.mountYouTubePlayer(pdfFrame, work, {
-        onError: function(){
+        onError: function(err){
+          const code = Number(err?.code);
+          flash(null, `YouTube embed blocked${Number.isFinite(code) ? ` (error ${code})` : ''}; opening tab`);
+          detachPageFollow();
           if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
             praeMedia.openYouTubeTab(work);
           }
@@ -537,6 +553,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
       hudSetPlaying(true);
     } catch (_) {
       flash(null, 'YouTube blocked; opening tab');
+      detachPageFollow();
       if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
         praeMedia.openYouTubeTab(work);
       }
@@ -614,6 +631,7 @@ if (pdfFrame && !pdfFrame.dataset.bound) {
     if (pdfTitle) pdfTitle.textContent = String(w.title || 'Score');
     shell?.classList.add('has-pdf');
     if (pdfPane) pdfPane.removeAttribute('aria-hidden');
+    setEmbedFrameMode(pdfFrame, 'pdf');
     // Reset viewer (avoid stale hash race)
     const isPdfJs = /\/viewer\.html/i.test(abs);
     const base    = abs.split('#')[0];
@@ -627,6 +645,7 @@ pdfViewerReady = false;
 
   function showYouTubePane(work, media){
     if (!shell || !pdfPane || !pdfFrame) {
+      detachPageFollow();
       if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
         praeMedia.openYouTubeTab(work);
       }
@@ -637,6 +656,7 @@ pdfViewerReady = false;
     shell.classList.add('has-pdf');
     pdfPane.removeAttribute('aria-hidden');
     pdfViewerReady = false;
+    setEmbedFrameMode(pdfFrame, 'youtube');
     const src = media?.youtubeEmbedUrl || media?.youtubeUrl || 'about:blank';
     pdfFrame.src = src;
   }
@@ -708,6 +728,14 @@ pdfViewerReady = false;
     const m = u.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
     if(m) return `https://drive.google.com/file/d/${m[1]}/view?usp=drivesdk`;
     return u;
+  }
+  function normalizeCoverUrl(work){
+    const raw = work && typeof work === 'object' ? (work.cover ?? work.coverUrl ?? null) : null;
+    if (raw == null) return '';
+    if (praeMedia && typeof praeMedia.normalizeCoverUrl === 'function') {
+      try { return String(praeMedia.normalizeCoverUrl(raw) || '').trim(); } catch (_) {}
+    }
+    return String(raw).trim();
   }
   
   function choosePdfViewer(url){

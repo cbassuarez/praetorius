@@ -80,6 +80,9 @@ describe('generate --ui-runtime', () => {
       expect(script).toContain('window.PRAE.config.branding = data.config ? data.config.branding');
       expect(script).toContain("root.setAttribute('data-brand-system', 'praetorius-v1');");
       expect(script).toContain('window.PRAE.pauseAllAudio = function(exceptId)');
+      expect(script).toContain('setEmbedFrameMode: praeSetEmbedFrameMode');
+      expect(script).toContain("frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');");
+      expect(script).toContain("frame.setAttribute('referrerpolicy', 'no-referrer');");
     });
 
     it(`${key} bundles react runtime`, async () => {
@@ -102,6 +105,7 @@ describe('generate --ui-runtime', () => {
       expect(script).toContain("node.setAttribute('data-palette', appearance.theme.palette);");
       expect(script).toContain("node.setAttribute('data-hover-effect', appearance.effects.hover);");
       expect(script).toContain("node.setAttribute('data-button-effect', appearance.effects.button);");
+      expect(script).toContain('setEmbedFrameMode: praeSetEmbedFrameMode');
     });
 
     it(`${key} uses vanilla embed fallback when react runtime is requested`, async () => {

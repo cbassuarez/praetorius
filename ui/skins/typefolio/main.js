@@ -152,6 +152,19 @@ function choosePdfViewer(url) {
   return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(file)}#page=1&zoom=page-width&toolbar=0&sidebar=0`;
 }
 
+function setEmbedFrameMode(frame, mode) {
+  if (!frame || typeof frame.setAttribute !== 'function') return;
+  if (praeMedia && typeof praeMedia.setEmbedFrameMode === 'function') {
+    try {
+      praeMedia.setEmbedFrameMode(frame, mode);
+      return;
+    } catch (_) {}
+  }
+  frame.setAttribute('referrerpolicy', String(mode || '').toLowerCase() === 'youtube'
+    ? 'strict-origin-when-cross-origin'
+    : 'no-referrer');
+}
+
 const PDF_FIELD_CANDIDATES = [
   'pdfUrl', 'pdfURL', 'pdf', 'pdf_url', 'scorePdf', 'scorePDF', 'score_url', 'scoreUrl', 'score'
 ];
@@ -445,6 +458,8 @@ function playAt(id, seconds = 0) {
 async function playYouTubeAt(work, seconds = 0, media = resolveWorkMedia(work)) {
   if (!work) return;
   if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
+    detachPageFollow();
+    console.warn('YouTube runtime unavailable; opening tab and disabling score-follow sync');
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
       praeMedia.openYouTubeTab(work);
     }
@@ -457,15 +472,26 @@ async function playYouTubeAt(work, seconds = 0, media = resolveWorkMedia(work)) 
   } else {
     showNoPdfForWork(work, { announce: false });
   }
-  const frame = ensurePreviewFrame(work.slug || workKey(work) || `work-${work.id}`, work, media.youtubeEmbedUrl || media.youtubeUrl || 'about:blank');
+  const frame = ensurePreviewFrame(work.slug || workKey(work) || `work-${work.id}`, work, media.youtubeEmbedUrl || media.youtubeUrl || 'about:blank', 'youtube');
   if (!frame) {
+    detachPageFollow();
+    console.warn('YouTube preview frame unavailable; opening tab and disabling score-follow sync');
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
       praeMedia.openYouTubeTab(work);
     }
     return;
   }
   try {
-    const controller = await praeMedia.mountYouTubePlayer(frame, work, { onError: () => {} });
+    const controller = await praeMedia.mountYouTubePlayer(frame, work, {
+      onError: (err) => {
+        const code = Number(err?.code);
+        console.warn(`YouTube embed blocked${Number.isFinite(code) ? ` (error ${code})` : ''}`);
+        detachPageFollow();
+        if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+          praeMedia.openYouTubeTab(work);
+        }
+      }
+    });
     state.youtube.controller = controller;
     state.youtube.workId = work.id;
     state.youtube.workSlug = work.slug || null;
@@ -476,6 +502,8 @@ async function playYouTubeAt(work, seconds = 0, media = resolveWorkMedia(work)) 
     attachYouTubePageFollow(work, controller);
     updateHudYouTube(work.id, controller);
   } catch (_) {
+    detachPageFollow();
+    console.warn('YouTube embed unavailable; opening tab and disabling score-follow sync');
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
       praeMedia.openYouTubeTab(work);
     }
@@ -642,7 +670,7 @@ function syncPreviewForViewport() {
   }
 }
 
-function ensurePreviewFrame(slug, work, viewerUrl) {
+function ensurePreviewFrame(slug, work, viewerUrl, mode = 'pdf') {
   const pdf = ensurePdfDom();
   if (!pdf.slot) return null;
   let frame = state.pdf.frame;
@@ -672,6 +700,7 @@ function ensurePreviewFrame(slug, work, viewerUrl) {
   }
   frame.dataset.slug = slug;
   frame.title = `${work.title || work.slug || 'Score'} (PDF)`;
+  setEmbedFrameMode(frame, mode);
   frame.removeAttribute('hidden');
   const currentSrc = frame.getAttribute('src') || '';
   if (currentSrc !== viewerUrl) {

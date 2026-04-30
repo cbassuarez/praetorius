@@ -554,7 +554,8 @@ function getPageFollowSeconds(){
 
   async function playYouTubeCmd(work, n, t, media){
     if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
-      appendLine('warn: YouTube runtime unavailable; opening in new tab.','warn',true);
+      appendLine('warn: YouTube runtime unavailable; opening in new tab and disabling sync.','warn',true);
+      detachPageFollow();
       if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
         praeMedia.openYouTubeTab(work);
       }
@@ -563,11 +564,13 @@ function getPageFollowSeconds(){
     showYouTubePane(work, media);
     try {
       const controller = await praeMedia.mountYouTubePlayer(pdfFrame, work, {
-        onError: () => {
-          appendLine('warn: YouTube player failed in embed; opening in new tab.','warn',true);
+        onError: (err) => {
+          const code = Number(err?.code);
+          appendLine(`warn: YouTube player failed${Number.isFinite(code) ? ` (error ${code})` : ''}; opening in new tab and disabling score-follow sync.`,'warn',true);
           if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
             praeMedia.openYouTubeTab(work);
           }
+          detachPageFollow();
         }
       });
       youtubeController = controller;
@@ -662,6 +665,18 @@ const pdfPane   = worksConsole.querySelector('.wc-pdfpane');
 const pdfTitle  = worksConsole.querySelector('.wc-pdf-title');
 const pdfFrame  = worksConsole.querySelector('.wc-pdf-frame');
 const pdfCloseB = worksConsole.querySelector('.wc-pdf-close');
+function setEmbedFrameMode(frame, mode){
+  if (!frame || typeof frame.setAttribute !== 'function') return;
+  if (praeMedia && typeof praeMedia.setEmbedFrameMode === 'function') {
+    try {
+      praeMedia.setEmbedFrameMode(frame, mode);
+      return;
+    } catch (_) {}
+  }
+  frame.setAttribute('referrerpolicy', String(mode || '').toLowerCase() === 'youtube'
+    ? 'strict-origin-when-cross-origin'
+    : 'no-referrer');
+}
 // === PageFollow → PDF viewer wiring (split-pane iframe) ===
 let pendingPdfGoto = null;
 let currentPdfSlug = null;
@@ -722,6 +737,7 @@ function gotoPdfPage(pageNum){
 
 function showPdfPane(rawUrl, title){
   paneMode = 'pdf';
+  setEmbedFrameMode(pdfFrame, 'pdf');
   const url = normalizePdfUrl(rawUrl);
   const src = choosePdfViewer(url);
   pdfTitle.textContent = String(title || 'Score');
@@ -775,6 +791,7 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{
 
 function showYouTubePane(work, media){
   paneMode = 'youtube';
+  setEmbedFrameMode(pdfFrame, 'youtube');
   const title = work?.title || 'YouTube';
   pdfTitle.textContent = String(title);
   worksConsole.classList.add('has-pdf');

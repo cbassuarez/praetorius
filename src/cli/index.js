@@ -11,7 +11,7 @@ import pkg from 'enquirer';
 const { prompt } = pkg;
 import Ajv from 'ajv';
 import updateNotifier from 'update-notifier';
-import { normalizeWork, collectWorkWarnings } from '../work-model.js';
+import { normalizeWork, collectWorkWarnings, normalizeCoverUrl } from '../work-model.js';
 
 /* ------------------ templates FIRST (avoid TDZ) ------------------ */
 const APPEARANCE_CSS = `/* Praetorius — global appearance tokens + presets */
@@ -635,6 +635,34 @@ function renderScriptFromDb(db, opts = {}) {
     return str;
   }
 
+  function praeNormalizeCoverUrl(input){
+    var str = String(input || '').trim();
+    if (!str) return '';
+    var url;
+    try { url = new URL(str); } catch (_) { return str; }
+    var host = String(url.hostname || '').replace(/^www\\./i, '').toLowerCase();
+    if (host !== 'drive.google.com' && host !== 'docs.google.com') {
+      return str;
+    }
+    var id = '';
+    var pathMatch = String(url.pathname || '').match(/\\/file\\/d\\/([^/]+)/);
+    if (pathMatch && pathMatch[1]) id = pathMatch[1];
+    if (!id) id = String(url.searchParams.get('id') || '').trim();
+    if (!id) return str;
+    return 'https://drive.google.com/uc?export=view&id=' + encodeURIComponent(id);
+  }
+
+  function praeSetEmbedFrameMode(frame, mode){
+    if (!frame || typeof frame.setAttribute !== 'function') return;
+    var normalized = String(mode || 'pdf').trim().toLowerCase() === 'youtube' ? 'youtube' : 'pdf';
+    if (normalized === 'youtube') {
+      frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    } else {
+      frame.setAttribute('referrerpolicy', 'no-referrer');
+    }
+    frame.setAttribute('data-prae-embed-mode', normalized);
+  }
+
   function praeChoosePdfViewer(input){
     var url = String(input || '').trim();
     if (!url) return '';
@@ -746,6 +774,16 @@ function renderScriptFromDb(db, opts = {}) {
 
   var praeYouTubeApiPromise = null;
   var praeYouTubeControllers = {};
+  var praeYouTubeSyncDisabled = false;
+
+  function praeDisableYouTubeSync(reason){
+    praeYouTubeSyncDisabled = true;
+    try {
+      window.dispatchEvent(new CustomEvent('wc:youtube-sync-disabled', {
+        detail: { reason: String(reason || 'disabled') }
+      }));
+    } catch (_) {}
+  }
 
   function praeEnsureYouTubeApi(){
     if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
@@ -755,6 +793,7 @@ function renderScriptFromDb(db, opts = {}) {
       var timeout = setTimeout(function(){
         if (settled) return;
         settled = true;
+        praeDisableYouTubeSync('api-timeout');
         reject(new Error('YouTube API load timeout'));
       }, 12000);
       var prev = window.onYouTubeIframeAPIReady;
@@ -764,7 +803,10 @@ function renderScriptFromDb(db, opts = {}) {
         settled = true;
         clearTimeout(timeout);
         if (window.YT && window.YT.Player) resolve(window.YT);
-        else reject(new Error('YouTube API unavailable'));
+        else {
+          praeDisableYouTubeSync('api-unavailable');
+          reject(new Error('YouTube API unavailable'));
+        }
       };
       var existing = document.querySelector('script[src*="youtube.com/iframe_api"]');
       if (!existing) {
@@ -775,6 +817,7 @@ function renderScriptFromDb(db, opts = {}) {
           if (settled) return;
           settled = true;
           clearTimeout(timeout);
+          praeDisableYouTubeSync('api-script-error');
           reject(new Error('YouTube API failed to load'));
         };
         (document.head || document.body || document.documentElement).appendChild(script);
@@ -797,9 +840,13 @@ function renderScriptFromDb(db, opts = {}) {
     if (existing && existing.controller && typeof existing.controller.destroy === 'function') {
       try { existing.controller.destroy(); } catch (_) {}
     }
-    return praeEnsureYouTubeApi().then(function(YT){
+    return praeEnsureYouTubeApi().catch(function(err){
+      praeDisableYouTubeSync(err && err.message ? err.message : 'api-load-failed');
+      throw err;
+    }).then(function(YT){
       return new Promise(function(resolve, reject){
         var ready = false;
+        praeSetEmbedFrameMode(frame, 'youtube');
         frame.src = media.youtubeEmbedUrl + (media.youtubeEmbedUrl.indexOf('?') >= 0 ? '&' : '?') + 'start=' + encodeURIComponent(String(Math.max(0, Number(media.startAtSec || 0)))) + '&origin=' + encodeURIComponent(location.origin || '');
         var state = -1;
         var player = new YT.Player(frame, {
@@ -832,8 +879,11 @@ function renderScriptFromDb(db, opts = {}) {
             onStateChange: function(ev){
               state = Number(ev && ev.data);
             },
-            onError: function(){
+            onError: function(ev){
+              var code = Number(ev && ev.data);
               var err = new Error('YouTube playback error');
+              if (Number.isFinite(code)) err.code = code;
+              praeDisableYouTubeSync(Number.isFinite(code) ? ('player-error-' + code) : 'player-error');
               if (typeof opts.onError === 'function') {
                 try { opts.onError(err); } catch (_) {}
               }
@@ -858,6 +908,7 @@ function renderScriptFromDb(db, opts = {}) {
 
   function praeAttachPageFollow(work, source){
     if (!work || !source || !source.kind) return null;
+    if (source.kind === 'youtube' && praeYouTubeSyncDisabled) return null;
     var cfg = work.pageFollow || work.score || null;
     if (!cfg) return null;
     var lastPrinted = null;
@@ -910,6 +961,8 @@ function renderScriptFromDb(db, opts = {}) {
     parseYouTube: praeParseYouTube,
     toSec: praeToSec,
     normalizePdfUrl: praeNormalizePdfUrl,
+    normalizeCoverUrl: praeNormalizeCoverUrl,
+    setEmbedFrameMode: praeSetEmbedFrameMode,
     choosePdfViewer: praeChoosePdfViewer,
     pauseAllAudio: praePauseAllAudio,
     emitPdfGoto: praeEmitPdfGoto,
@@ -918,6 +971,8 @@ function renderScriptFromDb(db, opts = {}) {
     ensureYouTubeApi: praeEnsureYouTubeApi,
     mountYouTubePlayer: praeMountYouTubePlayer,
     openYouTubeTab: praeOpenYouTubeTab,
+    disableYouTubeSync: praeDisableYouTubeSync,
+    isYouTubeSyncDisabled: function(){ return !!praeYouTubeSyncDisabled; },
     attachPageFollow: praeAttachPageFollow
   });
   window.PRAE.config = window.PRAE.config || {};
@@ -2371,7 +2426,7 @@ function migrate_v1_to_v2(db) {
     const sanitizedMigration = sanitizeNarrativeFields(w);
     Object.assign(w, sanitizedMigration.sanitized);
     if (w.cover != null) {
-      const cover = String(w.cover).trim();
+      const cover = normalizeCoverUrl(w.cover);
       w.cover = cover || null;
     }
     if (w.tags != null) {
@@ -2659,7 +2714,7 @@ function sanitizeNarrativeFields(work) {
   if ('one' in work) sanitized.one = normalized.one;
   else if ('one' in sanitized) delete sanitized.one;
   if ('cover' in sanitized) {
-    const cover = sanitized.cover == null ? null : String(sanitized.cover).trim();
+    const cover = sanitized.cover == null ? null : normalizeCoverUrl(sanitized.cover);
     sanitized.cover = cover || null;
   }
   if ('tags' in sanitized) {
@@ -2682,7 +2737,7 @@ function normalizeImportedWork(row) {
     title: String(row.title || '').trim(),
     audio: row.audio ? String(row.audio).trim() : null,
     pdf: row.pdf ? String(row.pdf).trim() : null,
-    cover: row.cover ? String(row.cover).trim() : null,
+    cover: row.cover ? normalizeCoverUrl(row.cover) : null,
     tags: parseTagsInput(row.tags ?? row.tags_csv),
     cues: Array.isArray(row.cues) ? row.cues
          : parseMaybeJSON(row.cues_json) || []
@@ -5554,7 +5609,7 @@ program
         description: base.description,
         audio: base.audio?.trim() || null,
         pdf: base.pdf?.trim() || null,
-        cover: base.cover?.trim() || null,
+        cover: base.cover?.trim() ? normalizeCoverUrl(base.cover) : null,
         tags: parseTagsInput(base.tags),
         cues,
         ...(media ? { media } : {}),
@@ -5721,7 +5776,7 @@ program
       if (next) work.media = next;
       else delete work.media;
     }
-    if ('cover' in opts) work.cover = (opts.cover === '' ? null : opts.cover);
+    if ('cover' in opts) work.cover = (opts.cover === '' ? null : normalizeCoverUrl(opts.cover));
     if ('tags' in opts) work.tags = parseTagsInput(opts.tags);
     Object.assign(work, sanitizeNarrativeFields(work).sanitized);
 
@@ -5760,7 +5815,7 @@ program
       else delete work.media;
       work.audio = base.audio.trim() || null;
       work.pdf   = base.pdf.trim()   || null;
-      work.cover = base.cover.trim() || null;
+      work.cover = base.cover.trim() ? normalizeCoverUrl(base.cover) : null;
       work.tags = parseTagsInput(base.tags);
       const normalizedNarrative = sanitizeNarrativeFields(work);
       Object.assign(work, normalizedNarrative.sanitized);

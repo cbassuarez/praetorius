@@ -1,4 +1,4 @@
-import { normalizeWork, collectWorkWarnings } from '../work-model.js';
+import { normalizeWork, collectWorkWarnings, normalizeCoverUrl } from '../work-model.js';
 
 export const APPEARANCE_PALETTES = Object.freeze([
   'ryb-tricolor',
@@ -246,7 +246,111 @@ function parseScoreMapLines(input) {
     });
 }
 
+function parseMaybeJson(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseYouTubeStartToSec(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return 0;
+  if (/^\d+$/.test(value)) return Number(value);
+  const parts = value.match(/(\d+)(h|m|s)/g);
+  if (!parts) return 0;
+  let sec = 0;
+  for (const part of parts) {
+    const m = part.match(/^(\d+)(h|m|s)$/);
+    if (!m) continue;
+    const n = Number(m[1]) || 0;
+    if (m[2] === 'h') sec += n * 3600;
+    else if (m[2] === 'm') sec += n * 60;
+    else sec += n;
+  }
+  return sec;
+}
+
+function parseYouTubeUrlMeta(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (_) {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+  let videoId = '';
+  if (host === 'youtu.be') {
+    videoId = url.pathname.replace(/^\/+/, '').split('/')[0] || '';
+  } else if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+    if (url.pathname === '/watch') {
+      videoId = url.searchParams.get('v') || '';
+    } else if (url.pathname.startsWith('/embed/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    } else if (url.pathname.startsWith('/shorts/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    } else if (url.pathname.startsWith('/live/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    }
+  }
+  if (!videoId) return null;
+  const tRaw = url.searchParams.get('t') || url.searchParams.get('start') || '';
+  const startAtSec = parseYouTubeStartToSec(tRaw);
+  return { videoId, startAtSec, url: raw };
+}
+
+function normalizeMediaInput(input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  const mediaSource = source.media && typeof source.media === 'object' ? source.media : null;
+  const hasHints = !!(
+    mediaSource
+    || source.mediaKind
+    || source.media_kind
+    || source.youtubeUrl
+    || source.youtube_url
+    || source.videoUrl
+    || source.video_url
+    || source.startAtSec != null
+    || source.start_at_sec != null
+  );
+  if (!hasHints) return null;
+
+  const kindRaw = mediaSource?.kind ?? source.mediaKind ?? source.media_kind ?? source.kind;
+  const kind = String(kindRaw || 'score').trim().toLowerCase() === 'youtube' ? 'youtube' : 'score';
+  if (kind !== 'youtube') return { kind: 'score' };
+
+  const youtubeUrl = String(
+    mediaSource?.youtubeUrl
+    || mediaSource?.url
+    || source.youtubeUrl
+    || source.youtube_url
+    || source.videoUrl
+    || source.video_url
+    || ''
+  ).trim();
+  const meta = parseYouTubeUrlMeta(youtubeUrl);
+  if (!meta) return { kind: 'youtube' };
+
+  const startAtRaw = mediaSource?.startAtSec ?? source.startAtSec ?? source.start_at_sec;
+  const explicitStart = Number(startAtRaw);
+  const startAtSec = Number.isFinite(explicitStart) && explicitStart >= 0
+    ? explicitStart
+    : (meta.startAtSec || 0);
+  return {
+    kind: 'youtube',
+    youtubeUrl: meta.url,
+    startAtSec,
+  };
+}
+
 function normalizeWorkInput(input, state) {
+  const media = normalizeMediaInput(input);
   const candidate = {
     id: Number(input.id),
     slug: String(input.slug || slugify(input.title || '')).trim(),
@@ -255,9 +359,10 @@ function normalizeWorkInput(input, state) {
     description: input.description ?? '',
     audio: input.audio ? String(input.audio).trim() : null,
     pdf: input.pdf ? String(input.pdf).trim() : null,
-    cover: input.cover ? String(input.cover).trim() : null,
+    cover: normalizeCoverUrl(input.cover ?? input.coverUrl ?? null) || null,
     tags: parseTags(input.tags),
     cues: parseCueLines(input.cues),
+    ...(media ? { media } : {}),
     ...(input.score ? { score: normalizeScore(input.score) } : {}),
   };
 
@@ -295,6 +400,20 @@ function validateProjectState(state) {
     slugs.add(slug);
 
     if (!String(work.title || '').trim()) errors.push(`missing title for id ${id}`);
+    if (work.media && typeof work.media === 'object') {
+      const mediaKind = String(work.media.kind || 'score').trim().toLowerCase();
+      if (mediaKind === 'youtube') {
+        if (!String(work.media.youtubeUrl || '').trim()) {
+          errors.push(`missing media.youtubeUrl for id ${id}`);
+        }
+        if (work.media.startAtSec != null) {
+          const startAtSec = Number(work.media.startAtSec);
+          if (!Number.isFinite(startAtSec) || startAtSec < 0) {
+            errors.push(`invalid media.startAtSec for id ${id}`);
+          }
+        }
+      }
+    }
   }
 
   return errors;
@@ -361,7 +480,7 @@ function parseCsv(text) {
 }
 
 function toCsv(works) {
-  const cols = ['id', 'slug', 'title', 'one', 'oneliner', 'description', 'audio', 'pdf', 'cover', 'tags_csv', 'cues_json', 'score_json'];
+  const cols = ['id', 'slug', 'title', 'one', 'oneliner', 'description', 'audio', 'pdf', 'cover', 'tags_csv', 'cues_json', 'score_json', 'media_json'];
   const lines = [cols.join(',')];
   for (const rawWork of works) {
     const work = normalizeWork(rawWork);
@@ -378,6 +497,7 @@ function toCsv(works) {
       Array.isArray(work.tags) ? work.tags.join(', ') : '',
       JSON.stringify(work.cues || []),
       JSON.stringify(work.score || null),
+      JSON.stringify(work.media || null),
     ].map(csvEscape);
     lines.push(row.join(','));
   }
@@ -516,8 +636,9 @@ body{min-height:100vh}
 .folio-tags{display:flex;gap:8px;flex-wrap:wrap}
 .folio-tag{border:2px solid var(--border);padding:4px 8px;border-radius:2px;font:600 11px/1 "IBM Plex Mono",ui-monospace,monospace;background:color-mix(in srgb,var(--surface) 75%, var(--accent-2) 25%)}
 .folio-actions{display:flex;gap:8px;flex-wrap:wrap}
+.folio-cover-wrap{display:grid;gap:6px}
 .folio-cover{width:100%;max-height:180px;object-fit:cover;border:2px solid var(--border);border-radius:2px;background:#0f172a}
-.folio-empty-cover{display:none}
+.folio-cover-fallback{display:inline-flex;align-items:center;justify-content:center;min-height:58px;padding:8px;border:2px dashed var(--border);border-radius:2px;font:600 12px/1 "IBM Plex Mono",ui-monospace,monospace;opacity:.78}
 .folio-doc{display:grid;gap:12px}
 .folio-doc h2{margin:0;font:700 28px/1.2 "Instrument Serif",serif}
 .folio-module{border:2px dashed var(--border);padding:10px;border-radius:2px;background:color-mix(in srgb,var(--surface) 90%, var(--accent) 10%)}
@@ -534,7 +655,7 @@ function renderAppScript(payload, skin, runtime) {
     ? 'function createRoot(node){return {render(fn){fn(node);}};}\n'
     : '';
 
-  return `(function(){\n${reactPrelude}var data=${JSON.stringify(payload)};\nwindow.PRAE=window.PRAE||{};window.PRAE.data=data;\nwindow.PRAE.pauseAllAudio=function(exceptId){var list=document.querySelectorAll('audio[data-work-id]');list.forEach(function(a){if(exceptId&&String(a.dataset.workId)===String(exceptId))return;try{a.pause();a.currentTime=0;}catch(_){}});};\nvar root=document.getElementById('prae-runtime');if(!root)return;\nfunction make(tag,cls,text){var el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=String(text);return el;}\nfunction renderWorks(){var shell=make('div','folio-shell');var header=make('header','folio-header');header.append(make('h1','',data.config.site.fullName||'Your Name'));\nvar tools=make('div','folio-toolbar');['Home','Projects','Contact'].forEach(function(label){var btn=make('button','folio-btn',label);btn.type='button';tools.append(btn);});header.append(tools);shell.append(header);\nvar grid=make('div','folio-grid');var listCard=make('section','folio-card');data.works.forEach(function(work,index){var card=make('article','folio-work');card.append(make('h3','',work.title));card.append(make('div','folio-meta',work.slug));if(work.cover){var img=make('img','folio-cover');img.src=work.cover;img.alt=work.title+' cover';card.append(img);}var desc=make('p','',work.onelinerEffective||work.oneliner||work.one||'No summary yet.');card.append(desc);if(Array.isArray(work.tags)&&work.tags.length){var tags=make('div','folio-tags');work.tags.forEach(function(tag){tags.append(make('span','folio-tag',tag));});card.append(tags);}var actions=make('div','folio-actions');var play=make('button','folio-btn','Play');play.type='button';var audio=make('audio','');audio.dataset.workId=String(work.id);audio.controls=true;if(work.audio)audio.src=work.audio;play.addEventListener('click',function(){window.PRAE.pauseAllAudio(work.id);if(!work.audio)return;audio.currentTime=0;audio.play().catch(function(){});});actions.append(play);var deep=make('button','folio-btn','Copy URL');deep.type='button';deep.addEventListener('click',function(){var url=location.origin+location.pathname+'#work='+encodeURIComponent(work.id);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).catch(function(){});}});actions.append(deep);if(work.pdf){var pdf=make('a','folio-btn','PDF');pdf.href=work.pdf;pdf.target='_blank';pdf.rel='noreferrer';actions.append(pdf);}card.append(actions);card.append(audio);listCard.append(card);});grid.append(listCard);\nvar side=make('aside','folio-card');var np=make('div','');np.append(make('h3','', 'Now Playing'));np.append(make('p','folio-meta','Idle state: choose any work to begin playback.'));side.append(np);side.append(make('div','folio-module','Theme: '+data.config.theme+' • Palette: '+data.config.ui.appearance.theme.palette));side.append(make('div','folio-module','Runtime: ${runtime} • Skin: ${skin}'));grid.append(side);shell.append(grid);\nvar footer=make('footer','folio-footer');footer.append(make('span','', (data.config.site.fullName||'Your Name') + ' · selected works'));var powered=make('span','', data.config.ui.branding.attribution.enabled ? 'Powered by Praetorius' : 'Attribution hidden');footer.append(powered);shell.append(footer);root.replaceChildren(shell);}\nfunction renderDocs(){var shell=make('div','folio-shell');var card=make('section','folio-card folio-doc');var page=(Array.isArray(data.docsPages)&&data.docsPages[0])||null;card.append(make('h2','', page&&page.hero&&page.hero.title?page.hero.title:'Docs Reader'));card.append(make('p','folio-meta', page&&page.hero&&page.hero.lede?page.hero.lede:'No docs pages yet.'));if(page&&Array.isArray(page.modules)){page.modules.forEach(function(module){var block=make('div','folio-module');block.append(make('strong','', String(module.type||'module')));if(module.title)block.append(make('p','',module.title));if(module.type==='credits'&&Array.isArray(module.roles)){module.roles.forEach(function(role){block.append(make('p','',String(role.role||'Role')+': '+(Array.isArray(role.people)?role.people.join(', '):'')));});}if(module.type==='process'&&Array.isArray(module.steps)){module.steps.forEach(function(step){block.append(make('p','',String(step.title||'Step')+' — '+String(step.body||'')));});}if(module.type==='media'&&Array.isArray(module.items)){block.append(make('p','',module.items.length+' media item(s)'));}if(module.type==='score'){block.append(make('p','',String(module.pdf||'No score PDF')));}card.append(block);});}shell.append(card);var footer=make('footer','folio-footer');footer.append(make('span','',data.config.site.fullName||'Your Name'));footer.append(make('span','',data.config.ui.branding.attribution.enabled?'Powered by Praetorius':'Attribution hidden'));shell.append(footer);root.replaceChildren(shell);}\n${docsMode ? 'renderDocs();' : 'renderWorks();'}\n})();\n`;
+  return `(function(){\n${reactPrelude}var data=${JSON.stringify(payload)};\nwindow.PRAE=window.PRAE||{};window.PRAE.data=data;\nwindow.PRAE.pauseAllAudio=function(exceptId){var list=document.querySelectorAll('audio[data-work-id]');list.forEach(function(a){if(exceptId&&String(a.dataset.workId)===String(exceptId))return;try{a.pause();a.currentTime=0;}catch(_){}});};\nvar root=document.getElementById('prae-runtime');if(!root)return;\nfunction make(tag,cls,text){var el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=String(text);return el;}\nfunction renderWorks(){var shell=make('div','folio-shell');var header=make('header','folio-header');header.append(make('h1','',data.config.site.fullName||'Your Name'));\nvar tools=make('div','folio-toolbar');['Home','Projects','Contact'].forEach(function(label){var btn=make('button','folio-btn',label);btn.type='button';tools.append(btn);});header.append(tools);shell.append(header);\nvar grid=make('div','folio-grid');var listCard=make('section','folio-card');data.works.forEach(function(work,index){var card=make('article','folio-work');card.append(make('h3','',work.title));card.append(make('div','folio-meta',work.slug));if(work.cover){var fig=make('figure','folio-cover-wrap');var img=make('img','folio-cover');var fb=make('span','folio-cover-fallback','Cover unavailable');fb.hidden=true;img.alt='';img.addEventListener('error',function(){img.style.display='none';fb.hidden=false;},{once:true});img.src=work.cover;fig.append(img);fig.append(fb);card.append(fig);}var desc=make('p','',work.onelinerEffective||work.oneliner||work.one||'No summary yet.');card.append(desc);if(Array.isArray(work.tags)&&work.tags.length){var tags=make('div','folio-tags');work.tags.forEach(function(tag){tags.append(make('span','folio-tag',tag));});card.append(tags);}var actions=make('div','folio-actions');var play=make('button','folio-btn','Play');play.type='button';var audio=make('audio','');audio.dataset.workId=String(work.id);audio.controls=true;if(work.audio)audio.src=work.audio;play.addEventListener('click',function(){window.PRAE.pauseAllAudio(work.id);if(!work.audio)return;audio.currentTime=0;audio.play().catch(function(){});});actions.append(play);var deep=make('button','folio-btn','Copy URL');deep.type='button';deep.addEventListener('click',function(){var url=location.origin+location.pathname+'#work='+encodeURIComponent(work.id);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).catch(function(){});}});actions.append(deep);if(work.pdf){var pdf=make('a','folio-btn','PDF');pdf.href=work.pdf;pdf.target='_blank';pdf.rel='noreferrer';actions.append(pdf);}card.append(actions);card.append(audio);listCard.append(card);});grid.append(listCard);\nvar side=make('aside','folio-card');var np=make('div','');np.append(make('h3','', 'Now Playing'));np.append(make('p','folio-meta','Idle state: choose any work to begin playback.'));side.append(np);side.append(make('div','folio-module','Theme: '+data.config.theme+' • Palette: '+data.config.ui.appearance.theme.palette));side.append(make('div','folio-module','Runtime: ${runtime} • Skin: ${skin}'));grid.append(side);shell.append(grid);\nvar footer=make('footer','folio-footer');footer.append(make('span','', (data.config.site.fullName||'Your Name') + ' · selected works'));var powered=make('span','', data.config.ui.branding.attribution.enabled ? 'Powered by Praetorius' : 'Attribution hidden');footer.append(powered);shell.append(footer);root.replaceChildren(shell);}\nfunction renderDocs(){var shell=make('div','folio-shell');var card=make('section','folio-card folio-doc');var page=(Array.isArray(data.docsPages)&&data.docsPages[0])||null;card.append(make('h2','', page&&page.hero&&page.hero.title?page.hero.title:'Docs Reader'));card.append(make('p','folio-meta', page&&page.hero&&page.hero.lede?page.hero.lede:'No docs pages yet.'));if(page&&Array.isArray(page.modules)){page.modules.forEach(function(module){var block=make('div','folio-module');block.append(make('strong','', String(module.type||'module')));if(module.title)block.append(make('p','',module.title));if(module.type==='credits'&&Array.isArray(module.roles)){module.roles.forEach(function(role){block.append(make('p','',String(role.role||'Role')+': '+(Array.isArray(role.people)?role.people.join(', '):'')));});}if(module.type==='process'&&Array.isArray(module.steps)){module.steps.forEach(function(step){block.append(make('p','',String(step.title||'Step')+' — '+String(step.body||'')));});}if(module.type==='media'&&Array.isArray(module.items)){block.append(make('p','',module.items.length+' media item(s)'));}if(module.type==='score'){block.append(make('p','',String(module.pdf||'No score PDF')));}card.append(block);});}shell.append(card);var footer=make('footer','folio-footer');footer.append(make('span','',data.config.site.fullName||'Your Name'));footer.append(make('span','',data.config.ui.branding.attribution.enabled?'Powered by Praetorius':'Attribution hidden'));shell.append(footer);root.replaceChildren(shell);}\n${docsMode ? 'renderDocs();' : 'renderWorks();'}\n})();\n`;
 }
 
 function renderDataScript(payload) {
@@ -1042,6 +1163,10 @@ export function runFolioCommand(inputState, argvInput) {
           tags: row.tags_csv,
           cues: row.cues_json ? JSON.parse(row.cues_json || '[]') : [],
           score: row.score_json ? JSON.parse(row.score_json || 'null') : null,
+          media: parseMaybeJson(row.media_json),
+          mediaKind: row.mediaKind || row.media_kind || row.kind || '',
+          youtubeUrl: row.youtubeUrl || row.youtube_url || row.videoUrl || row.video_url || '',
+          startAtSec: row.startAtSec ?? row.start_at_sec ?? undefined,
         }));
       } else {
         throw new Error('Unsupported import format. Use json or csv.');

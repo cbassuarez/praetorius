@@ -417,6 +417,16 @@ button:focus-visible {
 }
 
 .vbx-cover-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  text-align: center;
+  font-family: var(--vbx-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vbx-ink-soft);
   background:
     radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--vbx-accent-soft) 75%, transparent), transparent 60%),
     linear-gradient(145deg, color-mix(in srgb, var(--vbx-panel) 60%, transparent), color-mix(in srgb, var(--vbx-panel-2) 90%, transparent));

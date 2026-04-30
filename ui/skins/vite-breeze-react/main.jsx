@@ -103,6 +103,16 @@ function normalizePdfUrl(url) {
   return str;
 }
 
+function normalizeCoverUrl(work) {
+  const raw = work && typeof work === 'object' ? (work.cover ?? work.coverUrl ?? '') : '';
+  if (!raw) return '';
+  const media = window.PRAE && window.PRAE.media ? window.PRAE.media : null;
+  if (media && typeof media.normalizeCoverUrl === 'function') {
+    try { return String(media.normalizeCoverUrl(raw) || '').trim(); } catch (_) {}
+  }
+  return normalizeSrc(raw);
+}
+
 function choosePdfViewer(url) {
   const str = String(url || '');
   const match = str.match(/https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/([^/]+)\//);
@@ -256,6 +266,7 @@ function App() {
   const [lastPlay, setLastPlay] = useState({ id: works[0]?.id ?? null, at: 0 });
   const [pdf, setPdf] = useState({ open: false, slug: null, title: '', src: 'about:blank' });
   const [flashById, setFlashById] = useState({});
+  const [coverFailures, setCoverFailures] = useState({});
 
   const frameRef = useRef(null);
   const audioListenersRef = useRef(new Map());
@@ -639,6 +650,8 @@ function App() {
               const detailLines = buildOpenDetailLines(work);
               const isExpanded = !!expanded[work.id];
               const hasPdf = !!work.pdf;
+              const coverUrl = normalizeCoverUrl(work);
+              const showCover = !!coverUrl && !coverFailures[work.id];
 
               return (
                 <motion.article
@@ -657,12 +670,17 @@ function App() {
                       <h2>{work.title}</h2>
                       <p className="vbx-slug">{work.slug}</p>
                     </div>
-                    {work.cover ? (
+                    {showCover ? (
                       <figure className="vbx-cover" aria-label={`${work.title} cover`}>
-                        <img src={work.cover} alt="" loading="lazy" />
+                        <img
+                          src={coverUrl}
+                          alt=""
+                          loading="lazy"
+                          onError={() => setCoverFailures((prev) => (prev[work.id] ? prev : { ...prev, [work.id]: true }))}
+                        />
                       </figure>
                     ) : (
-                      <div className="vbx-cover vbx-cover-fallback" aria-hidden="true" />
+                      <div className="vbx-cover vbx-cover-fallback" aria-label="Cover unavailable">Cover unavailable</div>
                     )}
                   </div>
 

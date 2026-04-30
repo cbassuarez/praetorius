@@ -60,6 +60,30 @@ function normalizeTags(value) {
   return raw.split(',').map((tag) => tag.trim()).filter(Boolean);
 }
 
+export function normalizeCoverUrl(value) {
+  const raw = coerceString(value).trim();
+  if (!raw) return '';
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (_) {
+    return raw;
+  }
+  const host = String(url.hostname || '').replace(/^www\./i, '').toLowerCase();
+  if (host !== 'drive.google.com' && host !== 'docs.google.com') {
+    return raw;
+  }
+  let fileId = '';
+  const pathMatch = String(url.pathname || '').match(/\/file\/d\/([^/]+)/);
+  if (pathMatch && pathMatch[1]) {
+    fileId = pathMatch[1];
+  } else {
+    fileId = String(url.searchParams.get('id') || '').trim();
+  }
+  if (!fileId) return raw;
+  return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`;
+}
+
 function normalizeMediaKind(value) {
   const raw = coerceString(value).trim().toLowerCase();
   return raw === 'youtube' ? 'youtube' : 'score';
@@ -110,7 +134,7 @@ export function normalizeWork(work = {}) {
   const source = work || {};
   const normalized = { ...source };
   const coverRaw = source.cover ?? source.coverUrl ?? null;
-  const cover = coverRaw == null ? null : coerceString(coverRaw).trim();
+  const cover = coverRaw == null ? '' : normalizeCoverUrl(coverRaw);
   const tags = normalizeTags(source.tags);
   const media = normalizeMedia(source.media, source);
 
@@ -268,6 +292,7 @@ export const __workModelInternals = {
   stripMarkdown,
   deriveOnelinerFromDescription,
   truncateWithEllipsis,
+  normalizeCoverUrl,
   normalizeTags,
   normalizeMedia,
 };

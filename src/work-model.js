@@ -1,1 +1,6 @@
-export { normalizeWork, collectWorkWarnings, __workModelInternals } from '../ui/lib/work-normalize.js';
+export {
+  normalizeWork,
+  collectWorkWarnings,
+  normalizeCoverUrl,
+  __workModelInternals
+} from '../ui/lib/work-normalize.js';

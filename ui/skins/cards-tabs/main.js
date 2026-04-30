@@ -135,6 +135,18 @@ const works = Array.isArray(PRAE_DATA.works)
   ? PRAE_DATA.works
   : (Array.isArray(PRAE.works) ? PRAE.works : []);
 const praeMedia = PRAE && PRAE.media ? PRAE.media : null;
+function setEmbedFrameMode(frame, mode) {
+  if (!frame || typeof frame.setAttribute !== 'function') return;
+  if (praeMedia && typeof praeMedia.setEmbedFrameMode === 'function') {
+    try {
+      praeMedia.setEmbedFrameMode(frame, mode);
+      return;
+    } catch (_) {}
+  }
+  frame.setAttribute('referrerpolicy', String(mode || '').toLowerCase() === 'youtube'
+    ? 'strict-origin-when-cross-origin'
+    : 'no-referrer');
+}
 
 const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
 
@@ -486,7 +498,8 @@ function getPageFollowSeconds() {
 
 async function playYouTubeAt(work, id, t = 0) {
   if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
-    flash(findWorkById(id)?.el, 'YouTube runtime unavailable');
+    flash(findWorkById(id)?.el, 'YouTube runtime unavailable; opening tab and disabling sync');
+    detachPageFollow();
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') praeMedia.openYouTubeTab(work);
     return;
   }
@@ -498,9 +511,11 @@ async function playYouTubeAt(work, id, t = 0) {
   showYouTubePane(work, resolveWorkMedia(work));
   try {
     const controller = await praeMedia.mountYouTubePlayer(state.pdf.frame, work, {
-      onError: () => {
-        flash(findWorkById(id)?.el, 'YouTube embed blocked');
+      onError: (err) => {
+        const code = Number(err?.code);
+        flash(findWorkById(id)?.el, `YouTube embed blocked${Number.isFinite(code) ? ` (error ${code})` : ''}`);
         if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') praeMedia.openYouTubeTab(work);
+        detachPageFollow();
       }
     });
     state.youtube.controller = controller;
@@ -515,6 +530,7 @@ async function playYouTubeAt(work, id, t = 0) {
     hudSetPlaying(true);
   } catch (_) {
     flash(findWorkById(id)?.el, 'YouTube unavailable');
+    detachPageFollow();
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') praeMedia.openYouTubeTab(work);
   }
 }
@@ -593,6 +609,7 @@ function openPdfFor(id) {
     }
   } catch (_) {}
   if (title) title.textContent = String(work.title || 'Score');
+  setEmbedFrameMode(frame, 'pdf');
   shell?.classList.add('has-pdf');
   pane.setAttribute('aria-hidden', 'false');
   state.pdf.backdrop?.removeAttribute('hidden');
@@ -610,6 +627,7 @@ function showYouTubePane(work, media) {
   const pane = state.pdf.pane;
   const frame = state.pdf.frame;
   if (!shell || !pane || !frame) {
+    detachPageFollow();
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
       praeMedia.openYouTubeTab(work);
     }
@@ -617,6 +635,7 @@ function showYouTubePane(work, media) {
   }
   state.pdf.currentSlug = work.slug || null;
   if (state.pdf.title) state.pdf.title.textContent = String(work.title || 'YouTube');
+  setEmbedFrameMode(frame, 'youtube');
   shell.classList.add('has-pdf');
   pane.setAttribute('aria-hidden', 'false');
   state.pdf.backdrop?.removeAttribute('hidden');
@@ -1124,16 +1143,18 @@ function normalizeTagList(value) {
 function normalizeCoverUrl(work) {
   const raw = work && typeof work === 'object' ? (work.cover ?? work.coverUrl ?? null) : null;
   if (raw == null) return '';
-  const normalized = String(raw).trim();
+  const normalized = praeMedia && typeof praeMedia.normalizeCoverUrl === 'function'
+    ? praeMedia.normalizeCoverUrl(raw)
+    : String(raw).trim();
   return normalized || '';
 }
 
 function createCoverMarkup(work, className = 'work-cover') {
   const cover = normalizeCoverUrl(work);
   if (cover) {
-    return `<figure class="${className}"><img src="${escapeHtml(cover)}" alt="${escapeHtml((work?.title || 'Work') + ' cover')}" loading="lazy" decoding="async"></figure>`;
+    return `<figure class="${className}"><img src="${escapeHtml(cover)}" alt="${escapeHtml((work?.title || 'Work') + ' cover')}" loading="lazy" decoding="async" onerror="this.style.display='none';var fb=this.nextElementSibling;if(fb)fb.hidden=false;"><span class="work-cover-fallback" hidden>Cover unavailable</span></figure>`;
   }
-  return '';
+  return `<figure class="${className}"><span class="work-cover-fallback">Cover unavailable</span></figure>`;
 }
 
 function setActionButton(button, iconName, label) {

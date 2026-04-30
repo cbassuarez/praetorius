@@ -135,6 +135,18 @@ const works = Array.isArray(PRAE_DATA.works)
   ? PRAE_DATA.works
   : (Array.isArray(PRAE.works) ? PRAE.works : []);
 const praeMedia = PRAE && PRAE.media ? PRAE.media : null;
+function setEmbedFrameMode(frame, mode) {
+  if (!frame || typeof frame.setAttribute !== 'function') return;
+  if (praeMedia && typeof praeMedia.setEmbedFrameMode === 'function') {
+    try {
+      praeMedia.setEmbedFrameMode(frame, mode);
+      return;
+    } catch (_) {}
+  }
+  frame.setAttribute('referrerpolicy', String(mode || '').toLowerCase() === 'youtube'
+    ? 'strict-origin-when-cross-origin'
+    : 'no-referrer');
+}
 const pfMap = PRAE_DATA.pageFollowMaps || PRAE.pageFollowMaps || {};
 
 const HASH_KEY = 'work';
@@ -208,15 +220,17 @@ function normalizeTagList(value) {
 function normalizeCoverUrl(work) {
   const raw = work && typeof work === 'object' ? (work.cover ?? work.coverUrl ?? null) : null;
   if (raw == null) return '';
-  return String(raw).trim();
+  return praeMedia && typeof praeMedia.normalizeCoverUrl === 'function'
+    ? praeMedia.normalizeCoverUrl(raw)
+    : String(raw).trim();
 }
 
 function coverMarkup(work, className = 'kiosk-cover') {
   const cover = normalizeCoverUrl(work);
   if (cover) {
-    return `<figure class="${className}"><img src="${esc(cover)}" alt="${esc((work?.title || 'Work') + ' cover')}" loading="lazy" decoding="async"></figure>`;
+    return `<figure class="${className}"><img src="${esc(cover)}" alt="${esc((work?.title || 'Work') + ' cover')}" loading="lazy" decoding="async" onerror="this.style.display='none';var fb=this.nextElementSibling;if(fb)fb.hidden=false;"><span class="kiosk-cover-fallback" hidden>Cover unavailable</span></figure>`;
   }
-  return '';
+  return `<figure class="${className}"><span class="kiosk-cover-fallback">Cover unavailable</span></figure>`;
 }
 
 function buttonMarkup(iconName, label) {
@@ -582,9 +596,10 @@ async function playYouTubeAt(work, id, t = 0, media = resolveWorkMedia(work)) {
     showDetail(work.id);
   }
   if (!praeMedia || typeof praeMedia.mountYouTubePlayer !== 'function') {
+    detachPageFollow();
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
       praeMedia.openYouTubeTab(work);
-      announce('YouTube opened in new tab');
+      announce('YouTube opened in new tab; score-follow sync disabled');
     }
     return;
   }
@@ -596,9 +611,10 @@ async function playYouTubeAt(work, id, t = 0, media = resolveWorkMedia(work)) {
   pauseOthers(work.id);
   const { pane, frame, title, backdrop } = state.pdf;
   if (!pane || !frame) {
+    detachPageFollow();
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
       praeMedia.openYouTubeTab(work);
-      announce('YouTube opened in new tab');
+      announce('YouTube opened in new tab; score-follow sync disabled');
     }
     return;
   }
@@ -611,11 +627,17 @@ async function playYouTubeAt(work, id, t = 0, media = resolveWorkMedia(work)) {
   pane.focus?.({ preventScroll: true });
   if (title) title.textContent = String(work.title || 'YouTube');
   state.pdf.viewerReady = false;
+  setEmbedFrameMode(frame, 'youtube');
   frame.src = media.youtubeEmbedUrl || media.youtubeUrl || 'about:blank';
   try {
     const controller = await praeMedia.mountYouTubePlayer(frame, work, {
-      onError: () => {
-        announce('YouTube embed blocked');
+      onError: (err) => {
+        const code = Number(err?.code);
+        announce(`YouTube embed blocked${Number.isFinite(code) ? ` (error ${code})` : ''}; opening tab`);
+        detachPageFollow();
+        if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
+          praeMedia.openYouTubeTab(work);
+        }
       }
     });
     state.youtube.controller = controller;
@@ -627,9 +649,10 @@ async function playYouTubeAt(work, id, t = 0, media = resolveWorkMedia(work)) {
     attachYouTubePageFollow(work, controller);
     hudUpdateYouTube(work.id, controller);
   } catch (_) {
+    detachPageFollow();
     if (praeMedia && typeof praeMedia.openYouTubeTab === 'function') {
       praeMedia.openYouTubeTab(work);
-      announce('YouTube opened in new tab');
+      announce('YouTube opened in new tab; score-follow sync disabled');
     }
   }
 }
@@ -1038,6 +1061,7 @@ function openPdfFor(id) {
     pane.removeAttribute('hidden');
     pane.setAttribute('aria-hidden', 'false');
   }
+  setEmbedFrameMode(frame, 'pdf');
   backdrop?.removeAttribute('hidden');
   pane.classList.add('is-open');
   pane.focus?.({ preventScroll: true });

@@ -10,6 +10,7 @@ import {
   createDefaultProjectState,
   hydrateProjectState,
 } from '../../../src/web/folio-runtime.js';
+import { normalizeCoverUrl } from '../../../src/work-model.js';
 import { clearStoredProjectState, loadStoredProjectState, saveStoredProjectState } from './builder/storage';
 import { createZipBlob } from './builder/zip';
 
@@ -136,6 +137,9 @@ const workDraft = reactive({
   slug: '',
   oneliner: '',
   description: '',
+  mediaKind: 'score',
+  youtubeUrl: '',
+  startAtSec: 0,
   audio: '',
   pdf: '',
   cover: '',
@@ -146,6 +150,12 @@ const workDraft = reactive({
   scoreMediaOffsetSec: 0,
   scoreRows: [{ at: '0:00', page: 1 }],
   scorePdfDelta: '',
+});
+const youtubeGateAcknowledged = ref(false);
+const coverProbe = reactive({
+  status: 'idle',
+  normalized: '',
+  message: '',
 });
 
 const selectedDocPageId = ref(null);
@@ -163,6 +173,7 @@ let previewMutationObserver = null;
 let previewHeightRaf = 0;
 let panePointerId = null;
 let paneCaptureTarget = null;
+let coverProbeToken = 0;
 
 function icon(name) {
   return withBase(`/builder/icons/heroicons/24/outline/${name}.svg`);
@@ -479,9 +490,10 @@ function normalizeWorkDraftPayload() {
     slug: workDraft.slug,
     oneliner: workDraft.oneliner,
     description: workDraft.description,
+    media: normalizeWorkDraftMedia(),
     audio: workDraft.audio,
     pdf: workDraft.pdf,
-    cover: workDraft.cover,
+    cover: normalizeCoverUrl(workDraft.cover),
     tags: workDraft.tags,
     cues,
   };
@@ -503,6 +515,114 @@ function normalizeWorkDraftPayload() {
   }
 
   return payload;
+}
+
+function parseYouTubeStartToSec(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return 0;
+  if (/^\d+$/.test(value)) return Number(value);
+  const parts = value.match(/(\d+)(h|m|s)/g);
+  if (!parts) return 0;
+  let sec = 0;
+  for (const part of parts) {
+    const match = part.match(/^(\d+)(h|m|s)$/);
+    if (!match) continue;
+    const n = Number(match[1]) || 0;
+    if (match[2] === 'h') sec += n * 3600;
+    else if (match[2] === 'm') sec += n * 60;
+    else sec += n;
+  }
+  return sec;
+}
+
+function parseYouTubeUrlMeta(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (_) {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+  let videoId = '';
+  if (host === 'youtu.be') {
+    videoId = url.pathname.replace(/^\/+/, '').split('/')[0] || '';
+  } else if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+    if (url.pathname === '/watch') {
+      videoId = url.searchParams.get('v') || '';
+    } else if (url.pathname.startsWith('/embed/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    } else if (url.pathname.startsWith('/shorts/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    } else if (url.pathname.startsWith('/live/')) {
+      videoId = url.pathname.split('/')[2] || '';
+    }
+  }
+  if (!videoId) return null;
+  const tRaw = url.searchParams.get('t') || url.searchParams.get('start') || '';
+  const startAtSec = parseYouTubeStartToSec(tRaw);
+  return { videoId, startAtSec, url: raw };
+}
+
+function normalizeWorkDraftMedia() {
+  const kind = String(workDraft.mediaKind || 'score').trim().toLowerCase() === 'youtube' ? 'youtube' : 'score';
+  if (kind !== 'youtube') return { kind: 'score' };
+  const youtubeUrl = String(workDraft.youtubeUrl || '').trim();
+  const meta = parseYouTubeUrlMeta(youtubeUrl);
+  const explicitStart = Number(workDraft.startAtSec);
+  const startAtSec = Number.isFinite(explicitStart) && explicitStart >= 0
+    ? explicitStart
+    : (meta?.startAtSec || 0);
+  const media = { kind: 'youtube' };
+  if (youtubeUrl) media.youtubeUrl = youtubeUrl;
+  if (Number.isFinite(startAtSec) && startAtSec >= 0) media.startAtSec = startAtSec;
+  return media;
+}
+
+function validateWorkDraftBeforeSave() {
+  if (String(workDraft.mediaKind || '').toLowerCase() !== 'youtube') return '';
+  const rawUrl = String(workDraft.youtubeUrl || '').trim();
+  if (!rawUrl) return 'YouTube URL is required when media kind is YouTube.';
+  const meta = parseYouTubeUrlMeta(rawUrl);
+  if (!meta) return 'Enter a valid YouTube URL (youtube.com or youtu.be).';
+  const startAt = Number(workDraft.startAtSec);
+  if (!Number.isFinite(startAt) || startAt < 0) return 'YouTube startAtSec must be a number greater than or equal to 0.';
+  return '';
+}
+
+function syncWorkCoverProbe() {
+  const normalized = normalizeCoverUrl(workDraft.cover);
+  coverProbe.normalized = normalized;
+  coverProbe.message = '';
+  const raw = String(workDraft.cover || '').trim();
+  if (!raw) {
+    coverProbe.status = 'idle';
+    return;
+  }
+  if (normalized && normalized !== raw) {
+    coverProbe.status = 'normalized';
+    coverProbe.message = `Converted cover URL to ${normalized}`;
+  } else {
+    coverProbe.status = 'checking';
+  }
+  if (typeof window === 'undefined' || typeof Image === 'undefined') {
+    if (coverProbe.status === 'checking') coverProbe.status = 'idle';
+    return;
+  }
+  coverProbeToken += 1;
+  const token = coverProbeToken;
+  const img = new Image();
+  img.onload = () => {
+    if (coverProbeToken !== token) return;
+    if (coverProbe.status === 'checking') coverProbe.status = 'ok';
+  };
+  img.onerror = () => {
+    if (coverProbeToken !== token) return;
+    coverProbe.status = 'error';
+    coverProbe.message = 'Cover image could not be loaded in preview. Use a direct public image URL.';
+  };
+  img.src = normalized || raw;
 }
 
 function secondsToClock(input) {
@@ -538,6 +658,9 @@ function resetWorkDraft() {
   workDraft.slug = '';
   workDraft.oneliner = '';
   workDraft.description = '';
+  workDraft.mediaKind = 'score';
+  workDraft.youtubeUrl = '';
+  workDraft.startAtSec = 0;
   workDraft.audio = '';
   workDraft.pdf = '';
   workDraft.cover = '';
@@ -548,6 +671,7 @@ function resetWorkDraft() {
   workDraft.scoreMediaOffsetSec = 0;
   workDraft.scoreRows = [{ at: '0:00', page: 1 }];
   workDraft.scorePdfDelta = '';
+  syncWorkCoverProbe();
 }
 
 function pickWork(work) {
@@ -557,6 +681,10 @@ function pickWork(work) {
   workDraft.slug = work.slug || '';
   workDraft.oneliner = work.oneliner || work.one || '';
   workDraft.description = work.description || '';
+  const media = work.media && typeof work.media === 'object' ? work.media : null;
+  workDraft.mediaKind = String(media?.kind || '').toLowerCase() === 'youtube' ? 'youtube' : 'score';
+  workDraft.youtubeUrl = media?.youtubeUrl || work.youtubeUrl || '';
+  workDraft.startAtSec = Number.isFinite(Number(media?.startAtSec)) ? Number(media.startAtSec) : 0;
   workDraft.audio = work.audio || '';
   workDraft.pdf = work.pdf || '';
   workDraft.cover = work.cover || '';
@@ -567,6 +695,7 @@ function pickWork(work) {
   workDraft.scoreMediaOffsetSec = Number(work.score?.mediaOffsetSec || 0);
   workDraft.scoreRows = toScoreRows(work.score);
   workDraft.scorePdfDelta = work.score?.pdfDelta != null ? String(work.score.pdfDelta) : '';
+  syncWorkCoverProbe();
 }
 
 function syncFormsFromState() {
@@ -655,6 +784,20 @@ function removeScoreRow(index) {
   workDraft.scoreRows = rows;
 }
 
+function onWorkMediaKindChange() {
+  const nextKind = String(workDraft.mediaKind || 'score').trim().toLowerCase();
+  if (nextKind !== 'youtube') return;
+  if (youtubeGateAcknowledged.value) return;
+  const accepted = typeof window !== 'undefined'
+    ? window.confirm('YouTube mode is optional and best used when score-follow is not the primary workflow.\n\nEnable YouTube as the primary media for this work?')
+    : true;
+  if (!accepted) {
+    workDraft.mediaKind = 'score';
+    return;
+  }
+  youtubeGateAcknowledged.value = true;
+}
+
 async function addDocPage() {
   const n = docsPages.value.length + 1;
   const page = {
@@ -712,6 +855,12 @@ async function applyThemeTab(options = {}) {
 }
 
 async function saveWorkDraft() {
+  const validationIssue = validateWorkDraftBeforeSave();
+  if (validationIssue) {
+    setStatus(`Validation failed: ${validationIssue}`);
+    pushToast(validationIssue, 'warning', 5200);
+    return;
+  }
   const payload = normalizeWorkDraftPayload();
   if (selectedWorkId.value) {
     await runCommand(['edit', String(selectedWorkId.value), '--payload', JSON.stringify(payload)]);
@@ -1431,6 +1580,14 @@ watch(
   }
 );
 
+watch(
+  () => workDraft.cover,
+  () => {
+    syncWorkCoverProbe();
+  },
+  { immediate: true }
+);
+
 onMounted(async () => {
   try {
     const saved = window.localStorage?.getItem(SPLIT_PANE_STORAGE_KEY);
@@ -1650,6 +1807,35 @@ onBeforeUnmount(() => {
                   <input v-model="workDraft.cover" type="url" />
                 </label>
               </div>
+              <p v-if="coverProbe.status === 'normalized'" class="fb-note fb-note--warning">{{ coverProbe.message }}</p>
+              <p v-else-if="coverProbe.status === 'error'" class="fb-note fb-note--error">{{ coverProbe.message }}</p>
+              <details class="fb-advanced" :open="workDraft.mediaKind === 'youtube'">
+                <summary>
+                  <span>Advanced: Primary Media</span>
+                  <label class="fb-toggle">
+                    <input
+                      :checked="workDraft.mediaKind === 'youtube'"
+                      type="checkbox"
+                      @change="workDraft.mediaKind = $event.target.checked ? 'youtube' : 'score'; onWorkMediaKindChange()"
+                    />
+                    Use YouTube
+                  </label>
+                </summary>
+                <p class="fb-note">Score and PDF page-follow remain the default workflow. Enable YouTube when you explicitly want embed-first playback.</p>
+                <div class="fb-field-grid">
+                  <label>
+                    YouTube URL
+                    <input v-model="workDraft.youtubeUrl" type="url" :disabled="workDraft.mediaKind !== 'youtube'" placeholder="https://www.youtube.com/watch?v=..." />
+                  </label>
+                  <label>
+                    YouTube startAtSec
+                    <input v-model.number="workDraft.startAtSec" type="number" min="0" step="1" :disabled="workDraft.mediaKind !== 'youtube'" />
+                  </label>
+                </div>
+                <p v-if="workDraft.mediaKind === 'youtube' && workDraft.scoreEnabled" class="fb-note fb-note--warning">
+                  YouTube is primary for this work. PDF page-follow will use YouTube playback time when score mapping is enabled.
+                </p>
+              </details>
               <label>
                 Description
                 <textarea v-model="workDraft.description" rows="4" />
@@ -1680,6 +1866,9 @@ onBeforeUnmount(() => {
                     Enabled
                   </label>
                 </summary>
+                <p v-if="workDraft.mediaKind === 'youtube' && workDraft.scoreEnabled" class="fb-note fb-note--warning">
+                  Page-follow will sync from YouTube runtime for this work.
+                </p>
                 <div class="fb-field-grid">
                   <label>
                     PDF start page
@@ -2308,6 +2497,16 @@ onBeforeUnmount(() => {
   margin: 0;
   font: 500 13px/1.35 "Space Grotesk", ui-sans-serif, sans-serif;
   opacity: .86;
+}
+
+.fb-note--warning {
+  color: color-mix(in srgb, #9a5f00 82%, var(--fb-text) 18%);
+  opacity: 1;
+}
+
+.fb-note--error {
+  color: color-mix(in srgb, #9b1c1c 88%, var(--fb-text) 12%);
+  opacity: 1;
 }
 
 .fb-field-grid {

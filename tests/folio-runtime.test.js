@@ -41,6 +41,64 @@ describe('folio runtime command engine', () => {
     expect(state.worksDb.works.find((work) => work.id === added.id)).toBeTruthy();
   });
 
+  test('normalizes youtube media and preserves media_json on csv export', () => {
+    let state = createDefaultProjectState();
+    const add = runFolioCommand(state, [
+      'add',
+      '--payload',
+      JSON.stringify({
+        title: 'YouTube Work',
+        slug: 'youtube-work',
+        oneliner: 'Media normalization check',
+        media: { kind: 'youtube', youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ?t=1m11s' },
+      }),
+    ]);
+    expect(add.ok).toBe(true);
+    state = add.state;
+
+    const added = state.worksDb.works.find((work) => work.slug === 'youtube-work');
+    expect(added).toBeTruthy();
+    expect(added.media).toEqual({
+      kind: 'youtube',
+      youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ?t=1m11s',
+      startAtSec: 71,
+    });
+
+    const exported = runFolioCommand(state, ['export', '--format', 'csv']);
+    expect(exported.ok).toBe(true);
+    expect(exported.exportText).toContain('media_json');
+    expect(exported.exportText).toContain('""kind"":""youtube""');
+    expect(exported.exportText).toContain('""startAtSec"":71');
+  });
+
+  test('imports youtube media from tolerant legacy csv columns', () => {
+    let state = createDefaultProjectState();
+    const csv = [
+      'id,slug,title,oneliner,media_kind,youtube_url,start_at_sec,cues_json,score_json',
+      '99,legacy-yt,Legacy YT,Legacy youtube row,youtube,https://www.youtube.com/watch?v=dQw4w9WgXcQ,17,[],',
+    ].join('\n');
+
+    const imported = runFolioCommand(state, [
+      'import',
+      '--format',
+      'csv',
+      '--payload',
+      csv,
+      '--assume-new-id',
+      '--assume-new-slug',
+    ]);
+    expect(imported.ok).toBe(true);
+    state = imported.state;
+
+    const work = state.worksDb.works.find((entry) => entry.slug === 'legacy-yt');
+    expect(work).toBeTruthy();
+    expect(work.media).toEqual({
+      kind: 'youtube',
+      youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      startAtSec: 17,
+    });
+  });
+
   test('generate emits metadata markers and runtime fallback rules', () => {
     let state = createDefaultProjectState();
 

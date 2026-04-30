@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Ajv from 'ajv';
-import { normalizeWork, collectWorkWarnings } from '../src/work-model.js';
+import { normalizeWork, collectWorkWarnings, normalizeCoverUrl } from '../src/work-model.js';
 import schema from '../data/works.schema.json' assert { type: 'json' };
 
 const ajv = new Ajv({ allErrors: true });
@@ -51,6 +51,15 @@ describe('normalizeWork', () => {
     });
     expect(view.cover).toBe('https://cdn.example.com/cover.jpg');
     expect(view.tags).toEqual(['electroacoustic', 'premiere']);
+  });
+
+  it('normalizes Google Drive share cover URLs', () => {
+    expect(
+      normalizeCoverUrl('https://drive.google.com/file/d/1AbCdEfGhIJkLmNo/view?usp=sharing')
+    ).toBe('https://drive.google.com/uc?export=view&id=1AbCdEfGhIJkLmNo');
+    expect(
+      normalizeCoverUrl('https://drive.google.com/open?id=1AbCdEfGhIJkLmNo')
+    ).toBe('https://drive.google.com/uc?export=view&id=1AbCdEfGhIJkLmNo');
   });
 
   it('parses comma-separated tags strings', () => {
