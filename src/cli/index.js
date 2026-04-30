@@ -778,7 +778,7 @@ function renderScriptFromDb(db, opts = {}) {
   function praeChoosePdfViewer(input){
     var url = String(input || '').trim();
     if (!url) return '';
-    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^\/\//.test(url)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^\\/\\//.test(url)) {
       try { url = new URL(url, location.href).toString(); } catch (_) {}
     }
     var m = url.match(/https?:\\/\\/(?:drive|docs)\\.google\\.com\\/file\\/d\\/([^/]+)\\//);
